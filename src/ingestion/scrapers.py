@@ -1,11 +1,11 @@
 import re
 import os
-import time
+import requests
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from langchain_community.document_loaders import RecursiveUrlLoader
 
 # Set globale per memorizzare i link ai PDF trovati durante lo scraping HTML.
-# Verranno passati successivamente al PyPDFLoader (Modulo 1.2).
 found_pdf_links = set()
 
 def custom_unisa_extractor(html_content: str) -> str:
@@ -15,36 +15,24 @@ def custom_unisa_extractor(html_content: str) -> str:
     """
     soup = BeautifulSoup(html_content, "html.parser")
     
-    # 1. Pulizia chirurgica: Rimuoviamo elementi strutturali tossici per il RAG
+    # 1. Pulizia chirurgica
     noise_selectors = [
-        "#header",                # Carosello e header
-        "#main-menu",             # Navigazione principale
-        "#menu-bar",              # Barra menu
-        "#unisa-left-menu",       # Menu laterale sinistro (include i social)
-        "#box-agenda",            # Calendario eventi
-        "#share-dropdown",        # Pulsanti condivisione
-        ".breadcrumb",            # Briciole di pane
-        "footer",                 # Piè di pagina principale
-        ".sub-footer",            # Informazioni legali
-        ".sr-only",               # Testi nascosti per screen reader (spesso duplicati)
-        "div[id$='-map']",        # Div dinamici delle mappe di ateneo (es. 026557-map)
-        "script", 
-        "style", 
-        "noscript"
+        "#header", "#main-menu", "#menu-bar", "#unisa-left-menu", 
+        "#box-agenda", "#share-dropdown", ".breadcrumb", "footer", 
+        ".sr-only", "div[id$='-map']", "script", "style", "noscript"
     ]
     
     for selector in noise_selectors:
         for element in soup.select(selector):
             element.decompose()
         
-    # 2. Intercettazione PDF: Troviamo tutti i link che puntano a documenti PDF
+    # 2. Intercettazione PDF
     for a_tag in soup.find_all('a', href=True):
         href = a_tag['href']
         if href.lower().endswith('.pdf'):
-            # In un'app reale, qui si gestiscono i link relativi convertendoli in assoluti
             found_pdf_links.add(href)
             
-    # URL della pagina: Cerchiamo di identificare l'URL canonico della pagina per la metadata
+    # URL della pagina
     page_url = "URL sconosciuto"
     canonical = soup.find('link', rel='canonical')
     og_url = soup.find('meta', property='og:url')
@@ -54,7 +42,7 @@ def custom_unisa_extractor(html_content: str) -> str:
     elif og_url and og_url.get('content'):
         page_url = og_url['content']
             
-    # 3. Catena per trovare il main content: Proviamo più strategie per identificare il contenuto principale
+    # 3. Catena per trovare il main content
     main_content = soup.find(id="unisa-content")
     if not main_content:
         main_content = soup.find(attrs={"role": "main"})
@@ -63,125 +51,102 @@ def custom_unisa_extractor(html_content: str) -> str:
     if not main_content:
         main_content = soup.find("main")
     if not main_content:
-        # Extrema ratio: prendiamo almeno il corpo della pagina pulito
         main_content = soup.body
     
     if main_content:
-        # Pulizia degli attributi ma preserviamo quelli utili alle tabelle e semantica
         allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
         for tag in main_content.find_all(True):
             tag.attrs = {key: value for key, value in tag.attrs.items() if key in allowed_attrs}
             
         return main_content.decode_contents().strip()
     else:
-        print(f"[Warning] Pagina senza main_content\tURL: {page_url}")
-        return ""  # Ritorna stringa vuota se non troviamo il contenuto principale
+        # Silenziamo il warning per mantenere la console pulita
+        return "" 
+
+def get_dynamic_faculty_urls():
+    """
+    Recupera dinamicamente la lista dei docenti del DIEM.
+    """
+    url_personale = "https://www.diem.unisa.it/dipartimento/personale"
+    print(f"Recupero dinamico dei docenti da: {url_personale}...")
+    
+    dynamic_urls = set()
+    try:
+        response = requests.get(url_personale, timeout=30)
+        response.raise_for_status() 
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag['href']
+            if "rubrica.unisa.it/persone?matricola=" in href:
+                match = re.search(r'matricola=(\d+)', href)
+                if match:
+                    matricola = match.group(1)
+                    docenti_url = f"https://docenti.unisa.it/{matricola}/home"
+                    dynamic_urls.add(docenti_url)
+                    
+        print(f"Trovati {len(dynamic_urls)} docenti afferenti al DIEM.")
+        return list(dynamic_urls)
+    except Exception as e:
+        print(f"[Errore] Impossibile recuperare i docenti dinamicamente: {e}")
+        return []
 
 def build_diem_loaders():
     """
     Configura e restituisce i loader per i domini autorizzati.
     """
     loaders = []
-    # Regex che dice: "Trova i link, MA IGNORA quelli che finiscono in .css, .js, .pdf, .jpg, .png"
-    safe_link_regex =  r"<a\s+(?:[^>]*?\s+)?href=[\"'](?!javascript:|mailto:|tel:|[^\"']*\.(?:css|js|png|jpg|jpeg|gif|pdf|zip)(?:[\?#][^\"']*)?)([^\"']+)[\"']"
+    safe_link_regex = r"<a\s+(?:[^>]*?\s+)?href=[\"'](?!javascript:|mailto:|tel:|[^\"']*\.(?:css|js|png|jpg|jpeg|gif|pdf|zip)(?:[\?#][^\"']*)?)([^\"']+)[\"']"
+    
+    # Configurazione base sicura (Timeout a 30 per evitare blocchi infiniti)
+    recursive_loader_config = {
+        "max_depth": 5,  # 5 è il bilanciamento perfetto per il dipartimento
+        "prevent_outside": True, 
+        "extractor": custom_unisa_extractor,
+        "check_response_status": True,
+        "link_regex": safe_link_regex,
+        "timeout": 30 
+    }
  
     # --- 1. Dominio DIEM principale ---
-    # prevent_outside=True assicura di non uscire da diem.unisa.it
     diem_loader = RecursiveUrlLoader(
         url="https://www.diem.unisa.it/",
-        max_depth=4,  # Regolare in base alla profondità del sito
-        prevent_outside=True, 
-        extractor=custom_unisa_extractor,
-        check_response_status=True,
-        link_regex=safe_link_regex
+        **recursive_loader_config
     )
     loaders.append(diem_loader)
 
     # --- 2. Dominio Corsi DIEM ---
-    # ATTENZIONE: per non scaricare corsi di altri dipartimenti (fuori scope),
-    # dobbiamo definire esplicitamente le base_url dei corsi DIEM.
     diem_courses_urls = [
-        "https://corsi.unisa.it/ingegneria-informatica", # triennale
-        # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale", # triennale
-        # "https://corsi.unisa.it/ingegneria-informatica-magistrale", # magistrale
-        # "https://corsi.unisa.it/information-Engineering-for-digital-medicine", # magistrale
-        # "https://corsi.unisa.it/ingegneria-dell-informazione" # PHD
-        # Aggiungere gli altri corsi afferenti al DIEM
+        "https://corsi.unisa.it/ingegneria-informatica", 
+        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale", 
+        "https://corsi.unisa.it/ingegneria-informatica-magistrale", 
+        "https://corsi.unisa.it/information-Engineering-for-digital-medicine", 
+        "https://corsi.unisa.it/ingegneria-dell-informazione" 
     ]
     
     for course_url in diem_courses_urls:
+        # Per i corsi riduciamo leggermente la depth a 4 per evitare loop in vecchi avvisi
+        course_config = recursive_loader_config.copy()
+        course_config["max_depth"] = 4 
+        
         course_loader = RecursiveUrlLoader(
             url=course_url,
-            max_depth=3,
-            prevent_outside=True, # Limita l'esplorazione strettamente al singolo corso
-            extractor=custom_unisa_extractor,
-            check_response_status=True,
-            link_regex=safe_link_regex
+            **course_config
         )
         loaders.append(course_loader)
         
     # --- 3. Dominio Docenti DIEM ---
-    # Come per i corsi, https://docenti.unisa.it/ contiene docenti di tutto l'ateneo.
-    # Bisogna iniettare una lista di URL dei docenti specifici del DIEM
-    diem_faculty_urls = [
-        "https://docenti.unisa.it/nicola.capuano",
-        "https://docenti.unisa.it/antonio.greco",
-        # "https://docenti.unisa.it/giovannina.albano",
-        # "https://docenti.unisa.it/vincenzo.auletta",
-        # "https://docenti.unisa.it/francesco.basile",
-        # "https://docenti.unisa.it/pasquale.chiacchio",
-        # "https://docenti.unisa.it/antonio.dellacioppa",
-        # "https://docenti.unisa.it/nicola.femia",
-        # "https://docenti.unisa.it/pasquale.foggia",
-        # "https://docenti.unisa.it/matteo.gaeta",
-        # "https://docenti.unisa.it/stefano.marano",
-        # "https://docenti.unisa.it/angelo.marcelli",
-        # "https://docenti.unisa.it/vincenzo.matta",
-        # "https://docenti.unisa.it/ettore.napoli",
-        # "https://docenti.unisa.it/gennaro.percannella",
-        # "https://docenti.unisa.it/giovanni.petrone",
-        # "https://docenti.unisa.it/pierluigi.ritrovato",
-        # "https://docenti.unisa.it/sabrina.senatore",
-        # "https://docenti.unisa.it/giovanni.spagnuolo",
-        # "https://docenti.unisa.it/francesco.tortorella",
-        # "https://docenti.unisa.it/vincenzo.tucci",
-        # "https://docenti.unisa.it/mario.vento",
-        # "https://docenti.unisa.it/paolo.addesso",
-        # "https://docenti.unisa.it/andrea.apicella",
-        # "https://docenti.unisa.it/vincenzo.carletti",
-        # "https://docenti.unisa.it/giuseppe.daniello",
-        # "https://docenti.unisa.it/tiziana.durante",
-        # "https://docenti.unisa.it/daniele.esposito",
-        # "https://docenti.unisa.it/mariarosaria.falanga",
-        # "https://docenti.unisa.it/diodato.ferraioli",
-        # "https://docenti.unisa.it/lidia.fotia",
-        # "https://docenti.unisa.it/diego.gragnaniello",
-        # "https://docenti.unisa.it/luca.greco",
-        # "https://docenti.unisa.it/michele.guida",
-        # "https://docenti.unisa.it/patrizia.lamberti",
-        # "https://docenti.unisa.it/francesco.moscato",
-        # "https://docenti.unisa.it/fabio.postiglione",
-        # "https://docenti.unisa.it/rocco.restaino",
-        # "https://docenti.unisa.it/giovanni.riccio",
-        # "https://docenti.unisa.it/leonardo.rundo",
-        # "https://docenti.unisa.it/045640/home", # Russo Giovanni ha un omonimo
-        # "https://docenti.unisa.it/alessia.saggese",
-        # "https://docenti.unisa.it/walter.zamboni",
-        # "https://docenti.unisa.it/vittorio.zampoli"
-    ]
-    
-    ####
-    # • Course and exam timetables of DIEM courses available from https://easycourse.unisa.it/ (optional)
-    ####
+    diem_faculty_urls = get_dynamic_faculty_urls()
     
     for faculty_url in diem_faculty_urls:
         faculty_loader = RecursiveUrlLoader(
             url=faculty_url,
-            max_depth=2,
+            max_depth=2, # I docenti restano a 2, è sufficiente!
             prevent_outside=True,
             extractor=custom_unisa_extractor,
             check_response_status=True,
-            link_regex=safe_link_regex
+            link_regex=safe_link_regex,
+            timeout=60
         )
         loaders.append(faculty_loader)
         
@@ -189,6 +154,9 @@ def build_diem_loaders():
 
 def scrape_all_domains():
     """Esegue lo scraping e ritorna i documenti combinati."""
+    global found_pdf_links
+    found_pdf_links.clear() # Svuota la memoria a ogni avvio!
+    
     all_docs = []
     loaders = build_diem_loaders()
     
@@ -197,39 +165,40 @@ def scrape_all_domains():
         docs = loader.load()
         all_docs.extend(docs)
         
+    print(f"\n--- RESOCONTO FINALE ---")
     print(f"Scraping completato. Documenti HTML raccolti: {len(all_docs)}")
-    print(f"Link PDF intercettati (da passare al Modulo 1.2): {len(found_pdf_links)}")
+    print(f"Link PDF intercettati (da elaborare): {len(found_pdf_links)}")
     return all_docs
 
 def save_scraped_data(docs, sample_size=10, suffix="", output_dir="data/raw/html_samples"):
     """
-    Salva un campione di documenti in file .html locali.
-    Risolve i crash su Windows pulendo i nomi dei file dai caratteri vietati.
+    Salva un campione di documenti in file .html locali per ispezione.
     """
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Se passiamo -1 o un numero altissimo, salviamo tutto
     actual_size = len(docs) if sample_size <= 0 or sample_size > len(docs) else sample_size
-    
     print(f"Salvataggio di {actual_size} documenti per ispezione in {output_dir}...")
     
     for i, doc in enumerate(docs[:actual_size]):
-        # Recupero l'URL originale
         raw_url = doc.metadata.get('source', 'URL_sconosciuto')
         
-        # Pulizia dell'URL per renderlo un nome file compatibile con Windows/Linux
-        safe_name = raw_url.replace("https://", "").replace("http://", "")
-        # Sostituisce i caratteri vietati (< > : " / \ | ? *)
-        safe_name = re.sub(r'[<>:"/\\|?*]', '-', safe_name)[:50]
+        url_depth = 0
+        if raw_url != 'URL_sconosciuto':
+            parsed_url = urlparse(raw_url)
+            path_segments = [seg for seg in parsed_url.path.split('/') if seg]
+            url_depth = len(path_segments)
         
-        filename = f"sample_{i}_{suffix}_{safe_name}.html"
+        safe_name = raw_url.replace("https://", "").replace("http://", "")
+        safe_name = re.sub(r'[<>:"/\\|?*]', '-', safe_name)[:100]
+        
+        filename = f"sample_{i}_{suffix}_depth{url_depth}_{safe_name}.html"
+        filename = filename.replace("__", "_")
         filepath = os.path.join(output_dir, filename)
         
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                # Meta charset aiuta i browser a renderizzare bene le accentate italiane
                 f.write("<meta charset='utf-8'>\n")
                 f.write(f"<!-- SOURCE URL: {raw_url} -->\n")
+                f.write(f"<!-- URL DEPTH: {url_depth} -->\n")
                 f.write(doc.page_content)
         except Exception as e:
             print(f"[Errore] Impossibile salvare il file {filename}: {e}")
@@ -238,7 +207,6 @@ def save_scraped_data(docs, sample_size=10, suffix="", output_dir="data/raw/html
     return actual_size
 
 if __name__ == "__main__":
-    # Esempio d'uso:    
     docs = scrape_all_domains()
-    size_saved = save_scraped_data(docs, sample_size=-1, suffix=f"")  # Salva documenti per ispezione
-    time.sleep(5)  # Pausa di 5 secondi tra i cicli per evitare sovraccarico del server
+    # Cambia sample_size a -1 se vuoi salvare tutto su disco per ispezione
+    save_scraped_data(docs, sample_size=-1, suffix="")
