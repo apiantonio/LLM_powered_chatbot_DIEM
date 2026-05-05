@@ -1,4 +1,5 @@
 WBS.md
 .vscode/
 data/raw/**/*.html
+.zip
 __pycache__
