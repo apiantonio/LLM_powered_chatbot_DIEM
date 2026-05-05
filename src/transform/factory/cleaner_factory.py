@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from transform.core.base_rule import CleaningRule
 from transform.rules.content_rules import EmptyBodyRule, NoContentInsertedRule, PageNotFoundRule
-from transform.rules.metadata_rules import FilenameRule, ObsoleteUrlRule, CalendarRule, PublicationTipRule, DidatticaFilterRule, ExactPublicationsBaseRule, DepartmentBandiRule
+from transform.rules.metadata_rules import FilenameRule, NewsRule, ObsoleteUrlRule, CalendarRule, PublicationTipRule, DidatticaFilterRule, ExactPublicationsBaseRule, DepartmentBandiRule
 
 class RuleFactory:
     """Factory per creare le regole di pulizia dinamicamente."""
@@ -40,6 +40,8 @@ class RuleFactory:
                 rules.append(DepartmentBandiRule(target_department=self.target_departement))
             elif name == "calendar":
                 rules.append(CalendarRule())
+            elif name == "news":
+                rules.append(NewsRule())
             else:
                 raise ValueError(f"Regola sconosciuta: {name}")
                 

@@ -4,11 +4,12 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from bs4 import BeautifulSoup
 from typing import Tuple, List, Optional
+import re
+from tqdm import tqdm  # <--- Nuova importazione per la barra di avanzamento
 
 # =====================================================================
 # 1. DEFINIZIONE DELLE REGOLE (PATTERN STRATEGY PER ESTENDIBILITÀ)
 # =====================================================================
-
 class CleaningRule(ABC):
     """Interfaccia base per tutte le regole di pulizia."""
     
@@ -31,6 +32,42 @@ class CleaningRule(ABC):
         """Restituisce True se il file deve essere eliminato."""
         pass
 
+class ObsoleteUrlRule(CleaningRule):
+    def __init__(self, cutoff_year: int = 2020):
+        self.cutoff_year = cutoff_year
+        # Intercetta il parametro anno= seguito da numeri, ora direttamente dal nome del file
+        self.url_year_pattern = re.compile(r'anno=(\d+)')
+
+    @property
+    def name(self) -> str:
+        return f"Nome file con anno obsoleto (< {self.cutoff_year}) o non valido (anno=0)"
+
+    @property
+    def requires_content(self) -> bool:
+        # VANTAGGIO ENORME: impostando a False, lo script NON aprirà il file.
+        # Leggerà solo il nome, risparmiando I/O sul disco.
+        return False
+
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        # Cerca la regex direttamente in filepath.name (il nome del file)
+        match = self.url_year_pattern.search(filepath.name)
+        
+        if match:
+            try:
+                # Estrae il valore numerico dell'anno
+                year = int(match.group(1))
+                
+                # Elimina se l'anno è 0 oppure strettamente minore del 2020
+                if year == 0 or (1000 < year < self.cutoff_year): 
+                    return True
+                    
+            except ValueError:
+                # In caso di errori di conversione, conserviamo il file
+                pass
+                
+        # Se non c'è il parametro 'anno' nel nome, o l'anno è >= 2020, lo teniamo
+        return False
+
 
 class FilenameRule(CleaningRule):
     @property
@@ -42,7 +79,7 @@ class FilenameRule(CleaningRule):
         return False
         
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
-        targets = ["-en-", "-zh-", "-zh"]
+        targets = ["-en-", "-zh-", "-zh", "-en."]
         return any(target in filepath.name for target in targets)
 
 
@@ -52,23 +89,19 @@ class EmptyBodyRule(CleaningRule):
         return "Tag <body> vuoto o privo di contenuti utili"
         
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
-        # Controllo rapido testuale per ottimizzare i tempi
         clean_content = content.replace(" ", "").replace("\n", "").lower()
         if "<body></body>" in clean_content:
             return True
             
-        # Parsing robusto se il controllo rapido fallisce
         soup = BeautifulSoup(content, 'lxml')
         body = soup.find('body')
         
         if not body:
-            return False # Se non c'è il body, la struttura è anomala, meglio non rischiare di cancellare
+            return False 
             
-        # Controlliamo se c'è testo visibile
         if body.get_text(strip=True):
             return False
             
-        # Controlliamo se ci sono tag media che potrebbero indicare contenuto (es. immagini, iframe)
         if body.find(['img', 'iframe', 'video', 'audio']):
             return False
             
@@ -81,7 +114,6 @@ class NoContentInsertedRule(CleaningRule):
         return "Pagina senza contenuti (Placeholder: 'Nessun contenuto inserito')"
         
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
-        # Cerca solo il placeholder di sistema, indipendentemente dal docente
         return "Nessun contenuto inserito" in content
 
 
@@ -94,45 +126,116 @@ class PageNotFoundRule(CleaningRule):
         return "404 Pagina non Trovata" in content and "Oops!" in content
 
 
+class PublicationTipRule(CleaningRule):
+    def __init__(self):
+        # La regex cerca esattamente: 
+        # 1. Un trattino seguito da numeri (la matricola, es: -005501)
+        # 2. La dicitura fissa "-ricerca-pubblicazioni" (o "pubblicazione")
+        # 3. Qualsiasi cosa in mezzo (es. l'anno)
+        # 4. L'attributo "tip="
+        self.target_pattern = re.compile(r'-\d+-ricerca-pubblicazioni?.*tip=')
+
+    @property
+    def name(self) -> str:
+        return "Pubblicazioni filtrate per attributo 'tip'"
+
+    @property
+    def requires_content(self) -> bool:
+        # Estremamente efficiente: non apriamo il file in memoria
+        return False
+
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        # Cerca il pattern specifico all'interno del nome del file
+        # Se trova il match esatto, elimina. Altrimenti conserva.
+        return bool(self.target_pattern.search(filepath.name))
+
+class DidatticaFilterRule(CleaningRule):
+    def __init__(self, directory: Path):
+        self.complete_ids = set()
+        self.id_pattern = re.compile(r'id=(\d+)')
+        
+        # PRE-CALCOLO: Legge i nomi dei file una sola volta per scovare i duplicati completi
+        # Cerca tutti i file che hanno contemporaneamente id, cId e pId
+        for filepath in directory.glob("*.html"):
+            filename = filepath.name
+            if "-didattica-" in filename and "id=" in filename and "cId=" in filename and "pId=" in filename:
+                match = self.id_pattern.search(filename)
+                if match:
+                    # Salva in memoria l'ID che possiede la versione completa
+                    self.complete_ids.add(match.group(1))
+
+    @property
+    def name(self) -> str:
+        return "Filtro Didattica (scartato id+cId senza pId, e file 'solo id' ridondanti)"
+
+    @property
+    def requires_content(self) -> bool:
+        # Altamente efficiente: non apriamo il file
+        return False
+
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        filename = filepath.name
+        
+        # 1. Agisce SOLO sui file che appartengono alla sezione didattica
+        if "-didattica-" not in filename:
+            return False
+            
+        # 2. Mappatura dei parametri presenti nel nome del file
+        has_id = "id=" in filename
+        has_cid = "cId=" in filename
+        has_pid = "pId=" in filename
+        
+        # 3. Applicazione della PRIMA logica:
+        # Se ha 'id' E ha 'cId' MA NON ha 'pId' -> Elimina
+        if has_id and has_cid and not has_pid:
+            return True
+            
+        # 4. Applicazione della SECONDA logica (Relazionale):
+        # Se il file ha SOLO l'id (nessun cId e nessun pId)
+        if has_id and not has_cid and not has_pid:
+            match = self.id_pattern.search(filename)
+            if match:
+                file_id = match.group(1)
+                # Verifica in tempo zero se questo ID ha una sua versione completa pre-calcolata
+                if file_id in self.complete_ids:
+                    return True # Esiste la versione completa id+cId+pId, quindi scartiamo questa
+            
+        # In tutti gli altri casi, il file viene conservato
+        return False
+
 # =====================================================================
 # 2. MOTORE DI ELABORAZIONE E PULIZIA
 # =====================================================================
 
 class HTMLCleaner:
-    def __init__(self, directory: str, report_filename: str = "resoconto_eliminazioni.txt"):
+    def __init__(self, directory: str, report_filename: str = "resoconto_eliminazioni.txt", cutoff_year: int = 2020):
         self.directory = Path(directory)
+        self.cutoff_year = cutoff_year
         self.report_filename = self.directory / report_filename
         
         # Inizializza la lista delle regole in ordine di priorità
-        # (le più veloci da controllare vanno per prime)
         self.rules: List[CleaningRule] = [
             FilenameRule(),
             NoContentInsertedRule(),
+            ObsoleteUrlRule(cutoff_year=self.cutoff_year),
+            DidatticaFilterRule(directory=self.directory),
+            PublicationTipRule(),
             PageNotFoundRule(),
             EmptyBodyRule()
         ]
 
     def _evaluate_file(self, filepath: Path) -> Tuple[bool, str, Path]:
-        """
-        Valuta un singolo file contro tutte le regole.
-        Restituisce (Da_Eliminare, Nome_Regola_Violata, Percorso).
-        """
-        # 1. Controlla prima le regole che NON richiedono la lettura del file (I/O optimization)
         for rule in self.rules:
             if not rule.requires_content:
                 if rule.should_delete(filepath):
                     return True, rule.name, filepath
 
-        # 2. Se passa i controlli base, leggiamo il contenuto per le altre regole
         try:
-            # errors='ignore' evita crash in caso di file corrotti o con encoding strano
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
         except Exception as e:
-            # In caso di errore di lettura, per sicurezza NON eliminiamo il file
             return False, "", filepath
 
-        # 3. Controlla le regole basate sul contenuto
         for rule in self.rules:
             if rule.requires_content:
                 if rule.should_delete(filepath, content):
@@ -141,12 +244,10 @@ class HTMLCleaner:
         return False, "", filepath
 
     def run(self):
-        """Esegue la scansione e la pulizia della directory in parallelo."""
         if not self.directory.exists() or not self.directory.is_dir():
             print(f"Errore: La directory '{self.directory}' non esiste.")
             return
 
-        print(f"Scansione dei file in {self.directory} (potrebbe richiedere qualche minuto...)")
         html_files = list(self.directory.glob("*.html"))
         total_files = len(html_files)
         
@@ -154,30 +255,26 @@ class HTMLCleaner:
             print("Nessun file .html trovato nella directory.")
             return
 
+        print(f"Inizio scansione di {total_files} file in {self.directory}")
         deleted_records = []
 
-        # Utilizziamo ProcessPool per sfruttare il multi-core (ottimo per il parsing di 50k file)
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            # Sottomettiamo i job all'executor
             futures = {executor.submit(self._evaluate_file, filepath): filepath for filepath in html_files}
             
-            processed = 0
-            for future in concurrent.futures.as_completed(futures):
-                processed += 1
-                should_delete, reason, filepath = future.result()
-                
-                if should_delete:
-                    try:
-                        filepath.unlink() # Eliminazione diretta del file
-                        deleted_records.append(f"{filepath.name} | Motivo: {reason}")
-                    except Exception as e:
-                        print(f"Impossibile eliminare {filepath.name}: {e}")
-                
-                # Semplice barra di progresso
-                if processed % 5000 == 0 or processed == total_files:
-                    print(f"Progresso: {processed}/{total_files} file analizzati...")
+            # Utilizzo di tqdm per la barra di avanzamento in tempo reale
+            with tqdm(total=total_files, desc="Analisi in corso", unit="file") as pbar:
+                for future in concurrent.futures.as_completed(futures):
+                    # Aggiorna la barra di 1 step
+                    pbar.update(1)
+                    
+                    should_delete, reason, filepath = future.result()
+                    if should_delete:
+                        try:
+                            filepath.unlink() 
+                            deleted_records.append(f"{filepath.name} | Motivo: {reason}")
+                        except Exception as e:
+                            print(f"\nImpossibile eliminare {filepath.name}: {e}")
 
-        # Generazione del file di tracciabilità
         self._write_report(deleted_records, total_files)
 
     def _write_report(self, deleted_records: List[str], total_files: int):
@@ -195,9 +292,7 @@ class HTMLCleaner:
 
 
 if __name__ == "__main__":
-    # INSERISCI QUI IL PERCORSO DELLA TUA DIRECTORY. 
-    # Usa "." per la directory in cui ti trovi attualmente.
     DIRECTORY_PATH = "./data/raw/html_samples_v7" 
     
-    cleaner = HTMLCleaner(directory=DIRECTORY_PATH)
+    cleaner = HTMLCleaner(directory=DIRECTORY_PATH, report_filename="eliminazioni_didattica.txt")
     cleaner.run()
