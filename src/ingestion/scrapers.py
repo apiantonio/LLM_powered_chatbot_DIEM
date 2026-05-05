@@ -1,212 +1,331 @@
 import re
 import os
+import time
 import requests
-from urllib.parse import urlparse
+import logging
+from collections import deque
+from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
-from langchain_community.document_loaders import RecursiveUrlLoader
+from langchain_community.document_loaders import AsyncHtmlLoader
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Set globale per memorizzare i link ai PDF trovati durante lo scraping HTML.
-found_pdf_links = set()
+# ==========================================
+# CONFIGURAZIONE LOGGING
+# ==========================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
-def custom_unisa_extractor(html_content: str) -> str:
+# ==========================================
+# CLASSE PRINCIPALE DEL CRAWLER
+# ==========================================
+class UnisaCrawler:
     """
-    Estrattore personalizzato per pulire le pagine UNISA.
-    Mantiene la struttura HTML utile per il successivo HTMLSectionSplitter.
+    Crawler BFS asincrono e multithread orientato all'estrazione di contenuti
+    e file PDF dai domini UNISA, con salvataggio incrementale e whitelisting rigoroso.
     """
-    soup = BeautifulSoup(html_content, "html.parser")
     
-    # 1. Pulizia chirurgica
-    noise_selectors = [
-        "#header", "#main-menu", "#menu-bar", "#unisa-left-menu", 
-        "#box-agenda", "#share-dropdown", ".breadcrumb", "footer", 
-        ".sr-only", "div[id$='-map']", "script", "style", "noscript"
-    ]
-    
-    for selector in noise_selectors:
-        for element in soup.select(selector):
-            element.decompose()
-        
-    # 2. Intercettazione PDF
-    for a_tag in soup.find_all('a', href=True):
-        href = a_tag['href']
-        if href.lower().endswith('.pdf'):
-            found_pdf_links.add(href)
-            
-    # URL della pagina
-    page_url = "URL sconosciuto"
-    canonical = soup.find('link', rel='canonical')
-    og_url = soup.find('meta', property='og:url')
-    
-    if canonical and canonical.get('href'):
-        page_url = canonical['href']
-    elif og_url and og_url.get('content'):
-        page_url = og_url['content']
-            
-    # 3. Catena per trovare il main content
-    main_content = soup.find(id="unisa-content")
-    if not main_content:
-        main_content = soup.find(attrs={"role": "main"})
-    if not main_content:
-        main_content = soup.find(id="content")
-    if not main_content:
-        main_content = soup.find("main")
-    if not main_content:
-        main_content = soup.body
-    
-    if main_content:
-        allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
-        for tag in main_content.find_all(True):
-            tag.attrs = {key: value for key, value in tag.attrs.items() if key in allowed_attrs}
-            
-        return main_content.decode_contents().strip()
-    else:
-        # Silenziamo il warning per mantenere la console pulita
-        return "" 
-
-def get_dynamic_faculty_urls():
-    """
-    Recupera dinamicamente la lista dei docenti del DIEM.
-    """
-    url_personale = "https://www.diem.unisa.it/dipartimento/personale"
-    print(f"Recupero dinamico dei docenti da: {url_personale}...")
-    
-    dynamic_urls = set()
-    try:
-        response = requests.get(url_personale, timeout=30)
-        response.raise_for_status() 
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag['href']
-            if "rubrica.unisa.it/persone?matricola=" in href:
-                match = re.search(r'matricola=(\d+)', href)
-                if match:
-                    matricola = match.group(1)
-                    docenti_url = f"https://docenti.unisa.it/{matricola}/home"
-                    dynamic_urls.add(docenti_url)
-                    
-        print(f"Trovati {len(dynamic_urls)} docenti afferenti al DIEM.")
-        return list(dynamic_urls)
-    except Exception as e:
-        print(f"[Errore] Impossibile recuperare i docenti dinamicamente: {e}")
-        return []
-
-def build_diem_loaders():
-    """
-    Configura e restituisce i loader per i domini autorizzati.
-    """
-    loaders = []
-    safe_link_regex = r"<a\s+(?:[^>]*?\s+)?href=[\"'](?!javascript:|mailto:|tel:|[^\"']*\.(?:css|js|png|jpg|jpeg|gif|pdf|zip)(?:[\?#][^\"']*)?)([^\"']+)[\"']"
-    
-    # Configurazione base sicura (Timeout a 30 per evitare blocchi infiniti)
-    recursive_loader_config = {
-        "max_depth": 5,  # 5 è il bilanciamento perfetto per il dipartimento
-        "prevent_outside": True, 
-        "extractor": custom_unisa_extractor,
-        "check_response_status": True,
-        "link_regex": safe_link_regex,
-        "timeout": 30 
+    ALLOWED_DOMAINS = {
+        "www.diem.unisa.it",
+        "docenti.unisa.it",
+        "corsi.unisa.it"
     }
- 
-    # --- 1. Dominio DIEM principale ---
-    diem_loader = RecursiveUrlLoader(
-        url="https://www.diem.unisa.it/",
-        **recursive_loader_config
+
+    ALLOWED_PREFIXES = (
+        "https://www.diem.unisa.it",
+        "https://corsi.unisa.it/ingegneria-informatica",
+        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
+        "https://corsi.unisa.it/ingegneria-informatica-magistrale",
+        "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
+        "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
+        "https://corsi.unisa.it/ingegneria-dell-informazione",
+        "https://corsi.unisa.it/photovoltaics"
     )
-    loaders.append(diem_loader)
 
-    # --- 2. Dominio Corsi DIEM ---
-    diem_courses_urls = [
-        "https://corsi.unisa.it/ingegneria-informatica", 
-        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale", 
-        "https://corsi.unisa.it/ingegneria-informatica-magistrale", 
-        "https://corsi.unisa.it/information-Engineering-for-digital-medicine", 
-        "https://corsi.unisa.it/ingegneria-dell-informazione" 
-    ]
-    
-    for course_url in diem_courses_urls:
-        # Per i corsi riduciamo leggermente la depth a 4 per evitare loop in vecchi avvisi
-        course_config = recursive_loader_config.copy()
-        course_config["max_depth"] = 4 
-        
-        course_loader = RecursiveUrlLoader(
-            url=course_url,
-            **course_config
-        )
-        loaders.append(course_loader)
-        
-    # --- 3. Dominio Docenti DIEM ---
-    diem_faculty_urls = get_dynamic_faculty_urls()
-    
-    for faculty_url in diem_faculty_urls:
-        faculty_loader = RecursiveUrlLoader(
-            url=faculty_url,
-            max_depth=2, # I docenti restano a 2, è sufficiente!
-            prevent_outside=True,
-            extractor=custom_unisa_extractor,
-            check_response_status=True,
-            link_regex=safe_link_regex,
-            timeout=60
-        )
-        loaders.append(faculty_loader)
-        
-    return loaders
+    IGNORED_EXTENSIONS = (
+        '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', 
+        '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+    )
 
-def scrape_all_domains():
-    """Esegue lo scraping e ritorna i documenti combinati."""
-    global found_pdf_links
-    found_pdf_links.clear() # Svuota la memoria a ogni avvio!
-    
-    all_docs = []
-    loaders = build_diem_loaders()
-    
-    for loader in loaders:
-        print(f"Avvio scraping per: {loader.url}")
-        docs = loader.load()
-        all_docs.extend(docs)
+    def __init__(self, max_depth=3, batch_size=50, delay=2.0, max_workers=None, output_dir="data/raw/html_samples_final"):
+        self.max_depth = max_depth
+        self.batch_size = batch_size
+        self.delay = delay
         
-    print(f"\n--- RESOCONTO FINALE ---")
-    print(f"Scraping completato. Documenti HTML raccolti: {len(all_docs)}")
-    print(f"Link PDF intercettati (da elaborare): {len(found_pdf_links)}")
-    return all_docs
+        # Gestione ottimizzata dei thread per CPU-bound tasks (BeautifulSoup)
+        if max_workers is None:
+            self.max_workers = min(32, (os.cpu_count() or 1) + 4)
+        else:
+            self.max_workers = max_workers
+            
+        self.output_dir = output_dir
+        
+        # Strutture dati incapsulate
+        self.visited_urls = set()
+        self.found_pdf_links = set()
+        self.diem_docenti_whitelist = set()
+        self.queue = deque()
+        self.processed_count = 0
+        
+        os.makedirs(self.output_dir, exist_ok=True)
+        logger.info(f"Crawler inizializzato (Max Workers: {self.max_workers}, Batch: {self.batch_size})")
 
-def save_scraped_data(docs, sample_size=10, suffix="", output_dir="data/raw/html_samples"):
-    """
-    Salva un campione di documenti in file .html locali per ispezione.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    actual_size = len(docs) if sample_size <= 0 or sample_size > len(docs) else sample_size
-    print(f"Salvataggio di {actual_size} documenti per ispezione in {output_dir}...")
-    
-    for i, doc in enumerate(docs[:actual_size]):
+    # ==========================================
+    # DISCOVERY E VALIDAZIONE (GATEKEEPER)
+    # ==========================================
+
+    def initialize_diem_docenti_whitelist(self):
+        """Scansiona la pagina del personale DIEM per creare la whitelist e i seed."""
+        url_personale = "https://www.diem.unisa.it/dipartimento/personale"
+        logger.info("Inizializzazione Whitelist Docenti DIEM...")
+        
+        try:
+            response = requests.get(url_personale, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag['href']
+                if "rubrica.unisa.it/persone?matricola=" in href:
+                    match = re.search(r'matricola=(\d+)', href)
+                    if match:
+                        matricola = match.group(1)
+                        base_docente_url = f"https://docenti.unisa.it/{matricola}/"
+                        self.diem_docenti_whitelist.add(base_docente_url)
+                        
+                        # Accoda subito il seed
+                        home_url = f"{base_docente_url}home"
+                        self.queue.append((home_url, 0))
+                        self.visited_urls.add(home_url)
+                        
+            logger.info(f"Trovati {len(self.diem_docenti_whitelist)} docenti afferenti al DIEM.")
+        except Exception as e:
+            logger.error(f"Impossibile inizializzare la whitelist dei docenti: {e}")
+
+    def is_valid_url(self, url: str) -> bool:
+        """Verifica perimetro, whitelist docenti e pattern tossici (senza limiti di anno)."""
+        # 1. Strict Domain Check
+        try:
+            parsed_url = urlparse(url)
+            if parsed_url.netloc not in self.ALLOWED_DOMAINS:
+                return False
+        except ValueError:
+            return False
+
+        # 2. Controllo Docenti (Blocca professori di altri dipartimenti)
+        if parsed_url.netloc == "docenti.unisa.it":
+            is_diem_docente = any(url.startswith(doc) for doc in self.diem_docenti_whitelist)
+            if not is_diem_docente:
+                return False
+        else:
+            if not url.startswith(self.ALLOWED_PREFIXES):
+                return False
+        
+        url_lower = url.lower()
+        
+        # 3. Estensioni multimediali
+        if any(url_lower.endswith(ext) for ext in self.IGNORED_EXTENSIONS):
+            return False
+            
+        # 4. Blacklist Statica HTML
+        html_traps = [
+            "sitemap", ".xml", "rss", "feed", "unisa-rescue-page",
+            "jsessionid", "saml2-redirect", "password-recovery", "choose-spid",
+            "avviso=", "avvisi=", "&p=", "news-archive=", "eventi-archive=", 
+            "category=", "news-category=", "idconcorso=", "commissioni-dettaglio=",
+            "calendario-occupazione-spazi-sede", 
+        ]
+        if any(trap in url_lower for trap in html_traps):
+            return False
+
+        # 5. Blacklist Semantica PDF (Esclude verbali, esiti e graduatorie)
+        if url_lower.endswith('.pdf'):
+            pdf_traps = [
+                "grad_", "graduatori", "esit", "risultat", "ammess", "verbale", "verbali", 
+                "decreto", "approvazione_atti", "commissione", "contratt", "incarico",
+                "valutazione", "scorrimento", "elenco", "candidat", "modulo", "richiesta", "domanda"
+            ]
+            if any(trap in url_lower for trap in pdf_traps):
+                return False
+
+        return True
+
+    # ==========================================
+    # PARSING THREAD-SAFE
+    # ==========================================
+
+    def process_single_html(self, html_content: str, source_url: str):
+        """
+        Parsing e pulizia DOM. Funzione STATELESS per permettere 
+        l'esecuzione sicura in ThreadPoolExecutor.
+        """
+        soup = BeautifulSoup(html_content, "html.parser")
+        local_new_links = set()
+        local_pdfs = set()
+        
+        # 1. Estrazione dei link PRIMA della pulizia del DOM
+        for a_tag in soup.find_all('a', href=True):
+            full_url = urljoin(source_url, a_tag['href'])
+            full_url, _ = urldefrag(full_url)
+            
+            if self.is_valid_url(full_url):
+                if full_url.lower().endswith('.pdf'):
+                    local_pdfs.add(full_url)
+                else:
+                    local_new_links.add(full_url)
+
+        # 2. Pulizia chirurgica del rumore per estrarre solo il testo utile
+        noise_selectors = [
+            "#header", "#main-menu", "#menu-bar", "#unisa-left-menu", 
+            "#box-agenda", "#share-dropdown", ".breadcrumb", 
+            ".sr-only", "div[id$='-map']", "script", "style", "noscript"
+        ]
+        for selector in noise_selectors:
+            for element in soup.select(selector):
+                element.decompose()
+                
+        # 3. Estrazione Main Content
+        main_content = (soup.find(id="unisa-content") or 
+                        soup.find(attrs={"role": "main"}) or 
+                        soup.find(id="content") or 
+                        soup.find("main") or soup.body)
+                       
+        clean_html = ""
+        if main_content:
+            allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
+            for tag in main_content.find_all(True):
+                tag.attrs = {key: value for key, value in tag.attrs.items() if key in allowed_attrs}
+            clean_html = main_content.decode_contents().strip()
+            
+        return clean_html, local_new_links, local_pdfs
+
+    # ==========================================
+    # SALVATAGGIO INCREMENTALE
+    # ==========================================
+
+    def _save_single_doc(self, doc, current_depth):
         raw_url = doc.metadata.get('source', 'URL_sconosciuto')
+        safe_name = re.sub(r'[<>:"/\\|?*]', '-', raw_url.replace("https://", "").replace("http://", ""))
+        safe_name = safe_name.replace("__", "_")[:150] # Troncamento di sicurezza per nomi lunghi
         
-        url_depth = 0
-        if raw_url != 'URL_sconosciuto':
-            parsed_url = urlparse(raw_url)
-            path_segments = [seg for seg in parsed_url.path.split('/') if seg]
-            url_depth = len(path_segments)
-        
-        safe_name = raw_url.replace("https://", "").replace("http://", "")
-        safe_name = re.sub(r'[<>:"/\\|?*]', '-', safe_name)[:100]
-        
-        filename = f"sample_{i}_{suffix}_depth{url_depth}_{safe_name}.html"
-        filename = filename.replace("__", "_")
-        filepath = os.path.join(output_dir, filename)
+        filepath = os.path.join(self.output_dir, f"doc{self.processed_count}_depth{current_depth}_{safe_name}.html")
         
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write("<meta charset='utf-8'>\n")
-                f.write(f"<!-- SOURCE URL: {raw_url} -->\n")
-                f.write(f"<!-- URL DEPTH: {url_depth} -->\n")
+                f.write(f"<meta charset='utf-8'>\n"
+                        f"<!-- SOURCE: {raw_url} -->\n"
+                        f"<!-- DEPTH: {current_depth} -->\n")
                 f.write(doc.page_content)
         except Exception as e:
-            print(f"[Errore] Impossibile salvare il file {filename}: {e}")
-            
-    print("Salvataggio completato con successo!")
-    return actual_size
+            logger.error(f"Errore scrittura file {filepath}: {e}")
 
+    def _save_pdf_ledger(self):
+        if not self.found_pdf_links:
+            return
+            
+        pdf_path = os.path.join(self.output_dir, "pdf_links.txt")
+        try:
+            with open(pdf_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(sorted(self.found_pdf_links)))
+        except Exception as e:
+            logger.error(f"Errore scrittura registro PDF: {e}")
+
+    # ==========================================
+    # MOTORE ORCHESTRATORE
+    # ==========================================
+
+    def run(self):
+        logger.info("--- AVVIO INGESTION DINAMICA ---")
+        
+        # 1. Popolamento Seed di base
+        base_seeds = [url for url in self.ALLOWED_PREFIXES if url != "https://docenti.unisa.it"]
+        for url in base_seeds:
+            self.queue.append((url, 0))
+            self.visited_urls.add(url)
+            
+        # 2. Popolamento Seed Docenti
+        self.initialize_diem_docenti_whitelist()
+
+        # 3. Ciclo BFS Principale
+        while self.queue:
+            batch = []
+            
+            # Estrazione sicura dalla coda
+            while self.queue and len(batch) < self.batch_size:
+                url, depth = self.queue.popleft()
+                if depth <= self.max_depth:
+                    batch.append((url, depth))
+            
+            if not batch:
+                continue
+                
+            urls_to_fetch = [item[0] for item in batch]
+            depths_dict = dict(batch)
+            
+            logger.info(f"Download asincrono batch: {len(urls_to_fetch)} URL (Coda: {len(self.queue)} | Estratti: {self.processed_count})")
+            
+            # Download asincrono (I/O bound)
+            loader = AsyncHtmlLoader(urls_to_fetch, ignore_load_errors=True)
+            raw_docs = loader.load()
+
+            # Parsing e pulizia DOM in parallelo (CPU bound)
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(self.process_single_html, doc.page_content, doc.metadata.get('source')): doc 
+                    for doc in raw_docs if doc.metadata.get('source')
+                }
+                
+                for future in as_completed(futures):
+                    doc = futures[future]
+                    source_url = doc.metadata.get('source')
+                    current_depth = depths_dict.get(source_url, 0)
+                    
+                    try:
+                        clean_html, local_new_links, local_pdfs = future.result()
+                        
+                        # Aggiornamento stato globale (i set in python supportano update in thread principali)
+                        self.found_pdf_links.update(local_pdfs)
+                        
+                        if clean_html:
+                            doc.page_content = clean_html
+                            self._save_single_doc(doc, current_depth)
+                            self.processed_count += 1
+                            
+                        # Accoda i nuovi link
+                        if current_depth < self.max_depth:
+                            for new_link in local_new_links:
+                                if new_link not in self.visited_urls:
+                                    self.queue.append((new_link, current_depth + 1))
+                                    self.visited_urls.add(new_link)
+                                    
+                    except Exception as e:
+                        logger.error(f"Errore nell'elaborazione di {source_url}: {e}")
+
+            # Sincronizza stato PDF e rispetta il server
+            self._save_pdf_ledger()
+            time.sleep(self.delay)
+
+        self._print_summary()
+
+    def _print_summary(self):
+        logger.info("====== RESOCONTO FINALE ======")
+        logger.info(f"URL totali visitati o accodati: {len(self.visited_urls)}")
+        logger.info(f"Documenti HTML validi salvati su disco: {self.processed_count}")
+        logger.info(f"Link PDF unici intercettati: {len(self.found_pdf_links)}")
+
+# ==========================================
+# ESECUZIONE
+# ==========================================
 if __name__ == "__main__":
-    docs = scrape_all_domains()
-    # Cambia sample_size a -1 se vuoi salvare tutto su disco per ispezione
-    save_scraped_data(docs, sample_size=-1, suffix="")
+    # Parametri ottimizzati per stabilità e prestazioni
+    crawler = UnisaCrawler(
+        max_depth=5, 
+        batch_size=1024,
+        max_workers=None, 
+        output_dir="data/raw/html_samples_v7"
+    )
+    
+    crawler.run()
