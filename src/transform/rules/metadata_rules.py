@@ -90,6 +90,45 @@ class DidatticaFilterRule(CleaningRule):
                 if match:
                     # Salva in memoria l'ID che possiede la versione completa
                     self.complete_ids.add(match.group(1))
+    
+    @property
+    def name(self) -> str:
+        return "Filtro Didattica (scartato id+cId senza pId, e file 'solo id' ridondanti)"
+
+    @property
+    def requires_content(self) -> bool:
+        # Altamente efficiente: non apriamo il file
+        return False
+
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        filename = filepath.name
+        
+        # 1. Agisce SOLO sui file che appartengono alla sezione didattica
+        if "-didattica-" not in filename:
+            return False
+            
+        # 2. Mappatura dei parametri presenti nel nome del file
+        has_id = "id=" in filename
+        has_cid = "cId=" in filename
+        has_pid = "pId=" in filename
+        
+        # 3. Applicazione della PRIMA logica:
+        # Se ha 'id' E ha 'cId' MA NON ha 'pId' -> Elimina
+        if has_id and has_cid and not has_pid:
+            return True
+            
+        # 4. Applicazione della SECONDA logica (Relazionale):
+        # Se il file ha SOLO l'id (nessun cId e nessun pId)
+        if has_id and not has_cid and not has_pid:
+            match = self.id_pattern.search(filename)
+            if match:
+                file_id = match.group(1)
+                # Verifica in tempo zero se questo ID ha una sua versione completa pre-calcolata
+                if file_id in self.complete_ids:
+                    return True # Esiste la versione completa id+cId+pId, quindi scartiamo questa
+            
+        # In tutti gli altri casi, il file viene conservato
+        return False
 
 class ExactPublicationsBaseRule(CleaningRule):
     @property
