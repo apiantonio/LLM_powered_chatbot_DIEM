@@ -21,39 +21,39 @@ df["query_params"] = df["query_params"].apply(safe_eval)
 df["size_kb"] = df["size"] / 1024
 
 print("\n==============================")
-print("📊 ANALISI DATASET")
+print(" ANALISI DATASET")
 print("==============================\n")
 
 # === 1. STATISTICHE GENERALI ===
-print("🔹 Numero totale documenti:", len(df))
-print("🔹 Numero domini unici:", df["domain"].nunique())
-print("🔹 Numero internal_id unici:", df["internal_id"].nunique())
-print("🔹 Numero base_path unici:", df["base_path"].nunique())
+print(" - Numero totale documenti:", len(df))
+print(" -  Numero domini unici:", df["domain"].nunique())
+print(" -  Numero internal_id unici:", df["internal_id"].nunique())
+print(" -  Numero base_path unici:", df["base_path"].nunique())
 
 # === 2. DOCUMENTI PER DOMINIO ===
 print("\n==============================")
-print("🌐 DOCUMENTI PER DOMINIO")
+print(" DOCUMENTI PER DOMINIO")
 print("==============================\n")
 
 print(df["domain"].value_counts().head(10))
 
 # === 3. DISTRIBUZIONE DEPTH ===
 print("\n==============================")
-print("📏 DISTRIBUZIONE DEPTH")
+print(" DISTRIBUZIONE DEPTH")
 print("==============================\n")
 
 print(df["depth"].value_counts().sort_index())
 
 # === 4. INTERNAL ID ===
 print("\n==============================")
-print("🆔 TOP INTERNAL_ID")
+print(" TOP INTERNAL_ID")
 print("==============================\n")
 
 print(df["internal_id"].value_counts().head(10))
 
 # === 5. ANALISI DIMENSIONI FILE ===
 print("\n==============================")
-print("💾 ANALISI DIMENSIONI FILE (KB)")
+print(" ANALISI DIMENSIONI FILE (KB)")
 print("==============================\n")
 
 percentiles = [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
@@ -61,13 +61,13 @@ percentiles = [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
 size_stats = df["size_kb"].describe(percentiles=percentiles)
 print(size_stats)
 
-print("\n🔹 Media (KB):", round(df["size_kb"].mean(), 2))
-print("🔹 Mediana (KB):", round(df["size_kb"].median(), 2))
-print("🔹 Std Dev (KB):", round(df["size_kb"].std(), 2))
+print("\n- Media (KB):", round(df["size_kb"].mean(), 2))
+print("- Mediana (KB):", round(df["size_kb"].median(), 2))
+print("- Std Dev (KB):", round(df["size_kb"].std(), 2))
 
 # === 6. DISTRIBUZIONE PER INTERVALLI ===
 print("\n==============================")
-print("📦 DISTRIBUZIONE DIMENSIONI (BINNING)")
+print(" DISTRIBUZIONE DIMENSIONI (BINNING)")
 print("==============================\n")
 
 bins = [0, 1, 2, 3, 4, 5, 10, 20, 50, 100, np.inf]
@@ -89,7 +89,7 @@ print(bin_percent.round(2).astype(str) + " %")
 
 # === 7. OUTLIER ===
 print("\n==============================")
-print("⚠️ FILE PIÙ GRANDI")
+print(" FILE PIÙ GRANDI")
 print("==============================\n")
 
 largest = df.sort_values(by="size_kb", ascending=False).head(10)
@@ -97,7 +97,7 @@ print(largest[["doc_id", "domain", "size_kb"]])
 
 # === 8. QUERY PARAMS ===
 print("\n==============================")
-print("🔍 ANALISI QUERY PARAMS")
+print(" ANALISI QUERY PARAMS")
 print("==============================\n")
 
 param_counts = {}
@@ -113,7 +113,7 @@ for k, v in sorted_params[:10]:
 
 # === 9. CROSS ANALYSIS ===
 print("\n==============================")
-print("📊 CROSS ANALYSIS (domain vs depth)")
+print(" CROSS ANALYSIS (domain vs depth)")
 print("==============================\n")
 
 pivot = pd.pivot_table(
@@ -129,7 +129,7 @@ print(pivot.head(10))
 
 # === 10. INSIGHT ML ===
 print("\n==============================")
-print("🤖 INSIGHT ")
+print(" INSIGHT ")
 print("==============================\n")
 
 print("Distribuzione depth (normalizzata):")
