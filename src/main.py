@@ -10,16 +10,16 @@ def main():
     # 2. Definisci A RUNTIME quali regole vuoi applicare
     # Puoi cambiare questa lista senza toccare la logica delle classi!
     active_rules = [
-        #"filename",
-        #"didattica",
-        #"obsolete_url",
-        #"publication_tip",
-        #"exact_publications",
-        #"department_bandi",
-        "calendar"
-        # "404",          # Decommenta per attivarla
-        # "nocontent",    # Decommenta per attivarla
-        # "empty_body"    # Decommenta per attivarla
+        "filename",
+        "didattica",
+        "obsolete_url",
+        "publication_tip",
+        "exact_publications",
+        "department_bandi",
+        "calendar",
+        "404",          # Decommenta per attivarla
+        "nocontent",    # Decommenta per attivarla
+        "empty_body"    # Decommenta per attivarla
     ]
 
     # 3. Usa la Factory per costruire le dipendenze
