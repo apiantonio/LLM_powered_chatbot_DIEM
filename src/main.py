@@ -4,7 +4,7 @@ from transform.core.engine import HTMLCleaner
 
 def main():
     # 1. Configurazioni base
-    DIRECTORY_PATH = "./data/raw/html_samples_v7"
+    DIRECTORY_PATH = "./data/raw/html_samples_v7_filtrato"
     directory = Path(DIRECTORY_PATH)
     
     # 2. Definisci A RUNTIME quali regole vuoi applicare
@@ -17,7 +17,8 @@ def main():
         "exact_publications",
         "department_bandi",
         "calendar",
-        "404",          # Decommenta per attivarla
+        "news",
+        "404",        # Decommenta per attivarla
         "nocontent",    # Decommenta per attivarla
         "empty_body"    # Decommenta per attivarla
     ]
@@ -30,7 +31,7 @@ def main():
     cleaner = HTMLCleaner(
         directory=DIRECTORY_PATH, 
         rules=rules_to_apply, 
-        report_filename="eliminazioni_didattica.txt"
+        report_filename="eliminazioni_news.txt"
     )
     cleaner.run()
 

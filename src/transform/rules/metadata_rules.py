@@ -185,3 +185,16 @@ class CalendarRule(CleaningRule):
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
         # La stringa "calendari" intercetta matematicamente sia "calendari" che "calendario"
         return "calendari" in filepath.name.lower()
+
+class NewsRule(CleaningRule):
+    @property
+    def name(self) -> str:
+        return "File relativo a news/notizie (contiene 'news')"
+
+    @property
+    def requires_content(self) -> bool:
+        # Controllo rapido sul nome, non apre il file
+        return False
+
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        return "news" in filepath.name.lower()
