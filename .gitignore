@@ -1,3 +1,4 @@
 WBS.md
 .vscode/
 data/raw/*html*
+__pycache__
