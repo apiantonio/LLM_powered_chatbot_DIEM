@@ -1,17 +1,19 @@
-## PULIZIA FILE 
-# file con nome "-en-" "-zh-" "-zh" 
-# file html con <body> vuoto
-# file html con questa struttura quì siccome non ci sono contenuti utili:
+# PULIZIA FILE 
+## 1) file con nome "-en-" "-zh-" "-zh" 
+## 2) file html con <body> vuoto
+## 3) file html con questa struttura quì siccome non ci sono contenuti utili:
 
+```
 <html><head><meta charset="utf-8">
 <!-- SOURCE: https://docenti.unisa.it/020924/international/progetti -->
 <!-- DEPTH: 3 -->
 </head><body><div>
 
 <h1><span>Giovanni PETRONE | </span><span>Progetti</span></h1><div><div><div><span></span>&nbsp;&nbsp;Nessun contenuto inserito</div></div></div></div></body></html>
+```
 
-# file html con questa struttura qui dove il contenuto non è stato trovato 
-
+## 4) file html con questa struttura qui dove il contenuto non è stato trovato 
+```
 <html><head><meta charset="utf-8">
 <!-- SOURCE: https://docenti.unisa.it/004823/004823/didattica/orari?include=attivita&attivita=EC2025*N0*N0*S1*S1*84118*513459 -->
 <!-- DEPTH: 3 -->
@@ -62,5 +64,8 @@
 </div>
 </div>
 </div></body></html>
+```
+## 5) file html datati prima del 2020 da eliminare 
+## 6) file html di pubblicazioni o eliminarle del tutto o solo i titoli 
 
-# file html 
+# INDEXING DINAMICO A CADENZA (SETTIMANALE O GIORNALIERA SOLO DEI DOMINI AGGIORNATI)
