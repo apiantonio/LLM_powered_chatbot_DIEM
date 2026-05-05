@@ -3,8 +3,8 @@ import re
 import logging
 from urllib.parse import urljoin, urldefrag
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin, urldefrag
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,11 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 INPUT_DIR = "data/raw/html_samples_v7_filtrato/html_samples_v7"   
 OUTPUT_FILE = "data/raw/tutti_i_pdf_estratti_dai_file_locali.txt"
 
-from urllib.parse import urlparse, urljoin, urldefrag
 
 # Assicurati che questa costante sia definita all'inizio del file
 ALLOWED_DOMAINS = {
