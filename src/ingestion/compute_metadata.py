@@ -3,7 +3,7 @@ import re
 import pandas as pd
 
 # Cartella contenente i file
-FOLDER_PATH = "./data/raw/html_samples_v7"
+FOLDER_PATH = "data/raw/html_samples_cleaned"
 
 data = []
 
@@ -78,7 +78,8 @@ df = pd.DataFrame(data)
 df = df.sort_values(by="size")
 
 # Salva CSV
-output_path = os.path.join(FOLDER_PATH, "metadata.csv")
+samples_dir = os.path.basename(FOLDER_PATH)
+output_path = os.path.join(f"data/evaluation/", f"metadata_{samples_dir}.csv")
 df.to_csv(output_path, index=False, encoding="utf-8")
 
 print(f"CSV generato: {output_path}")
