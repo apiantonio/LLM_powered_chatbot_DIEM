@@ -1,10 +1,19 @@
 from pathlib import Path
 from transform.factory.cleaner_factory import RuleFactory
-from transform.core.engine import HTMLCleaner
+from transform.core.html_cleaner import HTMLCleaner
+from transform.factory.pdf_factory import PdfRuleFactory
+from transform.core.pdf_extractor import LocalPdfExtractorEngine
+import logging
+
+logging.basicConfig(
+    level=logging.INFO, # Forza Python a mostrare tutti i logger.info()
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 def main():
     # 1. Configurazioni base
-    DIRECTORY_PATH = "./data/raw/html_samples_v7_filtrato"
+    DIRECTORY_PATH = "./data/raw/html_samples_v7"
     directory = Path(DIRECTORY_PATH)
     
     # 2. Definisci A RUNTIME quali regole vuoi applicare
@@ -31,9 +40,40 @@ def main():
     cleaner = HTMLCleaner(
         directory=DIRECTORY_PATH, 
         rules=rules_to_apply, 
-        report_filename="eliminazioni_news.txt"
+        report_filename="eliminazioni_bandi.txt"
     )
     cleaner.run()
+    
+    # ==========================================
+    # FASE 2: ESTRAZIONE DEI LINK PDF
+    # ==========================================
+    DIRECTORY_PATH = "./data/raw/html_samples_v7"
+    directory = Path(DIRECTORY_PATH)
+    PDF_OUTPUT_FILE = directory / "pdf_links_cleaned_new.txt"
+    CUTOFF_YEAR = 2020
+    
+    print("\n" + "="*40 + "\n")
+
+    
+    # Specifica qui quali filtri PDF applicare a runtime
+    active_pdf_filters = [
+        "domain_whitelist", 
+        "semantic_trap", 
+        "obsolete_year"
+    ]
+    
+    pdf_factory = PdfRuleFactory(cutoff_year=CUTOFF_YEAR)
+    pdf_rules = pdf_factory.create_rules(active_pdf_filters)
+    
+    extractor = LocalPdfExtractorEngine(
+        input_dir=DIRECTORY_PATH, 
+        output_file=str(PDF_OUTPUT_FILE),
+        rules=pdf_rules
+    )
+    extractor.run()
+
+    print("\n=== PIPELINE COMPLETATA CON SUCCESSO ===")
+    
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,0 @@
-RESOCONTO PULIZIA
-File analizzati: 16505
-File eliminati: 0
-============================================================

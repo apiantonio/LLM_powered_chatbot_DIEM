@@ -145,15 +145,16 @@ class ExactPublicationsBaseRule(CleaningRule):
         # salvando i file come "...ricerca-pubblicazioni-anno=2020.html"
         return filepath.name.endswith("ricerca-pubblicazioni.html")
 
+
 class DepartmentBandiRule(CleaningRule):
     def __init__(self, target_department: str = "300638"):
         self.target_department = target_department
-        # Cerca la stringa base dei bandi seguita (anche dopo altri attributi) da "struttura=NUMERO"
-        self.bandi_pattern = re.compile(r'-home-bandi-anno=\d+.*struttura=(\d+)')
+        # Intercetta sia "struttura=" che "cdsStruttura=" catturandone il valore
+        self.struttura_pattern = re.compile(r'(?:cdsS|s)truttura=([^&.\s]+)')
 
     @property
     def name(self) -> str:
-        return f"Bandi di altri dipartimenti (struttura diversa da {self.target_department})"
+        return f"Filtro Bandi (struttura assente, =more, o diversa da {self.target_department})"
 
     @property
     def requires_content(self) -> bool:
@@ -161,18 +162,30 @@ class DepartmentBandiRule(CleaningRule):
         return False
 
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
-        match = self.bandi_pattern.search(filepath.name)
+        filename = filepath.name
         
-        # Se il pattern corrisponde (è un file di bandi con un attributo struttura)
-        if match:
-            struttura_val = match.group(1)
-            # Elimina se la struttura NON è quella desiderata
-            if struttura_val != self.target_department:
-                return True
+        # 0. Agisce SOLO sui file che appartengono alla sezione bandi
+        if "-home-bandi-" not in filename:
+            return False
+            
+        # 1. Elimina i nomi che hanno "struttura=more" o "cdsStruttura=more"
+        if "truttura=more" in filename:
+            return True
+            
+        match = self.struttura_pattern.search(filename)
+        
+        # 2. Elimina i nomi che non hanno "struttura" o "cdsStruttura"
+        if not match:
+            return True
+            
+        # 3. Elimina i nomi che hanno una struttura diversa dal codice target
+        struttura_val = match.group(1)
+        if struttura_val != self.target_department:
+            return True
                 
-        # In tutti gli altri casi (struttura corretta, o file che non c'entrano nulla con i bandi) conserva
+        # In tutti gli altri casi (struttura presente e uguale al tuo codice), conserva
         return False
-    
+
 class CalendarRule(CleaningRule):
     @property
     def name(self) -> str:

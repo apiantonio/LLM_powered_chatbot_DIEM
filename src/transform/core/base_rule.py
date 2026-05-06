@@ -17,3 +17,16 @@ class CleaningRule(ABC):
     @abstractmethod
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
         pass
+
+# --- NUOVA INTERFACCIA PER I PDF ---
+class PdfFilterRule(ABC):
+    """Interfaccia Base per le regole di pulizia dei link PDF."""
+    
+    @property
+    @abstractmethod
+    def name(self) -> str: pass
+
+    @abstractmethod
+    def should_discard(self, url: str) -> bool:
+        """Restituisce True se l'URL del PDF deve essere scartato."""
+        pass
