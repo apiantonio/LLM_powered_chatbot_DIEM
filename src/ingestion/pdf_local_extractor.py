@@ -16,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 INPUT_DIR = "data/raw/html_samples_cleaned"
-OUTPUT_FILE = "data/raw/html_samples_cleaned/pdf_links_cleaned_filtred_2.txt"
+OUTPUT_FILE = "data/raw/html_samples_cleaned/pdf_links_cleaned_filtred_3.txt"
 
 
 class PdfCleaningRule(ABC):
@@ -69,6 +69,8 @@ class DomainWhitelistRule(PdfCleaningRule):
         self.allowed_domains = {"www.diem.unisa.it", "docenti.unisa.it", "corsi.unisa.it"}
         self.allowed_prefixes = (
             "https://www.diem.unisa.it",
+            "https://docenti.unisa.it",
+            "https://corsi.unisa.it",
             "https://corsi.unisa.it/ingegneria-informatica",
             "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
             "https://corsi.unisa.it/ingegneria-informatica-magistrale",
