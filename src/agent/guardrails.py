@@ -15,8 +15,7 @@ KPI Impact:
 import re
 import logging
 from typing import Optional, List
-
-from interfaces import Guardrail
+from interfaces.agent_interfaces import Guardrail
 
 logger = logging.getLogger(__name__)
 

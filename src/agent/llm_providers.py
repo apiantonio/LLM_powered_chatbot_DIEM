@@ -13,7 +13,7 @@ from typing import List
 
 from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
-from interfaces import LLMProvider
+from interfaces.agent_interfaces import LLMProvider
 from config.settings import LLMConfig
 
 logger = logging.getLogger(__name__)
