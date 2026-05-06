@@ -21,8 +21,8 @@ class IngestionConfig:
     """Parametri per la pipeline di scraping e indicizzazione."""
     
     # --- Sorgenti dati ---
-    html_raw_dir: str = "data/raw/html_samples_v7"
-    pdf_links_file: str = "data/raw/html_samples_v7/pdf_links_cleaned_new.txt"
+    html_raw_dir: str = "data/raw/html_samples"
+    pdf_links_file: str = "data/raw/html_samples/pdf_links.txt"
     
     # --- Domini consentiti (bounded knowledge scope) ---
     seed_urls: tuple[str, ...] = (
