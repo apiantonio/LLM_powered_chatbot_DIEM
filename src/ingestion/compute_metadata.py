@@ -82,5 +82,4 @@ samples_dir = os.path.basename(FOLDER_PATH)
 output_path = os.path.join(f"data/evaluation/", f"metadata_{samples_dir}.csv")
 df.to_csv(output_path, index=False, encoding="utf-8")
 
-
 print(f"CSV generato: {output_path}")

@@ -23,6 +23,7 @@ class IngestionConfig:
     # --- Sorgenti dati ---
     html_raw_dir: str = "data/raw/html_samples"
     pdf_links_file: str = "data/raw/html_samples/pdf_links.txt"
+    pdf_download_dir: str = "data/raw/pdfs"
     
     # --- Domini consentiti (bounded knowledge scope) ---
     seed_urls: tuple[str, ...] = (
@@ -34,7 +35,7 @@ class IngestionConfig:
         "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
         "https://corsi.unisa.it/ingegneria-dell-informazione",
         "https://corsi.unisa.it/photovoltaics",
-        "https://easycourse.unisa.it/",  # REQUISITO: Orari corsi/esami
+        "https://easycourse.unisa.it/",
     )
     
     # --- Crawler ---
@@ -42,9 +43,18 @@ class IngestionConfig:
     batch_size: int = 1024
     crawl_delay_seconds: float = 2.0
     
-    # --- Chunking ---
-    chunk_size: int = 700
-    chunk_overlap: int = 50
+    # --- Chunking HTML (diretto, no Parent-Child) ---
+    html_chunk_size: int = 700
+    html_chunk_overlap: int = 50
+    
+    # --- Chunking PDF (Parent-Child) ---
+    pdf_parent_chunk_size: int = 3000
+    pdf_parent_chunk_overlap: int = 500
+    pdf_child_chunk_size: int = 400
+    pdf_child_chunk_overlap: int = 50
+    
+    # --- Registro incrementale (hash-based deduplication) ---
+    index_registry_path: str = "data/vectorstore/index_registry.json"
 
 
 @dataclass(frozen=True)
@@ -53,8 +63,7 @@ class EmbeddingConfig:
     
     model_name: str = "BAAI/bge-m3"
     normalize_embeddings: bool = True
-    # Dimensionalità attesa (per validazione runtime)
-    expected_dim: int = 1024  # bge-m3 produce vettori a 1024 dimensioni
+    expected_dim: int = 1024
 
 
 @dataclass(frozen=True)
@@ -63,8 +72,9 @@ class VectorStoreConfig:
     
     persist_directory: str = "data/vectorstore/chroma"
     collection_name: str = "diem_knowledge_base"
-    search_type: str = "similarity"  # "similarity" | "mmr"
-    search_k: int = 20  # Top-K iniziale (prima del reranking)
+    parent_store_directory: str = "data/vectorstore/parent_docstore"
+    search_type: str = "similarity"
+    search_k: int = 20
 
 
 @dataclass(frozen=True)
@@ -72,24 +82,20 @@ class RerankerConfig:
     """Parametri per il Cross-Encoder di re-ranking post-retrieval."""
     
     model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
-    top_n: int = 5  # Documenti finali dopo il re-ranking
+    top_n: int = 5
 
 
 @dataclass(frozen=True)
 class LLMConfig:
     """Parametri per il Large Language Model (Strategy Pattern ready)."""
     
-    # Provider: "ollama" | "huggingface" | "openai"
     provider: str = "huggingface"
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     temperature: float = 0.1
     max_tokens: int = 1024
     
-    # API keys (lette dall'ambiente, mai hardcodate)
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
-    
-    # Ollama (se provider == "ollama")
     ollama_base_url: str = "http://localhost:11434"
 
 
@@ -97,14 +103,11 @@ class LLMConfig:
 class GuardrailsConfig:
     """Parametri per i guardrails di sicurezza."""
     
-    # Scope Awareness: lista di topic consentiti (whitelist semantica)
     allowed_scope_description: str = (
         "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
         "laboratori, servizi dipartimentali, dottorato di ricerca."
     )
-    
-    # Anti-injection: pattern pericolosi da bloccare
     max_agent_iterations: int = 10
     enable_pii_filter: bool = True
 
@@ -124,11 +127,13 @@ class AppSettings:
 def load_settings() -> AppSettings:
     """
     Factory method che costruisce le impostazioni leggendo le variabili d'ambiente.
-    
-    Pattern: Factory Method (GoF) — centralizza la creazione dell'oggetto di configurazione.
-    Vantaggio: un singolo punto di modifica per passare da dev a prod.
     """
     return AppSettings(
+        ingestion=IngestionConfig(
+            html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),
+            pdf_links_file=os.getenv("PDF_LINKS_FILE", "data/raw/html_samples/pdf_links.txt"),
+            pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
+        ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "huggingface"),
             model_name=os.getenv("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
@@ -141,6 +146,6 @@ def load_settings() -> AppSettings:
         ),
         vectorstore=VectorStoreConfig(
             persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
+            parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore/parent_docstore"),
         ),
-        
     )

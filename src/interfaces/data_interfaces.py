@@ -12,5 +12,4 @@ class Document:
 class RetrievalResult:
     """Risultato di una query al retrieval engine, con tracciabilità delle fonti."""
     documents: List[Document]
-    
     query_used: str  # La query effettivamente usata (potrebbe essere riscritta)

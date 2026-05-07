@@ -328,5 +328,4 @@ if __name__ == "__main__":
         output_dir="data/raw/html_samples_v7"
     )
     
-    
     crawler.run()

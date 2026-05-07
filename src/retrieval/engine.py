@@ -1,30 +1,39 @@
 """
-Retrieval Engine: Two-Stage Retrieval con Query Optimization e Re-ranking.
+Retrieval Engine: Two-Stage Retrieval con Parent-Child resolution.
 
-Architettura:
-  Query utente → [Query Optimizer] → Query riscritta
-                                    → [Bi-Encoder Retriever] → Top-K candidati
-                                    → [Cross-Encoder Reranker] → Top-N finali
-                                    → Contesto per il LLM
+Flusso completo:
+  Query utente
+    → [Query Optimizer] → Query riscritta/espansa
+    → [Bi-Encoder Retriever] → Top-K Child candidati (Chroma)
+    → [Cross-Encoder Reranker] → Top-N Child filtrati
+    → [Parent Resolution] → Child HTML invariati + Child PDF → Parent risaliti
+    → Contesto finale per il LLM
 
-Pattern: Chain of Responsibility (ogni stage processa e passa al successivo).
+Il Parent-Child resolution è trasparente: il RetrievalEngine riceve Child dal
+Chroma, ma prima di restituirli li passa attraverso l'Indexer.resolve_parents().
+I Child PDF vengono sostituiti dai loro Parent (3000 chars), i Child HTML
+passano invariati.
+
+Pattern: Chain of Responsibility + Mediator (l'engine media tra retriever, reranker e indexer).
 
 KPI Impact:
-- Query Optimizer → Relevance (colma il gap semantico utente↔documento)
-- Two-Stage Retrieval → Context Precision (elimina falsi positivi)
-- Reranker → Context Recall (preserva documenti sottilmente rilevanti)
+- Query Optimizer → Relevance
+- Two-Stage Retrieval → Context Precision 
+- Parent Resolution → Context Recall (il LLM riceve sezioni complete, non frammenti)
+- Reranker → Faithfulness (contesto pulito → meno allucinazioni)
 """
 
 import logging
-from typing import List, Optional
-
-from sentence_transformers import CrossEncoder
+from typing import List, Optional, TYPE_CHECKING
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-from config.settings import AppSettings, RerankerConfig
+from config.settings import RerankerConfig
+
+if TYPE_CHECKING:
+    from ingestion.indexer import KnowledgeBaseIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +42,9 @@ class QueryOptimizer:
     """
     Pre-Retrieval: riscrittura della query per massimizzare la qualità del retrieval.
     
-    Implementa due strategie:
-    1. Conversational Rewriting: risolve coreferenze anaforiche (lui/quello/ecc.)
-    2. Multi-Query: genera N varianti per ampliare la copertura semantica.
+    Due strategie:
+    1. Conversational Rewriting: risolve coreferenze ("quello" → "il regolamento tesi magistrale").
+    2. Multi-Query: genera N varianti per copertura semantica più ampia.
     
     KPI Impact: Relevance, Context Recall.
     """
@@ -61,10 +70,6 @@ class QueryOptimizer:
     ])
     
     def __init__(self, llm_chat_model):
-        """
-        Args:
-            llm_chat_model: Modello LangChain chat (es. ChatHuggingFace, ChatOllama).
-        """
         self._llm = llm_chat_model
         self._rewrite_chain = self.REWRITE_PROMPT | self._llm | RunnableLambda(
             lambda msg: msg.content.strip()
@@ -77,7 +82,6 @@ class QueryOptimizer:
         """Riscrive la query risolvendo coreferenze dalla chat history."""
         if not history:
             return question
-        
         try:
             rewritten = self._rewrite_chain.invoke({
                 "question": question,
@@ -93,7 +97,6 @@ class QueryOptimizer:
         """Genera varianti multi-query per ampliare la copertura."""
         try:
             variants = self._multi_query_chain.invoke({"question": question})
-            # Aggiungi sempre la query originale
             all_queries = [question] + variants[:3]
             logger.debug(f"Multi-query: {len(all_queries)} varianti generate")
             return all_queries
@@ -104,44 +107,32 @@ class QueryOptimizer:
 
 class CrossEncoderReranker:
     """
-    Post-Retrieval: ri-ordina i documenti candidati con un Cross-Encoder.
+    Post-Retrieval: ri-ordina i Child candidati con un Cross-Encoder.
     
-    Il Cross-Encoder riceve (query, documento) come coppia e produce
-    un punteggio di rilevanza tramite cross-attention, catturando
-    interazioni lessicali impossibili per il bi-encoder.
+    NOTA: Il reranking avviene sui CHILD (testo corto, focalizzato).
+    La risalita ai Parent avviene DOPO il reranking, così il cross-encoder
+    valuta la rilevanza sul frammento preciso, non sul blocco diluito.
     
-    KPI Impact: Context Precision (elimina falsi positivi),
-    Faithfulness (contesto più pulito → meno allucinazioni).
+    KPI Impact: Context Precision, Faithfulness.
     """
     
     def __init__(self, config: RerankerConfig):
+        from sentence_transformers import CrossEncoder
         self._model = CrossEncoder(config.model_name)
         self._top_n = config.top_n
-        logger.info(f"Cross-Encoder Reranker inizializzato: {config.model_name}")
+        logger.info(f"Cross-Encoder Reranker: {config.model_name}")
     
-    def rerank(self, query: str, documents: List[Document], top_n: Optional[int] = None) -> List[Document]:
-        """
-        Ri-ordina i documenti per rilevanza effettiva rispetto alla query.
-        
-        Args:
-            query: Query dell'utente (possibilmente già riscritta).
-            documents: Lista di documenti candidati dal bi-encoder.
-            top_n: Override del numero di documenti da restituire.
-            
-        Returns:
-            Lista ordinata dei top_n documenti più rilevanti,
-            con score aggiunto nei metadata.
-        """
+    def rerank(
+        self, query: str, documents: List[Document], top_n: Optional[int] = None
+    ) -> List[Document]:
+        """Ri-ordina i documenti per rilevanza. Score nei metadata."""
         if not documents:
             return []
         
         top_n = top_n or self._top_n
-        
-        # Prepara le coppie (query, document_text) per il cross-encoder
         pairs = [[query, doc.page_content] for doc in documents]
         scores = self._model.predict(pairs)
         
-        # Ordina per score decrescente
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
         
         result = []
@@ -150,30 +141,34 @@ class CrossEncoderReranker:
             result.append(doc)
         
         logger.debug(
-            f"Reranking: {len(documents)} candidati → {len(result)} selezionati "
-            f"(score range: {ranked[0][1]:.4f} → {ranked[-1][1]:.4f})"
+            f"Reranking: {len(documents)} → {len(result)} "
+            f"(best: {ranked[0][1]:.4f}, worst kept: {ranked[min(top_n-1, len(ranked)-1)][1]:.4f})"
         )
-        
         return result
 
 
 class RetrievalEngine:
     """
-    Orchestratore del flusso di retrieval completo.
+    Orchestratore del flusso di retrieval completo con Parent-Child resolution.
     
-    Combina: Query Optimization → Bi-Encoder Search → Cross-Encoder Reranking.
-    
-    È il componente centrale che alimenta il contesto dell'agente RAG.
+    Sequenza:
+    1. Query Optimization (rewrite/expand)
+    2. Bi-Encoder search su Chroma (restituisce Child)
+    3. Cross-Encoder reranking (sui Child — embedding focalizzato)
+    4. Parent Resolution (Child PDF → Parent, Child HTML → invariato)
+    5. Return contesto finale per il LLM
     """
     
     def __init__(
         self,
-        retriever,  # LangChain VectorStoreRetriever
+        retriever,
         reranker: CrossEncoderReranker,
+        indexer: "KnowledgeBaseIndexer",
         query_optimizer: Optional[QueryOptimizer] = None,
     ):
         self._retriever = retriever
         self._reranker = reranker
+        self._indexer = indexer  # Necessario per resolve_parents()
         self._optimizer = query_optimizer
     
     def retrieve(
@@ -186,14 +181,14 @@ class RetrievalEngine:
         Pipeline completa di retrieval.
         
         Returns:
-            (documenti_rilevanti, query_effettivamente_usata)
+            (documenti_con_contesto_completo, query_effettivamente_usata)
         """
         # Step 1: Query Optimization
         effective_query = query
         if self._optimizer and chat_history:
             effective_query = self._optimizer.rewrite(query, chat_history)
         
-        # Step 2: Retrieval (singolo o multi-query)
+        # Step 2: Retrieval (Child chunks da Chroma)
         if use_multi_query and self._optimizer:
             queries = self._optimizer.expand(effective_query)
             all_docs = []
@@ -201,7 +196,6 @@ class RetrievalEngine:
             for q in queries:
                 docs = self._retriever.invoke(q)
                 for doc in docs:
-                    # Deduplicazione per contenuto
                     content_hash = hash(doc.page_content[:200])
                     if content_hash not in seen_contents:
                         seen_contents.add(content_hash)
@@ -210,13 +204,18 @@ class RetrievalEngine:
         else:
             candidates = self._retriever.invoke(effective_query)
         
-        # Step 3: Re-ranking
-        final_docs = self._reranker.rerank(effective_query, candidates)
+        # Step 3: Reranking (sui Child — testo focalizzato)
+        reranked = self._reranker.rerank(effective_query, candidates)
+        
+        # Step 4: Parent Resolution
+        # Child PDF → Parent (3000 chars con contesto completo)
+        # Child HTML → passa invariato
+        final_docs = self._indexer.resolve_parents(reranked)
         
         logger.info(
-            f"Retrieval completato: '{query}' → {len(candidates)} candidati → "
-            f"{len(final_docs)} dopo reranking"
+            f"Retrieval: '{query[:60]}...' → "
+            f"{len(candidates)} candidati → {len(reranked)} reranked → "
+            f"{len(final_docs)} dopo parent resolution"
         )
-        
         
         return final_docs, effective_query

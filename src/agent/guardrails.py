@@ -157,5 +157,4 @@ class OutputValidator(Guardrail):
                     logger.warning(f"PII ({label}) rilevato nell'output, mascheramento...")
                     text = pattern.sub(f"[{label.upper()} RIMOSSO]", text)
         
-        
         return True, text
