@@ -218,4 +218,5 @@ class RetrievalEngine:
             f"{len(final_docs)} dopo reranking"
         )
         
+        
         return final_docs, effective_query

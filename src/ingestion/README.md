@@ -68,4 +68,5 @@
 ## 5) file html datati prima del 2020 da eliminare 
 ## 6) file html di pubblicazioni o eliminarle del tutto o solo i titoli 
 
+
 # INDEXING DINAMICO A CADENZA (SETTIMANALE O GIORNALIERA SOLO DEI DOMINI AGGIORNATI)

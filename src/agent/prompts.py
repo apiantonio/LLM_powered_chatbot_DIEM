@@ -59,4 +59,5 @@ RAG_PROMPT_TEMPLATE = """Contesto recuperato dalla knowledge base DIEM:
 
 Domanda dell'utente: {question}
 
+
 Rispondi seguendo rigorosamente le regole del tuo system prompt. Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."""

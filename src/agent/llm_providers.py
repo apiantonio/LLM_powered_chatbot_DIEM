@@ -53,4 +53,5 @@ class HuggingFaceLLMProvider(LLMProvider):
     @property
     def langchain_chat_model(self) -> ChatHuggingFace:
         """Espone il modello LangChain sottostante per le LCEL chains."""
+        
         return self._chat

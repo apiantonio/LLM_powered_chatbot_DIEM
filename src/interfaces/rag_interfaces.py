@@ -37,4 +37,5 @@ class VectorStorePort(ABC):
     @abstractmethod
     def similarity_search_with_score(self, query: str, k: int = 5) -> List[tuple]:
         """Restituisce documenti con punteggio di similarità."""
+        
         ...

@@ -142,4 +142,5 @@ def load_settings() -> AppSettings:
         vectorstore=VectorStoreConfig(
             persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
         ),
+        
     )

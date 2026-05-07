@@ -61,4 +61,5 @@ class Guardrail(ABC):
         - (True, testo_originale_o_modificato) se OK
         - (False, messaggio_di_rifiuto) se bloccato
         """
+        
         ...

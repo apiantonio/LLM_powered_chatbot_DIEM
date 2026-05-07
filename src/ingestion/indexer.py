@@ -197,4 +197,5 @@ class KnowledgeBaseIndexer:
         """Estrae l'URL sorgente dai metadati inseriti dal crawler."""
         import re
         match = re.search(r"<!--\s*SOURCE:\s*(https?://[^\s]+)\s*-->", html_content)
+        
         return match.group(1).strip() if match else None
