@@ -8,6 +8,8 @@ The goal of the chatbot is to assist students, faculty, and external users by pr
 
 ## **License**
 
-This project is licensed under the **PolyForm Noncommercial License 1.0.0**.  
-**Copyright (c) 2024 Nicola Capuano and Antonio Greco**  
+This project is licensed under the PolyForm Noncommercial License 1.0.0.
+
+Copyright (c) 2026 [Antonio Apicella](https://github.com/apiantonio), [Ivan Luigi Cipriano](https://github.com/ivanCipriano), [Simone Faraulo](https://github.com/SimoneFaraulo), [Antonio Graziosi](https://github.com/tonygraziosi13)
+
 Permission is granted for personal, educational, and research use. Any commercial advantage or monetary compensation derived from the use, reproduction, or distribution of this software is strictly prohibited without explicit written authorization from the authors.
