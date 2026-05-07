@@ -402,7 +402,7 @@ if __name__ == "__main__":
     html_rules = html_factory.create_rules([
         "obsolete_url", "publication_tip", "exact_publications",
         "department_bandi", "calendar", "news",
-        "404", "nocontent", "empty_body",
+        "404", "nocontent", "empty_body", "didattica", "filename",
     ])
     # NOTA: "didattica" e "filename" escluse — "didattica" richiede
     # pre-scansione della directory (non compatibile con filtro inline),
@@ -416,7 +416,7 @@ if __name__ == "__main__":
     crawler = UnisaCrawler(
         max_depth=5,
         batch_size=1024,
-        output_dir="data/raw/html_samples",
+        output_dir="./data/raw/html_samples_claude",
         html_rules=html_rules,
         pdf_rules=pdf_rules,
     )

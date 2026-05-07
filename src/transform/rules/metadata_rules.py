@@ -39,19 +39,20 @@ class ObsoleteUrlRule(CleaningRule):
         # Se non c'è il parametro 'anno' nel nome, o l'anno è >= 2020, lo teniamo
         return False
 
-
 class FilenameRule(CleaningRule):
     @property
     def name(self) -> str:
-        return "Nome file da scartare (-en-, -zh-, -zh)"
+        return "Filtro Lingua URL/Filename (-en-, -zh-)"
     
     @property
     def requires_content(self) -> bool:
         return False
         
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
-        targets = ["-en-", "-zh-", "-zh", "-en."]
-        return any(target in filepath.name for target in targets)
+        # Nel crawler inline 'filepath.name' è una versione sanitizzata dell'URL.
+        # I path come '/en/' o '/zh/' diventano magicamente '-en-' e '-zh-'.
+        targets = ["-en-", "-zh-", "-zh", "-en.", "_en_", "_zh_"]
+        return any(target in filepath.name.lower() for target in targets)
 
 class PublicationTipRule(CleaningRule):
     def __init__(self):
@@ -78,56 +79,59 @@ class PublicationTipRule(CleaningRule):
 
 class DidatticaFilterRule(CleaningRule):
     def __init__(self, directory: Path):
-        self.complete_ids = set()
+        self.directory = directory
         self.id_pattern = re.compile(r'id=(\d+)')
         
-        # PRE-CALCOLO: Legge i nomi dei file una sola volta per scovare i duplicati completi
-        # Cerca tutti i file che hanno contemporaneamente id, cId e pId
-        for filepath in directory.glob("*.html"):
-            filename = filepath.name
-            if "-didattica-" in filename and "id=" in filename and "cId=" in filename and "pId=" in filename:
-                match = self.id_pattern.search(filename)
-                if match:
-                    # Salva in memoria l'ID che possiede la versione completa
-                    self.complete_ids.add(match.group(1))
+        # NESSUNA PRE-SCANSIONE. L'inizializzazione è istantanea.
     
     @property
     def name(self) -> str:
-        return "Filtro Didattica (scartato id+cId senza pId, e file 'solo id' ridondanti)"
+        return "Filtro Didattica (inline con pulizia retroattiva)"
 
     @property
     def requires_content(self) -> bool:
-        # Altamente efficiente: non apriamo il file
         return False
 
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
         filename = filepath.name
         
-        # 1. Agisce SOLO sui file che appartengono alla sezione didattica
+        # 1. Agisce SOLO sulle URL/file della didattica
         if "-didattica-" not in filename:
             return False
             
-        # 2. Mappatura dei parametri presenti nel nome del file
         has_id = "id=" in filename
         has_cid = "cId=" in filename
         has_pid = "pId=" in filename
         
-        # 3. Applicazione della PRIMA logica:
-        # Se ha 'id' E ha 'cId' MA NON ha 'pId' -> Elimina
+        # 2. Logica base: Scarta id+cId senza pId
+        # (Questo scarto inline è sicuro perché non contiene link essenziali)
         if has_id and has_cid and not has_pid:
             return True
             
-        # 4. Applicazione della SECONDA logica (Relazionale):
-        # Se il file ha SOLO l'id (nessun cId e nessun pId)
-        if has_id and not has_cid and not has_pid:
+        # 3. Logica relazionale: Trovata la versione COMPLETA
+        if has_id and has_cid and has_pid:
             match = self.id_pattern.search(filename)
             if match:
                 file_id = match.group(1)
-                # Verifica in tempo zero se questo ID ha una sua versione completa pre-calcolata
-                if file_id in self.complete_ids:
-                    return True # Esiste la versione completa id+cId+pId, quindi scartiamo questa
+                # PULIZIA RETROATTIVA: Cerchiamo sul disco il file "solo id"
+                # salvato in precedenza (che ha permesso al crawler di arrivare qui)
+                # e lo eliminiamo fisicamente.
+                if self.directory.exists():
+                    for saved_file in self.directory.glob(f"*-id={file_id}-*.html"):
+                        saved_name = saved_file.name
+                        # Ci assicuriamo di cancellare solo la versione incompleta
+                        if "cId=" not in saved_name and "pId=" not in saved_name:
+                            try:
+                                saved_file.unlink()
+                            except OSError:
+                                pass # Ignora errori se il file è bloccato o già rimosso
             
-        # In tutti gli altri casi, il file viene conservato
+            # Conserviamo questa versione completa
+            return False
+            
+        # 4. Caso file "solo id" (padre)
+        # Lo facciamo passare (return False) così il crawler può estrarre i link ai figli.
+        # Verrà distrutto retroattivamente allo step 3 non appena verrà analizzato un figlio.
         return False
 
 class ExactPublicationsBaseRule(CleaningRule):
