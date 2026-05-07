@@ -233,6 +233,17 @@ class UnisaCrawler:
         for a_tag in soup.find_all('a', href=True):
             full_url = urljoin(source_url, a_tag['href'])
             full_url, _ = urldefrag(full_url)
+            
+            # NORMALIZZAZIONE LINK PDF PER RIMUOVERE IL PATH INTERMEDIO PRIMA DI 'uploads'
+            if full_url.lower().endswith('.pdf') and '/uploads/' in full_url.lower():
+                parsed_url = urlparse(full_url)
+                base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
+                uploads_index = parsed_url.path.lower().find('/uploads/')
+                if uploads_index != -1:
+                    correct_path = parsed_url.path[uploads_index:]
+                    full_url = base_domain + correct_path
+                    
             if self.is_valid_url(full_url):
                 if full_url.lower().endswith('.pdf'):
                     local_pdfs.add(full_url)
@@ -252,7 +263,7 @@ class UnisaCrawler:
                         soup.find(attrs={"role": "main"}) or 
                         soup.find(id="content") or 
                         soup.find("main") or soup.body)
-                       
+                        
         clean_html = ""
         if main_content:
             allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
