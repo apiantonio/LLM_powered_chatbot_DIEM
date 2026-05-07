@@ -357,25 +357,18 @@ class UnisaCrawler:
                         should_discard, reason = self._should_discard_html(source_url, clean_html)
                         
                         if should_discard:
-                            logger.debug(f"HTML scartato: {source_url[:80]} — {reason}")
                             self.filtered_count += 1
-                            # I PDF di questa pagina NON vengono raccolti (Step 3)
-                            continue
-                        
-                        # ========================================
-                        # FILTRO PDF INLINE (Step 3 del prompt)
-                        # Solo i PDF da pagine HTML valide vengono raccolti
-                        # ========================================
-                        for pdf_url in local_pdfs:
-                            if not self._should_discard_pdf(pdf_url):
-                                self.found_pdf_links.add(pdf_url)
-                        
-                        # Salvataggio HTML valido
-                        doc.page_content = clean_html
-                        self._save_single_doc(doc, current_depth)
-                        self.processed_count += 1
-                            
-                        # Accoda nuovi link per il BFS
+                        # NON fare continue — devi ancora accodare i link figli
+                        else:
+                            # Salva HTML e raccogli PDF SOLO se la pagina è valida
+                            for pdf_url in local_pdfs:
+                                if not self._should_discard_pdf(pdf_url):
+                                    self.found_pdf_links.add(pdf_url)
+                            doc.page_content = clean_html
+                            self._save_single_doc(doc, current_depth)
+                            self.processed_count += 1
+
+                        # L'accodamento dei link figli avviene SEMPRE, indipendentemente dal filtro
                         if current_depth < self.max_depth:
                             for new_link in local_new_links:
                                 if new_link not in self.visited_urls:
