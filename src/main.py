@@ -19,7 +19,7 @@ def main():
     # 2. Definisci A RUNTIME quali regole vuoi applicare
     # Puoi cambiare questa lista senza toccare la logica delle classi!
     active_rules = [
-        "filename",
+        #"filename",
         "didattica",
         "obsolete_url",
         "publication_tip",
