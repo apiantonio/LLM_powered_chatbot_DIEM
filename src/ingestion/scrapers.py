@@ -60,14 +60,14 @@ class UnisaCrawler:
     }
 
     ALLOWED_PREFIXES = (
-        "https://www.diem.unisa.it",
-        "https://corsi.unisa.it/ingegneria-informatica",
-        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
-        "https://corsi.unisa.it/ingegneria-informatica-magistrale",
-        "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
-        "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
-        "https://corsi.unisa.it/ingegneria-dell-informazione",
-        "https://corsi.unisa.it/photovoltaics"
+        # "https://www.diem.unisa.it",
+        # "https://corsi.unisa.it/ingegneria-informatica",
+        # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
+        # "https://corsi.unisa.it/ingegneria-informatica-magistrale",
+        # "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
+        # "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
+        # "https://corsi.unisa.it/ingegneria-dell-informazione",
+        # "https://corsi.unisa.it/photovoltaics"
     )
 
     IGNORED_EXTENSIONS = (

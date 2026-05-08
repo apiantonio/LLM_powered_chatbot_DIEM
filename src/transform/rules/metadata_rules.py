@@ -77,22 +77,62 @@ class PublicationTipRule(CleaningRule):
         # Se trova il match esatto, elimina. Altrimenti conserva.
         return bool(self.target_pattern.search(filepath.name))
 
+import re
+from pathlib import Path
+from typing import Optional
+from transform.core.base_rule import CleaningRule
+
 class DidatticaFilterRule(CleaningRule):
     def __init__(self, directory: Path):
         self.directory = directory
         self.id_pattern = re.compile(r'id=(\d+)')
         
+        # NUOVO STATO: Coda delle eliminazioni in sospeso
+        self.pending_deletions = set()
+        
         # NESSUNA PRE-SCANSIONE. L'inizializzazione è istantanea.
     
     @property
     def name(self) -> str:
-        return "Filtro Didattica (inline con pulizia retroattiva)"
+        return "Filtro Didattica (inline con pulizia retroattiva ritardata)"
 
     @property
     def requires_content(self) -> bool:
         return False
 
+    def _process_pending_deletions(self):
+        """Tenta ciclicamente di eliminare i file 'solo id' non appena compaiono su disco."""
+        if not self.directory.exists() or not self.pending_deletions:
+            return
+            
+        successfully_deleted = set()
+        
+        for file_id in self.pending_deletions:
+            deleted_something = False
+            # Cerca il file su disco
+            for saved_file in self.directory.glob(f"*-id={file_id}-*.html"):
+                saved_name = saved_file.name
+                
+                # Ci assicuriamo di cancellare solo la versione incompleta
+                if "cId=" not in saved_name and "pId=" not in saved_name:
+                    try:
+                        saved_file.unlink()
+                        deleted_something = True
+                    except OSError:
+                        pass # Il file è probabilmente bloccato in scrittura, riproveremo al prossimo ciclo
+            
+            # Se l'eliminazione è andata a buon fine, possiamo toglierlo dalla coda
+            if deleted_something:
+                successfully_deleted.add(file_id)
+                
+        # Aggiorniamo la coda rimuovendo i task completati
+        self.pending_deletions -= successfully_deleted
+
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        # 0. AD OGNI INVOCAZIONE DELLA REGOLA: tentiamo di smaltire la coda
+        # Questo garantisce che se un file era in ritardo di scrittura, verrà intercettato
+        self._process_pending_deletions()
+
         filename = filepath.name
         
         # 1. Agisce SOLO sulle URL/file della didattica
@@ -104,7 +144,6 @@ class DidatticaFilterRule(CleaningRule):
         has_pid = "pId=" in filename
         
         # 2. Logica base: Scarta id+cId senza pId
-        # (Questo scarto inline è sicuro perché non contiene link essenziali)
         if has_id and has_cid and not has_pid:
             return True
             
@@ -113,25 +152,27 @@ class DidatticaFilterRule(CleaningRule):
             match = self.id_pattern.search(filename)
             if match:
                 file_id = match.group(1)
-                # PULIZIA RETROATTIVA: Cerchiamo sul disco il file "solo id"
-                # salvato in precedenza (che ha permesso al crawler di arrivare qui)
-                # e lo eliminiamo fisicamente.
-                if self.directory.exists():
-                    for saved_file in self.directory.glob(f"*-id={file_id}-*.html"):
-                        saved_name = saved_file.name
-                        # Ci assicuriamo di cancellare solo la versione incompleta
-                        if "cId=" not in saved_name and "pId=" not in saved_name:
-                            try:
-                                saved_file.unlink()
-                            except OSError:
-                                pass # Ignora errori se il file è bloccato o già rimosso
+                
+                # Invece di provare a cancellare solo ora, aggiungiamo l'ID in coda
+                self.pending_deletions.add(file_id)
+                
+                # Eseguiamo un tentativo immediato
+                self._process_pending_deletions()
             
             # Conserviamo questa versione completa
             return False
             
         # 4. Caso file "solo id" (padre)
+        if has_id and not has_cid and not has_pid:
+            match = self.id_pattern.search(filename)
+            if match:
+                file_id = match.group(1)
+                # Race Condition Guard: Se a causa dei thread la versione completa 
+                # è già stata valutata e messa in coda, eliminiamo questa PRIMA che venga salvata.
+                if file_id in self.pending_deletions:
+                    return True
+                    
         # Lo facciamo passare (return False) così il crawler può estrarre i link ai figli.
-        # Verrà distrutto retroattivamente allo step 3 non appena verrà analizzato un figlio.
         return False
 
 class ExactPublicationsBaseRule(CleaningRule):

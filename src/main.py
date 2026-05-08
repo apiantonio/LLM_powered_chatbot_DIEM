@@ -38,7 +38,7 @@ if __name__ == "__main__":
     crawler = UnisaCrawler(
         max_depth=5,
         batch_size=1024,
-        output_dir="./data/raw/html_samples_claude",
+        output_dir="./data/raw/html_aggiornato_claude",
         html_rules=html_rules,
         pdf_rules=pdf_rules,
     )
