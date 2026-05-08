@@ -1,36 +1,66 @@
 import sys
+import logging
 from typing import Dict, Any
 
-# LangChain core imports
 from langchain_core.messages import HumanMessage
 
-# Importazione dell'orchestratore costruito nel Task 3.2
-from src.agent.executor import build_conversational_agent
+# Importazioni dell'ecosistema DIEM RAG
+from config.settings import load_settings
+from ingestion.indexer import KnowledgeBaseIndexer
+from agent.executor import build_conversational_agent
 
-def chat_loop():
+# Configurazione logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("RAG_Orchestrator")
+
+def run_pipeline():
     """
-    Inizializza l'agente RAG e avvia un loop interattivo REPL su riga di comando.
-    Gestisce la sessione utente per dimostrare la persistenza in-memory del contesto.
+    Esegue la pipeline completa:
+    1. Caricamento settings.
+    2. Indicizzazione Knowledge Base (HTML & PDF).
+    3. Avvio del loop conversazionale dell'Agente.
     """
-    print("Inizializzazione del DIEM Agentic RAG in corso...")
+    print("="*50)
+    print("Inizializzazione DIEM RAG System Architecture")
+    print("="*50)
     
+    # --- STEP 1: Lettura configurazioni ---
+    logger.info("Caricamento configurazioni di sistema...")
+    settings = load_settings()
+
+    # --- STEP 2: Indicizzazione (Ingestion) ---
+    print("\n[1/3] Avvio processo di indicizzazione sui Vectorstore...")
     try:
-        # Inizializziamo l'agente (il factory pattern ci restituisce il Runnable configurato)
-        agent = build_conversational_agent()
+        indexer = KnowledgeBaseIndexer(settings)
+        
+        logger.info("Elaborazione dati HTML in corso...")
+        html_stats = indexer.index_html_directory()
+        print(f"  -> Statistiche Indexing HTML: {html_stats}")
+        
+        logger.info("Elaborazione e partizionamento dati PDF in corso...")
+        pdf_stats = indexer.index_pdf_list()
+        print(f"  -> Statistiche Indexing PDF: {pdf_stats}")
+        
     except Exception as e:
-        print(f"[ERROR] Fallimento critico durante l'inizializzazione dell'agente: {e}")
+        logger.error(f"Errore critico durante l'indicizzazione: {e}")
         sys.exit(1)
 
+    # --- STEP 3: Costruzione Agent RAG ---
+    print("\n[2/3] Costruzione Agente Conversazionale...")
+    try:
+        agent = build_conversational_agent(settings)
+    except Exception as e:
+        logger.error(f"Fallimento durante l'inizializzazione dell'agente: {e}")
+        sys.exit(1)
+
+    # --- STEP 4: Chat Loop Interattivo ---
+    print("\n[3/3] Sistema Online. Pronti all'interazione.")
     print("\n" + "="*50)
-    print("Assistente DIEM Online.")
+    print("Assistente DIEM - Loop Interattivo Avviato")
     print("Digita 'exit' o 'quit' per terminare la sessione.")
     print("="*50 + "\n")
 
-    # Hardcodiamo un session_id per questa iterazione della CLI.
-    # In produzione, questo ID deriverebbe dal token JWT o dalla sessione web dell'utente.
-    session_id = "cli_session_001"
-    
-    # Configurazione runtime richiesta da RunnableWithMessageHistory
+    session_id = "cli_production_session_001"
     run_config: Dict[str, Any] = {
         "configurable": {
             "session_id": session_id
@@ -42,34 +72,27 @@ def chat_loop():
             user_input = input("\n👤 Tu: ").strip()
             
             if user_input.lower() in ['exit', 'quit']:
-                print("Assistente DIEM: Arrivederci!")
+                print("\nAssistente DIEM: Arrivederci e grazie per aver usato il sistema!")
                 break
                 
             if not user_input:
                 continue
 
-            print("Assistente DIEM sta elaborando...")
+            print("🤖 Assistente DIEM sta elaborando la richiesta in base al contesto e alle fonti...")
             
-            # Invocazione del grafo. Poiché usiamo create_agent, l'input_messages_key
-            # configurata in RunnableWithMessageHistory mappa questa lista di messaggi 
-            # direttamente allo StateGraph interno.
             response = agent.invoke(
                 {"messages": [HumanMessage(content=user_input)]},
                 config=run_config
             )
             
-            # Estraiamo l'output finale. create_agent restituisce il dizionario di stato 
-            # completo. L'ultimo messaggio nella lista "messages" è la risposta dell'AI.
             final_message = response["messages"][-1].content
-            
-            print(f"\nAssistente DIEM: {final_message}")
+            print(f"\nAssistente DIEM:\n{final_message}")
 
         except KeyboardInterrupt:
-            print("\nAssistente DIEM: Sessione interrotta forzatamente. Arrivederci!")
+            print("\n\nAssistente DIEM: Sessione interrotta forzatamente. Termino processo.")
             break
         except Exception as e:
-            # Fallback robusto in caso di errore di inference (es. API HuggingFace down)
-            print(f"\n[SYSTEM ERROR] Impossibile processare la richiesta: {e}")
+            logger.error(f"Impossibile processare la richiesta dell'utente a causa di un errore nel grafo: {e}")
 
 if __name__ == "__main__":
-    chat_loop()
+    run_pipeline()
