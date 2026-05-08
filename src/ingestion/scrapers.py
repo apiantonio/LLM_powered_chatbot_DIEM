@@ -328,7 +328,7 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        #self.initialize_diem_docenti_whitelist()
+        self.initialize_diem_docenti_whitelist()
 
         while self.queue:
             batch = []
@@ -407,39 +407,3 @@ class UnisaCrawler:
         logger.info(f"HTML salvati: {self.processed_count}")
         logger.info(f"HTML filtrati (scartati): {self.filtered_count}")
         logger.info(f"PDF validi raccolti: {len(self.found_pdf_links)}")
-
-
-# ==========================================
-# ESECUZIONE
-# ==========================================
-if __name__ == "__main__":
-    from transform.factory.cleaner_factory import RuleFactory
-    from transform.factory.pdf_factory import PdfRuleFactory
-    
-    # Costruzione regole con le Factory esistenti
-    html_factory = RuleFactory(
-        directory=Path("data/raw/html_samples"),
-        cutoff_year=2020,
-    )
-    html_rules = html_factory.create_rules([
-        "obsolete_url", "publication_tip", "exact_publications",
-        "department_bandi", "calendar", "news",
-        "404", "nocontent", "empty_body", "didattica", "filename",
-    ])
-    # NOTA: "didattica" e "filename" escluse — "didattica" richiede
-    # pre-scansione della directory (non compatibile con filtro inline),
-    # "filename" opera su nomi file del crawler (non su URL).
-    
-    pdf_factory = PdfRuleFactory(cutoff_year=2020)
-    pdf_rules = pdf_factory.create_rules([
-        "domain_whitelist", "semantic_trap", "obsolete_year", "english_pdf"
-    ])
-    
-    crawler = UnisaCrawler(
-        max_depth=5,
-        batch_size=1024,
-        output_dir="./data/raw/html_samples_claude",
-        html_rules=html_rules,
-        pdf_rules=pdf_rules,
-    )
-    crawler.run()

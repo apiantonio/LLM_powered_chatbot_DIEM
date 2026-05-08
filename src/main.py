@@ -18,7 +18,7 @@ if __name__ == "__main__":
     
     # Costruzione regole con le Factory esistenti
     html_factory = RuleFactory(
-        directory=Path("data/raw/html_samples"),
+        directory=Path("./data/raw/html_samples_claude"),
         cutoff_year=2020,
     )
     html_rules = html_factory.create_rules([
@@ -32,13 +32,13 @@ if __name__ == "__main__":
     
     pdf_factory = PdfRuleFactory(cutoff_year=2020)
     pdf_rules = pdf_factory.create_rules([
-        "domain_whitelist", "semantic_trap", "obsolete_year",
+        "domain_whitelist", "semantic_trap", "obsolete_year", "english_pdf"
     ])
     
     crawler = UnisaCrawler(
         max_depth=5,
         batch_size=1024,
-        output_dir="./data/raw/html_aggiornato_claude",
+        output_dir="./data/raw/html_samples_claude",
         html_rules=html_rules,
         pdf_rules=pdf_rules,
     )
