@@ -1,5 +1,7 @@
 WBS.md
 .vscode/
 data/raw/**/*.html
+data/vectorstore
+data/evaluation
 *.zip
 __pycache__
