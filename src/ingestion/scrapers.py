@@ -54,12 +54,13 @@ class UnisaCrawler:
     """
     
     ALLOWED_DOMAINS = {
-        "www.diem.unisa.it",
-        "docenti.unisa.it",
+        # "www.diem.unisa.it",
+        # "docenti.unisa.it",
         "corsi.unisa.it"
     }
 
     ALLOWED_PREFIXES = (
+        "https://corsi.unisa.it/ingegneria-informatica/didattica/regolamenti",
         # "https://www.diem.unisa.it",
         # "https://corsi.unisa.it/ingegneria-informatica",
         # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
@@ -231,25 +232,43 @@ class UnisaCrawler:
         local_pdfs = set()
         
         for a_tag in soup.find_all('a', href=True):
-            full_url = urljoin(source_url, a_tag['href'])
+            raw_href = a_tag['href'].strip()
+            
+            # 1. FIX PARAMETRI: Ignoriamo i query params (?v=1) per capire se Ã¨ un PDF
+            # (Recuperato dal tuo vecchio pdf_extractor)
+            clean_path = raw_href.lower().split('?')[0]
+            is_pdf = clean_path.endswith('.pdf')
+            
+            # 2. FIX RELATIVO: Risolviamo gli URL di Ateneo malformati PRIMA dell'urljoin
+            # (Recuperato dal tuo vecchio pdf_extractor)
+            if is_pdf and raw_href.startswith('uploads/'):
+                raw_href = '/' + raw_href
+                
+            # Risoluzione in URL assoluto
+            full_url = urljoin(source_url, raw_href)
             full_url, _ = urldefrag(full_url)
             
-            # NORMALIZZAZIONE LINK PDF PER RIMUOVERE IL PATH INTERMEDIO PRIMA DI 'uploads'
-            if full_url.lower().endswith('.pdf') and '/uploads/' in full_url.lower():
+            # 3. NORMALIZZAZIONE: Rimozione path intermedi (es. /corso/laurea/uploads/...)
+            # (Dal tuo attuale scrapers.py, ma migliorato per mantenere i parametri)
+            if is_pdf and '/uploads/' in full_url.lower():
                 parsed_url = urlparse(full_url)
                 base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
                 
                 uploads_index = parsed_url.path.lower().find('/uploads/')
                 if uploads_index != -1:
                     correct_path = parsed_url.path[uploads_index:]
-                    full_url = base_domain + correct_path
+                    # Manteniamo la query string originale se presente
+                    query_part = f"?{parsed_url.query}" if parsed_url.query else ""
+                    full_url = base_domain + correct_path + query_part
                     
-            if self.is_valid_url(full_url):
-                if full_url.lower().endswith('.pdf'):
-                    local_pdfs.add(full_url)
-                else:
+
+            if is_pdf:
+                local_pdfs.add(full_url)
+            else:
+                if self.is_valid_url(full_url):
                     local_new_links.add(full_url)
 
+        # ---- PULIZIA DOM (Resto della tua funzione invariato) ----
         noise_selectors = [
             "#header", "#main-menu", "#menu-bar", "#unisa-left-menu", 
             "#box-agenda", "#share-dropdown", ".breadcrumb", 
@@ -263,7 +282,7 @@ class UnisaCrawler:
                         soup.find(attrs={"role": "main"}) or 
                         soup.find(id="content") or 
                         soup.find("main") or soup.body)
-                        
+                       
         clean_html = ""
         if main_content:
             allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
@@ -310,7 +329,7 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        self.initialize_diem_docenti_whitelist()
+        #self.initialize_diem_docenti_whitelist()
 
         while self.queue:
             batch = []
