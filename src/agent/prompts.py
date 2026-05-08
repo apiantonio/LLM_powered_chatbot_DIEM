@@ -13,7 +13,7 @@ KPI Impact:
   - Correctness: citazione obbligatoria delle fonti.
 """
 
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage
 
 
 # ============================================================
@@ -62,55 +62,10 @@ REGOLE INDEROGABILI:
 </response>"""
 
 
-# ============================================================
-# RAG CHAIN PROMPT (LCEL ChatPromptTemplate)
-# ============================================================
-
-RAG_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", SYSTEM_PROMPT_TEXT),
-    ("human",
-     "Contesto recuperato dalla knowledge base DIEM:\n"
-     "---\n"
-     "{context}\n"
-     "---\n\n"
-     "Domanda dell'utente: {question}\n\n"
-     "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
-     "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."),
-])
-
-
-# ============================================================
-# RAG CONVERSATIONAL PROMPT (con cronologia messaggi)
-# ============================================================
-
-RAG_CONVERSATIONAL_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", SYSTEM_PROMPT_TEXT),
-    ("placeholder", "{chat_history}"),
-    ("human",
-     "Contesto recuperato dalla knowledge base DIEM:\n"
-     "---\n"
-     "{context}\n"
-     "---\n\n"
-     "Domanda dell'utente: {question}\n\n"
-     "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
-     "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."),
-])
-
-
-# ============================================================
-# BACKWARD COMPATIBILITY
-# ============================================================
-# Per i moduli che ancora importano le vecchie costanti.
-# Rimuovere dopo aver aggiornato tutti i consumer.
-
-SYSTEM_PROMPT = SYSTEM_PROMPT_TEXT
-
-RAG_PROMPT_TEMPLATE = (
-    "Contesto recuperato dalla knowledge base DIEM:\n"
-    "---\n"
-    "{context}\n"
-    "---\n\n"
-    "Domanda dell'utente: {question}\n\n"
-    "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
-    "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."
-)
+def get_agent_system_prompt() -> SystemMessage:
+    """
+    Restituisce le istruzioni di sistema (SystemMessage) per l'agente.
+    Con create_agent non è più necessario costruire un ChatPromptTemplate complesso
+    con placeholder, il grafo gestirà l'iniezione nella lista 'messages'.
+    """
+    return SystemMessage(content=SYSTEM_PROMPT_TEXT)
