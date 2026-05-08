@@ -9,33 +9,61 @@ from transform.core.base_rule import PdfFilterRule
 
 logger = logging.getLogger(__name__)
 
+import re
+from transform.core.base_rule import PdfFilterRule
+
 class ObsoleteYearRule(PdfFilterRule):
-    """Scarta i PDF che appartengono ad anni precedenti al cutoff_year (es. 2020)."""
     def __init__(self, cutoff_year: int = 2020):
         self.cutoff_year = cutoff_year
-        # Intercetta tutti gli anni a 4 cifre che iniziano con 19 o 20
-        self.year_pattern = re.compile(r'\b(19\d{2}|20\d{2})\b')
+        
+        # Pattern 1: Anno Accademico (es. 2019-2020, 2010_2011)
+        # Cattura il primo anno in group(1) e il secondo in group(2)
+        self.academic_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})[-_](19\d{2}|20\d{2})(?!\d)')
+        
+        # Pattern 2: Anno_Mese (es. 2017_09, 2018-01)
+        # Cattura l'anno in group(1)
+        self.year_month_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})[-_](0[1-9]|1[0-2])(?!\d)')
+        
+        # Pattern 3: Anno singolo (es. 2019, 2020, bandotesi2019)
+        self.single_year_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})(?!\d)')
 
     @property
-    def name(self) -> str: return f"PDF Obsoleto (< {self.cutoff_year})"
+    def name(self) -> str:
+        return f"Filtro Anni Obsoleti (< {self.cutoff_year})"
 
-    def should_discard(self, url: str) -> bool:
-        matches = self.year_pattern.findall(url)
-        if not matches:
-            # Nessun anno trovato nel link, lo conserviamo
-            return False 
-        
-        years = [int(y) for y in matches]
-        # Calcoliamo l'anno più recente menzionato nell'URL.
-        # Es: "guida-2018-2019.pdf" -> max è 2019. 2019 < 2020 -> Scartato.
-        # Es: "bando-2019-2020.pdf" -> max è 2020. 2020 non è < 2020 -> Conservato.
-        max_year_found = max(years)
-        
-        if max_year_found < self.cutoff_year:
-            return True
-            
-        return False
+    def should_discard(self, pdf_url: str) -> bool:
+        logical_years = []
+        working_url = pdf_url
 
+        # --- STEP 1: Estrazione Anni Accademici ---
+        # Es. "2019-2020" appartiene al ciclo 2019. Estraiamo 2019.
+        for match in self.academic_pattern.finditer(working_url):
+            y1 = int(match.group(1))
+            logical_years.append(y1)
+        # Sostituiamo il match con XXX per "bruciarlo", così il pattern degli anni 
+        # singoli non intercetterà erroneamente il "2020" dal "2019-2020"
+        working_url = self.academic_pattern.sub('XXX', working_url)
+
+        # --- STEP 2: Estrazione Anno_Mese ---
+        for match in self.year_month_pattern.finditer(working_url):
+            y1 = int(match.group(1))
+            logical_years.append(y1)
+        working_url = self.year_month_pattern.sub('XXX', working_url)
+
+        # --- STEP 3: Estrazione Anni Singoli Rimanenti ---
+        for match in self.single_year_pattern.finditer(working_url):
+            y1 = int(match.group(1))
+            logical_years.append(y1)
+
+        # Se non ci sono anni nell'URL, per sicurezza non scartiamo
+        if not logical_years:
+            return False
+
+        # Valutiamo in base all'anno PIÙ RECENTE trovato nell'URL.
+        # Es: se la cartella è /2019/ ma il file è bando_2020.pdf, prevarrà il 2020.
+        max_year = max(logical_years)
+        return max_year < self.cutoff_year
+    
 class SemanticTrapRule(PdfFilterRule):
     """Scarta i PDF puramente burocratici o contenenti dati sensibili in base a keyword."""
     def __init__(self):
@@ -106,3 +134,15 @@ class DomainWhitelistRule(PdfFilterRule):
                 return True
 
         return False
+    
+
+class EnglishPdfFilterRule(PdfFilterRule):
+    """Filtra e scarta tutti i link PDF che terminano con '-eng.pdf'."""
+    
+    @property
+    def name(self) -> str:
+        return "Filtro PDF Inglese (-eng.pdf)"
+
+    def should_discard(self, pdf_url: str) -> bool:
+        # Usiamo .lower() per essere sicuri di intercettare anche -ENG.pdf o -Eng.pdf
+        return pdf_url.lower().endswith('-eng.pdf')

@@ -4,6 +4,7 @@ from transform.rules.pdf_rules import (
     ObsoleteYearRule, 
     SemanticTrapRule, 
     DomainWhitelistRule,
+    EnglishPdfFilterRule
 )
 
 class PdfRuleFactory:
@@ -23,6 +24,8 @@ class PdfRuleFactory:
                 rules.append(SemanticTrapRule())
             elif name == "domain_whitelist":
                 rules.append(DomainWhitelistRule())
+            elif name == "english_pdf":
+                rules.append(EnglishPdfFilterRule())
             else:
                 raise ValueError(f"Regola PDF sconosciuta: {name}")
                 

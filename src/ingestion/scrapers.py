@@ -54,21 +54,20 @@ class UnisaCrawler:
     """
     
     ALLOWED_DOMAINS = {
-        # "www.diem.unisa.it",
-        # "docenti.unisa.it",
+        "www.diem.unisa.it",
+        "docenti.unisa.it",
         "corsi.unisa.it"
     }
 
     ALLOWED_PREFIXES = (
-        "https://corsi.unisa.it/ingegneria-informatica/didattica/regolamenti",
-        # "https://www.diem.unisa.it",
-        # "https://corsi.unisa.it/ingegneria-informatica",
-        # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
-        # "https://corsi.unisa.it/ingegneria-informatica-magistrale",
-        # "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
-        # "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
-        # "https://corsi.unisa.it/ingegneria-dell-informazione",
-        # "https://corsi.unisa.it/photovoltaics"
+        "https://www.diem.unisa.it",
+        "https://corsi.unisa.it/ingegneria-informatica",
+        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
+        "https://corsi.unisa.it/ingegneria-informatica-magistrale",
+        "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
+        "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
+        "https://corsi.unisa.it/ingegneria-dell-informazione",
+        "https://corsi.unisa.it/photovoltaics"
     )
 
     IGNORED_EXTENSIONS = (
@@ -433,7 +432,7 @@ if __name__ == "__main__":
     
     pdf_factory = PdfRuleFactory(cutoff_year=2020)
     pdf_rules = pdf_factory.create_rules([
-        "domain_whitelist", "semantic_trap", "obsolete_year",
+        "domain_whitelist", "semantic_trap", "obsolete_year", "english_pdf"
     ])
     
     crawler = UnisaCrawler(
