@@ -1,16 +1,26 @@
 """
-System Prompt per l'Agente RAG DIEM.
+Prompt LCEL-nativi per l'Agente RAG DIEM.
+
+Post-refactoring: i template sono ChatPromptTemplate di LangChain,
+direttamente componibili in chain LCEL con l'operatore |.
 
 Struttura: Framework CO-STAR (Context, Objective, Style, Tone, Audience, Response).
 
 KPI Impact:
-- Scope Awareness: istruzioni esplicite di dominio bounded.
-- Robustness: direttive anti-manipolazione ("Are you sure?" hardening).
-- Faithfulness: obbligo di grounding al contesto recuperato.
-- Correctness: citazione obbligatoria delle fonti.
+  - Scope Awareness: istruzioni esplicite di dominio bounded.
+  - Robustness: direttive anti-manipolazione hardened.
+  - Faithfulness: obbligo di grounding al contesto recuperato.
+  - Correctness: citazione obbligatoria delle fonti.
 """
 
-SYSTEM_PROMPT = """<context>
+from langchain_core.prompts import ChatPromptTemplate
+
+
+# ============================================================
+# SYSTEM PROMPT (invariato nel contenuto, ora tipizzato LCEL)
+# ============================================================
+
+SYSTEM_PROMPT_TEXT = """<context>
 Sei l'assistente virtuale ufficiale del Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata (DIEM) dell'Università degli Studi di Salerno.
 La tua base di conoscenza comprende ESCLUSIVAMENTE informazioni estratte dai siti ufficiali del dipartimento (.unisa.it) e da easycourse.unisa.it.
 </context>
@@ -52,11 +62,55 @@ REGOLE INDEROGABILI:
 </response>"""
 
 
-RAG_PROMPT_TEMPLATE = """Contesto recuperato dalla knowledge base DIEM:
----
-{context}
----
+# ============================================================
+# RAG CHAIN PROMPT (LCEL ChatPromptTemplate)
+# ============================================================
 
-Domanda dell'utente: {question}
+RAG_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", SYSTEM_PROMPT_TEXT),
+    ("human",
+     "Contesto recuperato dalla knowledge base DIEM:\n"
+     "---\n"
+     "{context}\n"
+     "---\n\n"
+     "Domanda dell'utente: {question}\n\n"
+     "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
+     "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."),
+])
 
-Rispondi seguendo rigorosamente le regole del tuo system prompt. Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."""
+
+# ============================================================
+# RAG CONVERSATIONAL PROMPT (con cronologia messaggi)
+# ============================================================
+
+RAG_CONVERSATIONAL_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", SYSTEM_PROMPT_TEXT),
+    ("placeholder", "{chat_history}"),
+    ("human",
+     "Contesto recuperato dalla knowledge base DIEM:\n"
+     "---\n"
+     "{context}\n"
+     "---\n\n"
+     "Domanda dell'utente: {question}\n\n"
+     "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
+     "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."),
+])
+
+
+# ============================================================
+# BACKWARD COMPATIBILITY
+# ============================================================
+# Per i moduli che ancora importano le vecchie costanti.
+# Rimuovere dopo aver aggiornato tutti i consumer.
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_TEXT
+
+RAG_PROMPT_TEMPLATE = (
+    "Contesto recuperato dalla knowledge base DIEM:\n"
+    "---\n"
+    "{context}\n"
+    "---\n\n"
+    "Domanda dell'utente: {question}\n\n"
+    "Rispondi seguendo rigorosamente le regole del tuo system prompt. "
+    "Se il contesto non contiene informazioni sufficienti, dichiaralo esplicitamente."
+)
