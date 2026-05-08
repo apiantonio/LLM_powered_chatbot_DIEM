@@ -1,56 +1,91 @@
 """
-Adapter concreto per HuggingFace Endpoint.
+Factory per l'istanziazione del Chat Model LangChain.
 
-Pattern: Adapter (GoF) — wrappa l'API di langchain_huggingface
-dietro l'interfaccia LLMProvider definita nel core.
+Post-refactoring LCEL: eliminato il wrapper HuggingFaceLLMProvider.
+ChatHuggingFace è già un BaseChatModel LangChain — supporta nativamente
+l'operatore | per le LCEL chains e non richiede un adapter aggiuntivo.
 
-KPI Impact: Ingegneria del Software. Cambiare modello richiede
-solo la modifica di LLMConfig.model_name in settings.py.
+Cambiare modello richiede solo la modifica di LLMConfig in settings.py.
 """
 
 import logging
-from typing import List
 
 from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
-from interfaces.agent_interfaces import LLMProvider
 from config.settings import LLMConfig
 
 logger = logging.getLogger(__name__)
 
 
-class HuggingFaceLLMProvider(LLMProvider):
-    """Implementazione concreta per HuggingFace Inference API."""
+def create_chat_model(config: LLMConfig) -> ChatHuggingFace:
+    """
+    Factory che costruisce il ChatModel LangChain dal config.
+    
+    Il modello restituito è direttamente componibile in chain LCEL:
+        chain = prompt | create_chat_model(config) | StrOutputParser()
+    
+    Args:
+        config: Configurazione LLM da settings.py.
+    
+    Returns:
+        ChatHuggingFace pronto per LCEL.
+    
+    Raises:
+        ValueError: Se il token HuggingFace non è configurato.
+    """
+    if not config.huggingface_api_token:
+        raise ValueError(
+            "HUGGINGFACEHUB_API_TOKEN non configurato. "
+            "Impostalo come variabile d'ambiente."
+        )
+    
+    chat_model = ChatHuggingFace(
+        llm=HuggingFaceEndpoint(
+            repo_id=config.model_name,
+            temperature=config.temperature,
+            max_new_tokens=config.max_tokens,
+            huggingfacehub_api_token=config.huggingface_api_token,
+        )
+    )
+    logger.info(f"ChatModel LangChain inizializzato: {config.model_name}")
+    return chat_model
+
+
+# ============================================================
+# BACKWARD COMPATIBILITY ALIAS
+# ============================================================
+# Per i moduli che ancora importano HuggingFaceLLMProvider,
+# forniamo un alias che mappa al nuovo approccio.
+# Rimuovere dopo aver aggiornato tutti i consumer.
+
+class HuggingFaceLLMProvider:
+    """
+    DEPRECATED — Usare create_chat_model(config) al suo posto.
+    
+    Mantiene la compatibilità con il codice che usa:
+        provider = HuggingFaceLLMProvider(config)
+        provider.invoke(prompt)
+        provider.langchain_chat_model
+    """
     
     def __init__(self, config: LLMConfig):
-        if not config.huggingface_api_token:
-            raise ValueError(
-                "HUGGINGFACEHUB_API_TOKEN non configurato. "
-                "Impostalo come variabile d'ambiente."
-            )
-        
-        self._chat = ChatHuggingFace(
-            llm=HuggingFaceEndpoint(
-                repo_id=config.model_name,
-                temperature=config.temperature,
-                max_new_tokens=config.max_tokens,
-                huggingfacehub_api_token=config.huggingface_api_token,
-            )
+        import warnings
+        warnings.warn(
+            "HuggingFaceLLMProvider è deprecato. "
+            "Usare create_chat_model(config) per ottenere un ChatHuggingFace diretto.",
+            DeprecationWarning, stacklevel=2,
         )
-        logger.info(f"HuggingFace LLM inizializzato: {config.model_name}")
+        self._chat = create_chat_model(config)
     
     def invoke(self, prompt: str) -> str:
-        response = self._chat.invoke(prompt)
-        return response.content
+        return self._chat.invoke(prompt).content
     
-    def invoke_with_messages(self, messages: List[dict]) -> str:
-        response = self._chat.invoke(messages)
-        return response.content
+    def invoke_with_messages(self, messages: list) -> str:
+        return self._chat.invoke(messages).content
     
     def supports_tool_calling(self) -> bool:
-        return False  # HF Inference API non supporta nativamente tool calling
+        return False
     
     @property
     def langchain_chat_model(self) -> ChatHuggingFace:
-        """Espone il modello LangChain sottostante per le LCEL chains."""
         return self._chat

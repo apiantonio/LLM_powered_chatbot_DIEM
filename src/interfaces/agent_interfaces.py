@@ -1,64 +1,31 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional
+"""
+Interfacce per il livello Agent del sistema RAG DIEM.
+
+Post-refactoring LCEL: le astrazioni custom sono state sostituite
+con i tipi nativi di LangChain. Rimane solo il protocollo Guardrail
+come contratto per i componenti pre/post processing.
+
+Le classi rimosse e i rispettivi sostituti LangChain:
+- LLMProvider      → langchain_core.language_models.BaseChatModel
+- ScopeClassifier  → eliminato (assorbito da ScopeGuardrail)
+- Guardrail (ABC)  → GuardrailProtocol (runtime_checkable Protocol)
+"""
+
+from typing import Optional, Protocol, runtime_checkable
 
 
-class LLMProvider(ABC):
+@runtime_checkable
+class GuardrailProtocol(Protocol):
     """
-    Strategy Interface per il provider LLM.
+    Protocollo per guardrail pre/post processing.
     
-    Permette di intercambiare Ollama, HuggingFace, OpenAI
-    senza modificare il codice dell'Agent o della RAG chain.
-    """
+    Compatibile con RunnableLambda: le implementazioni possono
+    essere wrappate in RunnableLambda(guardrail.check) per comporle
+    in chain LCEL con l'operatore |.
     
-    @abstractmethod
-    def invoke(self, prompt: str) -> str:
-        """Genera una risposta testuale dato un prompt."""
-        ...
-    
-    @abstractmethod
-    def invoke_with_messages(self, messages: List[dict]) -> str:
-        """Genera una risposta dato un array di messaggi strutturati."""
-        ...
-    
-    @abstractmethod
-    def supports_tool_calling(self) -> bool:
-        """Indica se il provider supporta nativamente il tool calling."""
-        ...
-
-class ScopeClassifier(ABC):
-    """
-    Interface per il classificatore Out-of-Domain.
-    
-    KPI Impact: Scope Awareness. Determina se una query appartiene
-    al dominio DIEM oppure è fuori contesto (e va bloccata).
+    Returns:
+        (passed: bool, text_or_rejection: str)
     """
     
-    @abstractmethod
-    def is_in_scope(self, query: str) -> bool:
-        """Restituisce True se la query è nel dominio consentito."""
-        ...
-    
-    @abstractmethod
-    def get_rejection_message(self) -> str:
-        """Messaggio standard di rifiuto per query OOD."""
-        ...
-
-
-class Guardrail(ABC):
-    """
-    Interface generica per guardrail pre/post processing.
-    
-    Implementabile come:
-    - InputSanitizer (before_agent): pulizia injection
-    - OutputValidator (after_agent): anti-hallucination check
-    - ScopeGuardrail: verifica dominio
-    """
-    
-    @abstractmethod
     def check(self, text: str, context: Optional[dict] = None) -> tuple[bool, str]:
-        """
-        Verifica il testo e restituisce:
-        - (True, testo_originale_o_modificato) se OK
-        - (False, messaggio_di_rifiuto) se bloccato
-        """
         ...
