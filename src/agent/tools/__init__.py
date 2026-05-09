@@ -84,7 +84,12 @@ def search_knowledge_base(query: str) -> str:
             context_parts.append(
                 f"[Documento {i} — {doc_type} — {source}{score_str}]\n{doc.page_content}"
             )
-        
+        """
+        query = "\n\n---\n\n".join(context_parts)
+
+        print("QUERY DI MERDA PORCO DI GIUDAAAAAAAAAAAAAAAAAA\n")
+        print(query)"""
+
         return "\n\n---\n\n".join(context_parts)
         
     except Exception as e:
