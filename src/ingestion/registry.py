@@ -1,11 +1,12 @@
 """
 Registro incrementale per l'indicizzazione.
 
-Mantiene una mappa persistente: source_identifier → (content_hash, [chroma_ids], [parent_ids])
-Questo permette di:
-- Saltare documenti non modificati (hash identico).
-- Eliminare chunk orfani quando un documento cambia o scompare.
-- Eseguire upsert logici senza ri-indicizzare l'intero corpus.
+Mantiene una mappa persistente:
+  source_identifier → (content_hash, [chroma_ids], [parent_ids], collection_name)
+
+REFACTORING MULTI-COLLECTION:
+  Aggiunto campo collection_name a IndexEntry per sapere da quale collection
+  eliminare i chunk durante update/cleanup orfani.
 
 Pattern: Repository (DDD) — incapsula l'accesso al registro persistente.
 
@@ -24,24 +25,27 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class IndexEntry:
-    """Record di un singolo documento indicizzato."""
+    """
+    Record di un singolo documento indicizzato.
+    
+    Campi:
+      content_hash: SHA-256 del contenuto (per deduplication incrementale).
+      chroma_ids: Lista degli ID dei chunk in Chroma (per cleanup).
+      parent_ids: Lista degli ID dei parent nel docstore (per cleanup Parent-Child).
+      collection_name: Nome della collection Chroma in cui il documento è indicizzato.
+                       Corrisponde a CollectionTarget.value (es. "docenti_e_didattica").
+                       Necessario per sapere da quale collection eliminare i chunk
+                       durante update o rimozione orfani.
+    """
     content_hash: str
     chroma_ids: List[str] = field(default_factory=list)
     parent_ids: List[str] = field(default_factory=list)
-    collection_name: str = ""  # ← NUOVO: traccia in quale collection è stato indicizzato
+    collection_name: str = ""
 
 
 class IndexRegistry:
     """
     Registro persistente su file JSON per tracciare lo stato di indicizzazione.
-    
-    Flusso di aggiornamento incrementale:
-    1. Calcola hash del documento corrente.
-    2. Confronta con l'hash nel registro.
-    3a. Hash identico → skip (il documento non è cambiato).
-    3b. Hash diverso → elimina vecchi chunk da Chroma/ParentStore, re-indicizza, aggiorna registro.
-    3c. URL assente nel registro → prima indicizzazione.
-    4. URL presente nel registro ma assente nel crawl → elimina chunk orfani.
     """
     
     def __init__(self, registry_path: str):
@@ -67,7 +71,9 @@ class IndexRegistry:
     
     def save(self) -> None:
         """Persiste il registro su disco."""
-        os.makedirs(os.path.dirname(self._path), exist_ok=True)
+        parent_dir = os.path.dirname(self._path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         with open(self._path, "w", encoding="utf-8") as f:
             json.dump(
                 {key: asdict(entry) for key, entry in self._entries.items()},
@@ -89,6 +95,11 @@ class IndexRegistry:
     def all_source_ids(self) -> set:
         """Restituisce tutti i source_id attualmente tracciati."""
         return set(self._entries.keys())
+    
+    def clear_all(self) -> None:
+        """Svuota completamente il registro (per reindicizzazione totale)."""
+        self._entries.clear()
+        logger.info("Registro svuotato completamente")
     
     @staticmethod
     def compute_hash(content: str) -> str:

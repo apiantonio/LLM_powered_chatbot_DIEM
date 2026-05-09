@@ -7,6 +7,12 @@ Principi:
 - Type-safe tramite dataclass + factory method.
 - Le API key NON vengono mai hardcodate; si leggono dall'ambiente.
 
+REFACTORING MULTI-COLLECTION:
+  Aggiunti parametri per-collection HTML chunking (docenti, offerta, bandi, dipartimento).
+  Aggiunti parametri pdf_direct_chunk_size/overlap per bandi e PDF generici.
+  Aggiunto get_collection_html_params() per l'indexer.
+  VectorStoreConfig ora include parent_child_collection_name.
+
 KPI Impact: Tutti. La configurazione centralizzata garantisce riproducibilità
 degli esperimenti e facilita il tuning dei parametri per massimizzare le metriche RAGAS.
 """
@@ -52,20 +58,40 @@ class IngestionConfig:
         '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     )
     
-    # --- Chunking HTML (diretto, no Parent-Child) ---
+    # --- Chunking HTML LEGACY (fallback per compatibilità) ---
     html_chunk_size: int = 700
     html_chunk_overlap: int = 50
     
-    # --- Chunking PDF (Parent-Child) ---
+    # --- Chunking HTML PER-COLLECTION ---
+    # Ogni collection ha parametri ottimizzati per il tipo di contenuto.
+    # Docenti e dipartimento: chunk più ampi (pagine con molto contesto).
+    # Offerta e bandi: chunk standard (contenuto più strutturato).
+    docenti_html_chunk_size: int = 800
+    docenti_html_chunk_overlap: int = 100
+    
+    offerta_html_chunk_size: int = 700
+    offerta_html_chunk_overlap: int = 50
+    
+    bandi_html_chunk_size: int = 700
+    bandi_html_chunk_overlap: int = 50
+    
+    dipartimento_html_chunk_size: int = 800
+    dipartimento_html_chunk_overlap: int = 100
+    
+    # --- Chunking PDF Parent-Child (SOLO per regolamenti/piani di studio) ---
     pdf_parent_chunk_size: int = 3000
     pdf_parent_chunk_overlap: int = 500
     pdf_child_chunk_size: int = 400
     pdf_child_chunk_overlap: int = 50
     
+    # --- Chunking PDF diretto (bandi e PDF generici, NO Parent-Child) ---
+    pdf_direct_chunk_size: int = 1500
+    pdf_direct_chunk_overlap: int = 200
+    
     # --- Registro incrementale (hash-based deduplication) ---
     index_registry_path: str = "data/vectorstore/index_registry.json"
     
-    # --- Derived helpers (non frozen-safe, quindi metodi) ---
+    # --- Derived helpers ---
     
     def get_allowed_domains(self) -> set[str]:
         """Deriva i domini consentiti dalle seed_urls."""
@@ -74,7 +100,6 @@ class IngestionConfig:
             parsed = urlparse(url)
             if parsed.netloc:
                 domains.add(parsed.netloc)
-        # Aggiungi docenti.unisa.it (non è nelle seed ma è un dominio valido)
         domains.add("docenti.unisa.it")
         return domains
     
@@ -83,6 +108,43 @@ class IngestionConfig:
         return tuple(
             url for url in self.seed_urls 
             if "easycourse" not in url
+        )
+    
+    def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
+        """
+        Restituisce (chunk_size, chunk_overlap) per una data collection.
+        
+        L'indexer chiama questo metodo per costruire lo splitter HTML
+        specifico di ogni collection, garantendo Single Source of Truth.
+        
+        Args:
+            collection_name: Il value dell'enum CollectionTarget
+                             (es. "docenti_e_didattica").
+        
+        Returns:
+            Tupla (chunk_size, chunk_overlap).
+        """
+        mapping = {
+            "docenti_e_didattica": (
+                self.docenti_html_chunk_size,
+                self.docenti_html_chunk_overlap,
+            ),
+            "offerta_formativa_e_corsi": (
+                self.offerta_html_chunk_size,
+                self.offerta_html_chunk_overlap,
+            ),
+            "bandi_e_amministrazione": (
+                self.bandi_html_chunk_size,
+                self.bandi_html_chunk_overlap,
+            ),
+            "dipartimento_e_ricerca": (
+                self.dipartimento_html_chunk_size,
+                self.dipartimento_html_chunk_overlap,
+            ),
+        }
+        return mapping.get(
+            collection_name,
+            (self.html_chunk_size, self.html_chunk_overlap),
         )
 
 
@@ -97,13 +159,23 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class VectorStoreConfig:
-    """Parametri per il database vettoriale."""
+    """
+    Parametri per il database vettoriale.
+    
+    REFACTORING: collection_name mantenuto per backward compatibility.
+    Le 4 collection usano nomi derivati dall'enum CollectionTarget.
+    parent_child_collection_name è la collection Chroma dedicata ai
+    child chunks del ParentDocumentRetriever.
+    """
     
     persist_directory: str = "data/vectorstore/chroma"
-    collection_name: str = "diem_knowledge_base"
+    collection_name: str = "diem_knowledge_base"  # legacy, non più usato
     parent_store_directory: str = "data/vectorstore/parent_docstore"
     search_type: str = "similarity"
     search_k: int = 20
+    
+    # Collection Chroma dedicata ai child chunks del Parent-Child
+    parent_child_collection_name: str = "offerta_formativa_pdf_childs"
 
 
 @dataclass(frozen=True)
@@ -130,7 +202,7 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class EasyCourseConfig:
-    """Parametri per il tool EasyCourse (Sprint 5)."""
+    """Parametri per il tool EasyCourse."""
     
     base_url: str = "https://easycourse.unisa.it"
     timeout: int = 30
@@ -139,7 +211,7 @@ class EasyCourseConfig:
 
 @dataclass(frozen=True)
 class GuardrailsConfig:
-    """Parametri per i guardrails di sicurezza (Sprint 4)."""
+    """Parametri per i guardrails di sicurezza."""
     
     allowed_scope_description: str = (
         "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
