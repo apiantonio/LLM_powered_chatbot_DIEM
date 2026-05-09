@@ -3,5 +3,6 @@ WBS.md
 data/raw/**/*.html
 data/vectorstore
 data/evaluation
+data/raw/pdfs
 *.zip
 __pycache__
