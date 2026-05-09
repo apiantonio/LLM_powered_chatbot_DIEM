@@ -44,6 +44,14 @@ class IngestionConfig:
     batch_size: int = 1024
     crawl_delay_seconds: float = 2.0
     
+    # --- Pulizia (centralizzata per scrapers e transform) ---
+    cutoff_year: int = 2020
+    target_department: str = "300638"
+    ignored_extensions: tuple[str, ...] = (
+        '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
+        '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    )
+    
     # --- Chunking HTML (diretto, no Parent-Child) ---
     html_chunk_size: int = 700
     html_chunk_overlap: int = 50
@@ -172,7 +180,13 @@ def load_settings() -> AppSettings:
     Ogni parametro ha un default sensato; le env var permettono l'override.
     """
     return AppSettings(
-
+        ingestion=IngestionConfig(
+            html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),
+            pdf_links_file=os.getenv("PDF_LINKS_FILE", "data/raw/html_samples/pdf_links.txt"),
+            pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
+            cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
+            target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
+        ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "huggingface"),
             model_name=os.getenv("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct"),

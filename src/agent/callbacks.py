@@ -145,11 +145,13 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         self, serialized: Dict[str, Any], messages: List, **kwargs: Any
     ) -> None:
         """
-        Cattura i messaggi inviati al LLM.
+        Cattura i messaggi inviati al LLM — glass-box completo.
         
-        - Prima chiamata: cattura l'input utente.
-        - Chiamate successive (dopo tool): cattura il prompt augmentato
-          (che contiene il contesto recuperato dai tool).
+        Visualizza la struttura completa del prompt:
+        - System prompt (troncato)
+        - Storico conversazione (human/assistant)
+        - Tool results (contesto recuperato)
+        - Query utente corrente
         """
         self._llm_call_index += 1
         self._trace.llm_calls_count = self._llm_call_index
@@ -174,9 +176,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         
         # --- Prima chiamata: cattura input utente (ULTIMO HumanMessage) ---
         if not self._trace.user_input:
-            # Con la memoria conversazionale, i messaggi contengono tutto lo storico
-            # [H1, A1, H2, A2, ..., Hn]. Dobbiamo prendere l'ULTIMO HumanMessage
-            # che è la query del turno corrente, non il primo (che è il turno 1).
             for msg in reversed(flat_messages):
                 if hasattr(msg, 'type') and msg.type == 'human':
                     self._trace.user_input = msg.content
@@ -187,33 +186,87 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                             f"   \"{msg.content}\"\n"
                             f"{'#'*60}"
                         )
-                    return
+                    break
         
-        # --- Chiamate successive: cattura prompt augmentato ---
-        # Dopo i tool, il modello riceve i ToolMessage con il contesto.
-        # Logghiamo un riepilogo del prompt augmentato.
-        if self._llm_call_index > 1 and self._trace.tools_invoked:
-            tool_messages_content = []
-            for msg in flat_messages:
-                msg_type = getattr(msg, 'type', None)
-                if msg_type == 'tool':
-                    content = getattr(msg, 'content', '')
-                    tool_messages_content.append(content)
+        # --- Log struttura completa del prompt inviato al LLM ---
+        if self._verbose:
+            self._log_full_prompt_structure(flat_messages)
+    
+    def _log_full_prompt_structure(self, flat_messages: List) -> None:
+        """
+        Logga la struttura completa dei messaggi inviati al LLM.
+        
+        Mostra ogni messaggio con il suo ruolo, evidenziando:
+        - SYSTEM: il system prompt (troncato)
+        - HUMAN: domande utente (storico + corrente)
+        - AI: risposte precedenti dell'agente
+        - AI (tool_calls): decisioni di invocazione tool
+        - TOOL: contesto recuperato dal retrieval
+        """
+        logger.info(f"\n{'─'*60}")
+        logger.info(f"📋 STRUTTURA PROMPT → LLM (totale: {len(flat_messages)} messaggi)")
+        logger.info(f"{'─'*60}")
+        
+        tool_context_parts = []
+        
+        for i, msg in enumerate(flat_messages):
+            msg_type = getattr(msg, 'type', 'unknown')
+            content = getattr(msg, 'content', '')
+            content_str = str(content) if content else ''
             
-            if tool_messages_content:
-                combined = "\n---\n".join(tool_messages_content)
-                self._trace.augmented_prompt_preview = combined[:1000]
-                
-                if self._verbose:
-                    logger.info(
-                        f"\n{'='*60}\n"
-                        f"📝 PROMPT AUGMENTATO (contesto iniettato nel LLM):\n"
-                        f"   Messaggi totali nella conversazione: {len(flat_messages)}\n"
-                        f"   Tool results iniettati: {len(tool_messages_content)}\n"
-                        f"   Preview contesto ({len(combined)} chars totali):\n"
-                        f"   {combined[:self._max_preview]}...\n"
-                        f"{'='*60}"
-                    )
+            if msg_type == 'system':
+                # System prompt — mostra solo le prime righe
+                preview = content_str[:150].replace('\n', ' ')
+                logger.info(f"   [{i}] 🔒 SYSTEM ({len(content_str)} chars): {preview}...")
+            
+            elif msg_type == 'human':
+                logger.info(f"   [{i}] 👤 HUMAN: \"{content_str[:120]}\"")
+            
+            elif msg_type == 'ai':
+                tool_calls = getattr(msg, 'tool_calls', None)
+                if tool_calls:
+                    tool_names = [tc.get('name', '?') for tc in tool_calls]
+                    logger.info(f"   [{i}] 🤖 AI → tool_calls: {tool_names}")
+                else:
+                    preview = content_str[:120] if content_str else "(vuoto)"
+                    logger.info(f"   [{i}] 🤖 AI: \"{preview}...\"")
+            
+            elif msg_type == 'tool':
+                tool_name = getattr(msg, 'name', 'unknown_tool')
+                # Questo è il contesto recuperato — salvalo per la trace
+                tool_context_parts.append(content_str)
+                logger.info(
+                    f"   [{i}] 🔧 TOOL [{tool_name}] ({len(content_str)} chars): "
+                    f"\"{content_str[:100]}...\""
+                )
+            
+            else:
+                logger.info(f"   [{i}] ❓ {msg_type}: {content_str[:80]}")
+        
+        logger.info(f"{'─'*60}")
+        
+        # --- Se ci sono tool results, questa è la query augmentata ---
+        if tool_context_parts:
+            combined = "\n---\n".join(tool_context_parts)
+            self._trace.augmented_prompt_preview = combined[:2000]
+            
+            # Trova l'ultimo HumanMessage — è la domanda dell'utente
+            last_human = ""
+            for msg in reversed(flat_messages):
+                if getattr(msg, 'type', None) == 'human':
+                    last_human = str(getattr(msg, 'content', ''))
+                    break
+            
+            logger.info(
+                f"\n{'='*60}\n"
+                f"📝 QUERY AUGMENTATA FINALE → LLM:\n"
+                f"   Domanda utente: \"{last_human}\"\n"
+                f"   Contesto RAG iniettato: {len(tool_context_parts)} blocchi, "
+                f"{len(combined)} chars totali\n"
+                f"   Preview contesto:\n"
+                f"   {combined[:self._max_preview * 2]}...\n"
+                f"{'='*60}"
+            )
     
     # ==============================
     # TOOL TRACKING
@@ -477,8 +530,8 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         """
         Parsa l'output del tool search_knowledge_base per estrarre i documenti.
         
-        Il formato atteso è:
-        [Documento N — tipo — source_url]
+        Formato atteso (aggiornato con score):
+        [Documento N — tipo — source_url — score: 0.8765]
         contenuto chunk
         
         ---
@@ -497,11 +550,24 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             if lines and lines[0].startswith("[Documento"):
                 header = lines[0].strip("[]")
                 parts = [p.strip() for p in header.split("—")]
+                
+                # Parsing dei campi header:
+                # parts[0] = "Documento N"
+                # parts[1] = tipo (html/pdf)
+                # parts[2] = source_url
+                # parts[3] = "score: 0.8765" (opzionale)
+                if len(parts) >= 2:
+                    doc_info["doc_type"] = parts[1].strip()
                 if len(parts) >= 3:
-                    doc_info["doc_type"] = parts[1]
-                    doc_info["source_url"] = parts[2]
-                elif len(parts) >= 2:
-                    doc_info["doc_type"] = parts[1]
+                    doc_info["source_url"] = parts[2].strip()
+                if len(parts) >= 4:
+                    # Estrai lo score numerico da "score: 0.8765"
+                    score_part = parts[3].strip()
+                    if score_part.startswith("score:"):
+                        try:
+                            doc_info["relevance_score"] = float(score_part.split(":")[1].strip())
+                        except (ValueError, IndexError):
+                            pass
                 
                 if len(lines) > 1:
                     doc_info["content"] = lines[1].strip()

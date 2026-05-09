@@ -49,6 +49,10 @@ def search_knowledge_base(query: str) -> str:
     regolamenti, procedure amministrative, tesi, borse di studio, laboratori,
     dottorato di ricerca e qualsiasi altra informazione del dipartimento DIEM.
     
+    IMPORTANTE: usa SEMPRE questo strumento prima di rispondere a qualsiasi
+    domanda riguardante il DIEM, anche se hai già informazioni nel contesto
+    della conversazione. Le informazioni potrebbero essere cambiate o incomplete.
+    
     Args:
         query: La domanda o i termini di ricerca da cercare nella knowledge base.
     
@@ -67,14 +71,18 @@ def search_knowledge_base(query: str) -> str:
                 f"per la query: '{query}'. Prova a riformulare la domanda."
             )
         
-        # Componi il contesto con citazione delle fonti
+        # Componi il contesto con citazione delle fonti e score di rilevanza
         context_parts = []
         for i, doc in enumerate(documents, 1):
             source = doc.metadata.get("source_url", "fonte non disponibile")
             doc_type = doc.metadata.get("doc_type", "sconosciuto")
+            score = doc.metadata.get("relevance_score", None)
+            
+            # Formato header con score per osservabilità
+            score_str = f" — score: {score:.4f}" if score is not None else ""
             
             context_parts.append(
-                f"[Documento {i} — {doc_type} — {source}]\n{doc.page_content}"
+                f"[Documento {i} — {doc_type} — {source}{score_str}]\n{doc.page_content}"
             )
         
         return "\n\n---\n\n".join(context_parts)
