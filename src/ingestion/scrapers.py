@@ -328,7 +328,7 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        self.initialize_diem_docenti_whitelist()
+        # self.initialize_diem_docenti_whitelist()
 
         while self.queue:
             batch = []
@@ -361,38 +361,34 @@ class UnisaCrawler:
                     doc = futures[future]
                     source_url = doc.metadata.get('source')
                     current_depth = depths_dict.get(source_url, 0)
-                    
+
                     try:
                         clean_html, local_new_links, local_pdfs = future.result()
-                        
+
+                        # Decisione di salvataggio (non interrompe il flusso)
                         if not clean_html:
                             self.filtered_count += 1
-                            continue
-                        
-                        # ========================================
-                        # FILTRO HTML INLINE (Step 2 del prompt)
-                        # ========================================
-                        should_discard, reason = self._should_discard_html(source_url, clean_html)
-                        
-                        if should_discard:
-                            self.filtered_count += 1
-                        # NON fare continue — devi ancora accodare i link figli
+                            logger.debug(f"Scartato (contenuto vuoto): {source_url}")
                         else:
-                            # Salva HTML e raccogli PDF SOLO se la pagina è valida
-                            for pdf_url in local_pdfs:
-                                if not self._should_discard_pdf(pdf_url):
-                                    self.found_pdf_links.add(pdf_url)
-                            doc.page_content = clean_html
-                            self._save_single_doc(doc, current_depth)
-                            self.processed_count += 1
+                            should_discard, reason = self._should_discard_html(source_url, clean_html)
+                            if should_discard:
+                                self.filtered_count += 1
+                                logger.info(f"Scartato ({reason}): {source_url}")
+                            else:
+                                for pdf_url in local_pdfs:
+                                    if not self._should_discard_pdf(pdf_url):
+                                        self.found_pdf_links.add(pdf_url)
+                                doc.page_content = clean_html
+                                self._save_single_doc(doc, current_depth)
+                                self.processed_count += 1
 
-                        # L'accodamento dei link figli avviene SEMPRE, indipendentemente dal filtro
+                        # ← SEMPRE: accodamento figli indipendente dalla decisione sopra
                         if current_depth < self.max_depth:
                             for new_link in local_new_links:
                                 if new_link not in self.visited_urls:
                                     self.queue.append((new_link, current_depth + 1))
                                     self.visited_urls.add(new_link)
-                                    
+
                     except Exception as e:
                         logger.error(f"Errore elaborazione {source_url}: {e}")
 

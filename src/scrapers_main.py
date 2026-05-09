@@ -1,9 +1,7 @@
 from pathlib import Path
 from ingestion.scrapers import UnisaCrawler
 from transform.factory.cleaner_factory import RuleFactory
-from transform.core.html_cleaner import HTMLCleaner
 from transform.factory.pdf_factory import PdfRuleFactory
-from transform.core.pdf_extractor import LocalPdfExtractorEngine
 import logging
 
 logging.basicConfig(
@@ -18,7 +16,7 @@ if __name__ == "__main__":
     
     # Costruzione regole con le Factory esistenti
     html_factory = RuleFactory(
-        directory=Path("./data/raw/html_samples_claude"),
+        directory=Path("./data/raw/html_samples_TEST2"),
         cutoff_year=2020,
     )
     html_rules = html_factory.create_rules([
@@ -38,7 +36,7 @@ if __name__ == "__main__":
     crawler = UnisaCrawler(
         max_depth=5,
         batch_size=1024,
-        output_dir="./data/raw/html_samples_claude",
+        output_dir="./data/raw/html_samples_TEST2",
         html_rules=html_rules,
         pdf_rules=pdf_rules,
     )
