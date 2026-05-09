@@ -28,6 +28,7 @@ class IndexEntry:
     content_hash: str
     chroma_ids: List[str] = field(default_factory=list)
     parent_ids: List[str] = field(default_factory=list)
+    collection_name: str = ""  # ← NUOVO: traccia in quale collection è stato indicizzato
 
 
 class IndexRegistry:

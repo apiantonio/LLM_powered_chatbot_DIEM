@@ -1,28 +1,18 @@
 """
-Modulo di indicizzazione duale: HTML (diretto) + PDF (Parent-Child via LangChain).
-
-REFACTORING:
-  - ELIMINATO: ParentDocStore custom
-  - SOSTITUITO CON: create_kv_docstore(LocalFileStore(...)) + ParentDocumentRetriever
-  - La risalita Child→Parent è ora gestita nativamente da LangChain
+ingestion/indexer.py — Refactoring multi-collection.
 
 Architettura:
-  HTML → HTMLSectionSplitter → RecursiveCharacterTextSplitter(700, 50) → Chroma
-  PDF  → ParentDocumentRetriever (LangChain nativo)
-         Parent: RCS(3000, 500) → create_kv_docstore(LocalFileStore)
-         Child:  RCS(400, 50)   → Chroma (vettorializzato)
-
-KPI Impact:
-  - Ingegneria del Software: uso idiomatico del framework, zero reinvenzione.
-  - Context Precision: child piccoli → embedding focalizzato.
-  - Context Recall: parent ampi restituiti al LLM via risalita nativa.
+  4 Collection Chroma, ciascuna con strategia di chunking dedicata.
+  DocumentRouter assegna ogni documento alla collection corretta.
+  Parent-Child solo per regolamenti/piani di studio (Collection 2).
+  Chunking diretto per bandi (Collection 3) — risolve il problema
+  dei falsi positivi semantici.
 """
 
 import os
 import re
 import logging
-import requests
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader
@@ -35,50 +25,57 @@ from langchain_classic.storage import LocalFileStore, create_kv_docstore
 
 from config.settings import AppSettings
 from ingestion.registry import IndexRegistry, IndexEntry
+from ingestion.router import DocumentRouter, CollectionTarget
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseIndexer:
     """
-    Motore di indicizzazione duale con aggiornamento incrementale.
+    Motore di indicizzazione multi-collection con routing semantico.
     
-    HTML: indicizzazione diretta in Chroma.
-    PDF: ParentDocumentRetriever di LangChain (Parent-Child nativo).
+    Gestisce 4 collection Chroma con strategie di chunking differenziate
+    e un ParentDocumentRetriever dedicato ai soli PDF che lo necessitano.
     """
-    
+
     def __init__(self, settings: AppSettings):
         self._settings = settings
-        
-        # --- Embedding condiviso ---
+
+        # --- Embedding condiviso (unico modello per tutte le collection) ---
         self._embedding_model = HuggingFaceEmbeddings(
             model_name=settings.embedding.model_name,
-            encode_kwargs={"normalize_embeddings": settings.embedding.normalize_embeddings},
+            encode_kwargs={
+                "normalize_embeddings": settings.embedding.normalize_embeddings
+            },
         )
-        
-        # --- Pipeline HTML: Chroma diretto ---
-        os.makedirs(settings.vectorstore.persist_directory, exist_ok=True)
-        self._html_vectorstore = Chroma(
-            collection_name=f"{settings.vectorstore.collection_name}_html",
+
+        # --- Istanziazione delle 4 collection Chroma ---
+        persist_dir = settings.vectorstore.persist_directory
+        os.makedirs(persist_dir, exist_ok=True)
+
+        self._collections: Dict[CollectionTarget, Chroma] = {}
+        for target in CollectionTarget:
+            self._collections[target] = Chroma(
+                collection_name=target.value,
+                embedding_function=self._embedding_model,
+                persist_directory=persist_dir,
+            )
+
+        # --- Parent-Child SOLO per regolamenti/piani di studio ---
+        parent_dir = settings.vectorstore.parent_store_directory
+        os.makedirs(parent_dir, exist_ok=True)
+
+        self._pc_child_vectorstore = Chroma(
+            collection_name="offerta_formativa_pdf_childs",
             embedding_function=self._embedding_model,
-            persist_directory=settings.vectorstore.persist_directory,
+            persist_directory=persist_dir,
         )
-        
-        # --- Pipeline PDF: ParentDocumentRetriever nativo ---
-        self._pdf_child_vectorstore = Chroma(
-            collection_name=f"{settings.vectorstore.collection_name}_pdf_childs",
-            embedding_function=self._embedding_model,
-            persist_directory=settings.vectorstore.persist_directory,
+        self._pc_parent_docstore = create_kv_docstore(
+            LocalFileStore(parent_dir)
         )
-        
-        os.makedirs(settings.vectorstore.parent_store_directory, exist_ok=True)
-        self._pdf_parent_docstore = create_kv_docstore(
-            LocalFileStore(settings.vectorstore.parent_store_directory)
-        )
-        
-        self._pdf_retriever = ParentDocumentRetriever(
-            vectorstore=self._pdf_child_vectorstore,
-            docstore=self._pdf_parent_docstore,
+        self._parent_child_retriever = ParentDocumentRetriever(
+            vectorstore=self._pc_child_vectorstore,
+            docstore=self._pc_parent_docstore,
             child_splitter=RecursiveCharacterTextSplitter(
                 chunk_size=settings.ingestion.pdf_child_chunk_size,
                 chunk_overlap=settings.ingestion.pdf_child_chunk_overlap,
@@ -89,8 +86,8 @@ class KnowledgeBaseIndexer:
                 chunk_overlap=settings.ingestion.pdf_parent_chunk_overlap,
             ),
         )
-        
-        # --- Splitters HTML ---
+
+        # --- Splitters per tipo ---
         self._html_section_splitter = HTMLSectionSplitter(
             headers_to_split_on=[
                 ("h1", "Titolo"),
@@ -98,68 +95,104 @@ class KnowledgeBaseIndexer:
                 ("h3", "Sottosezione"),
             ]
         )
-        self._html_chunk_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=settings.ingestion.html_chunk_size,
-            chunk_overlap=settings.ingestion.html_chunk_overlap,
-            add_start_index=True,
+        self._html_splitters = {
+            CollectionTarget.DOCENTI_DIDATTICA: RecursiveCharacterTextSplitter(
+                chunk_size=800, chunk_overlap=100, add_start_index=True
+            ),
+            CollectionTarget.OFFERTA_FORMATIVA: RecursiveCharacterTextSplitter(
+                chunk_size=700, chunk_overlap=50, add_start_index=True
+            ),
+            CollectionTarget.BANDI_AMMINISTRAZIONE: RecursiveCharacterTextSplitter(
+                chunk_size=700, chunk_overlap=50, add_start_index=True
+            ),
+            CollectionTarget.DIPARTIMENTO_RICERCA: RecursiveCharacterTextSplitter(
+                chunk_size=800, chunk_overlap=100, add_start_index=True
+            ),
+        }
+        # Splitter diretto per PDF che NON usano Parent-Child
+        self._pdf_direct_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1500, chunk_overlap=200, add_start_index=True
         )
-        
+
         # --- Registro incrementale ---
         self._registry = IndexRegistry(settings.ingestion.index_registry_path)
-        
+
         logger.info(
-            f"Indexer duale — HTML: {settings.ingestion.html_chunk_size}/{settings.ingestion.html_chunk_overlap}, "
-            f"PDF Parent: {settings.ingestion.pdf_parent_chunk_size}, "
-            f"PDF Child: {settings.ingestion.pdf_child_chunk_size}"
+            f"Indexer multi-collection inizializzato: "
+            f"{[t.value for t in CollectionTarget]}"
         )
 
     # ==========================================================
-    # PIPELINE HTML
+    # PIPELINE HTML (con routing)
     # ==========================================================
 
     def index_html_directory(self, directory: Optional[str] = None) -> dict:
         directory = directory or self._settings.ingestion.html_raw_dir
         html_files = list(Path(directory).glob("*.html"))
-        
+
         if not html_files:
             logger.warning(f"Nessun file HTML in {directory}")
             return {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0}
-        
+
         stats = {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0}
         current_sources = set()
-        
+        routing_stats: Dict[str, int] = {t.value: 0 for t in CollectionTarget}
+
         for filepath in html_files:
             source_id = f"html:{filepath.name}"
             current_sources.add(source_id)
-            
+
             try:
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-                
+
                 content_hash = IndexRegistry.compute_hash(content)
                 existing = self._registry.get(source_id)
-                
+
                 if existing and existing.content_hash == content_hash:
                     stats["skipped"] += 1
                     continue
-                
+
+                # --- ROUTING: determina la collection target ---
+                source_url = self._extract_source_url(content) or filepath.name
+                collection_target = DocumentRouter.route_html(source_url)
+                vectorstore = self._collections[collection_target]
+
+                # Cleanup vecchi chunk se update
                 if existing:
-                    self._delete_from_vectorstore(self._html_vectorstore, existing.chroma_ids)
+                    self._delete_from_vectorstore(
+                        self._collections.get(
+                            CollectionTarget(existing.collection_name),
+                            vectorstore
+                        ) if hasattr(existing, 'collection_name') else vectorstore,
+                        existing.chroma_ids
+                    )
                     stats["updated"] += 1
                 else:
                     stats["indexed"] += 1
-                
-                source_url = self._extract_source_url(content)
-                chroma_ids = self._chunk_and_index_html(content, source_url, filepath.name)
-                
+
+                # Metadati arricchiti
+                extra_meta = DocumentRouter.extract_metadata(
+                    source_url, collection_target
+                )
+
+                # Chunking e indicizzazione
+                chroma_ids = self._chunk_and_index_html(
+                    content, source_url, filepath.name,
+                    vectorstore, collection_target, extra_meta
+                )
+
                 self._registry.upsert(source_id, IndexEntry(
                     content_hash=content_hash,
                     chroma_ids=chroma_ids,
+                    collection_name=collection_target.value,
                 ))
-                
+                routing_stats[collection_target.value] += 1
+
             except Exception as e:
                 logger.error(f"Errore HTML {filepath.name}: {e}")
-        
+
+        # Pulizia orfani
         html_orphans = {
             sid for sid in self._registry.all_source_ids()
             if sid.startswith("html:") and sid not in current_sources
@@ -167,160 +200,240 @@ class KnowledgeBaseIndexer:
         for orphan_id in html_orphans:
             entry = self._registry.remove(orphan_id)
             if entry:
-                self._delete_from_vectorstore(self._html_vectorstore, entry.chroma_ids)
+                target_vs = self._collections.get(
+                    CollectionTarget(entry.collection_name)
+                    if hasattr(entry, 'collection_name') else None,
+                    self._collections[CollectionTarget.DIPARTIMENTO_RICERCA]
+                )
+                self._delete_from_vectorstore(target_vs, entry.chroma_ids)
                 stats["orphans_removed"] += 1
-        
+
         self._registry.save()
         logger.info(f"HTML indexing: {stats}")
+        logger.info(f"HTML routing: {routing_stats}")
         return stats
 
     def _chunk_and_index_html(
-        self, content: str, source_url: Optional[str], filename: str
+        self,
+        content: str,
+        source_url: str,
+        filename: str,
+        vectorstore: Chroma,
+        collection: CollectionTarget,
+        extra_metadata: dict,
     ) -> List[str]:
+        """Chunk e indicizza un documento HTML nella collection target."""
         section_docs = self._html_section_splitter.split_text(content)
-        
+
         normalized = []
         for doc in section_docs:
             if isinstance(doc, str):
                 doc = Document(page_content=doc, metadata={})
-            doc.metadata["source_url"] = source_url or filename
-            doc.metadata["source_file"] = filename
-            doc.metadata["doc_type"] = "html"
+            doc.metadata.update({
+                "source_url": source_url,
+                "source_file": filename,
+                "doc_type": "html",
+                **extra_metadata,
+            })
             normalized.append(doc)
-        
-        chunks = self._html_chunk_splitter.split_documents(normalized)
+
+        splitter = self._html_splitters[collection]
+        chunks = splitter.split_documents(normalized)
         if not chunks:
             return []
-        
-        chroma_ids = [f"html_{filename}_{i}" for i in range(len(chunks))]
-        self._html_vectorstore.add_documents(chunks, ids=chroma_ids)
+
+        chroma_ids = [
+            f"{collection.value}_html_{filename}_{i}"
+            for i in range(len(chunks))
+        ]
+        vectorstore.add_documents(chunks, ids=chroma_ids)
         return chroma_ids
 
     # ==========================================================
-    # PIPELINE PDF (ParentDocumentRetriever nativo)
+    # PIPELINE PDF (con routing + chunking differenziato)
     # ==========================================================
 
     def index_pdf_list(self, pdf_links_file: Optional[str] = None) -> dict:
         pdf_links_file = pdf_links_file or self._settings.ingestion.pdf_links_file
         download_dir = self._settings.ingestion.pdf_download_dir
-        
+
         if not os.path.exists(pdf_links_file):
             logger.warning(f"File lista PDF non trovato: {pdf_links_file}")
-            return {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0}
-        
+            return {"indexed": 0, "skipped": 0, "updated": 0}
+
         with open(pdf_links_file, "r") as f:
             pdf_urls = [line.strip() for line in f if line.strip()]
-        
+
         os.makedirs(download_dir, exist_ok=True)
-        stats = {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0}
-        current_sources = set()
-        
+        stats = {"indexed": 0, "skipped": 0, "updated": 0}
+        routing_stats = {t.value: 0 for t in CollectionTarget}
+
         for url in pdf_urls:
             source_id = f"pdf:{url}"
-            current_sources.add(source_id)
-            
+
             try:
                 filename = self._safe_filename(url)
                 local_path = os.path.join(download_dir, filename)
-                
+
                 if not self._download_if_needed(url, local_path):
                     stats["skipped"] += 1
                     continue
-                
+
                 file_hash = IndexRegistry.compute_file_hash(local_path)
                 existing = self._registry.get(source_id)
-                
+
                 if existing and existing.content_hash == file_hash:
                     stats["skipped"] += 1
                     continue
-                
+
+                # --- ROUTING ---
+                collection_target = DocumentRouter.route_pdf(url)
+                use_pc = DocumentRouter.use_parent_child(collection_target, url)
+
+                # Cleanup vecchi chunk
                 if existing and existing.chroma_ids:
-                    self._delete_from_vectorstore(self._pdf_child_vectorstore, existing.chroma_ids)
+                    target_vs = (
+                        self._pc_child_vectorstore if use_pc
+                        else self._collections[collection_target]
+                    )
+                    self._delete_from_vectorstore(target_vs, existing.chroma_ids)
                     stats["updated"] += 1
                 else:
                     stats["indexed"] += 1
-                
-                chroma_ids = self._index_single_pdf(local_path, url)
-                
+
+                # Metadati arricchiti
+                extra_meta = DocumentRouter.extract_metadata(url, collection_target)
+
+                # --- CHUNKING DIFFERENZIATO ---
+                if use_pc:
+                    # Parent-Child solo per regolamenti/piani di studio
+                    chroma_ids = self._index_pdf_parent_child(
+                        local_path, url, extra_meta
+                    )
+                else:
+                    # Chunking diretto per bandi e altri PDF
+                    chroma_ids = self._index_pdf_direct(
+                        local_path, url, collection_target, extra_meta
+                    )
+
                 self._registry.upsert(source_id, IndexEntry(
                     content_hash=file_hash,
                     chroma_ids=chroma_ids,
+                    collection_name=collection_target.value,
                 ))
-                
+                routing_stats[collection_target.value] += 1
+
             except Exception as e:
                 logger.error(f"Errore PDF {url}: {e}")
-        
-        pdf_orphans = {
-            sid for sid in self._registry.all_source_ids()
-            if sid.startswith("pdf:") and sid not in current_sources
-        }
-        for orphan_id in pdf_orphans:
-            entry = self._registry.remove(orphan_id)
-            if entry:
-                self._delete_from_vectorstore(self._pdf_child_vectorstore, entry.chroma_ids)
-                stats["orphans_removed"] += 1
-        
+
         self._registry.save()
         logger.info(f"PDF indexing: {stats}")
+        logger.info(f"PDF routing: {routing_stats}")
         return stats
 
-    def _index_single_pdf(self, local_path: str, source_url: str) -> List[str]:
+    def _index_pdf_parent_child(
+        self, local_path: str, source_url: str, extra_meta: dict
+    ) -> List[str]:
         """
-        Indicizza un PDF tramite ParentDocumentRetriever.add_documents().
-        
-        Internamente LangChain:
-        1. Applica parent_splitter → Parent chunk
-        2. Salva Parent nel docstore (LocalFileStore) con UUID
-        3. Applica child_splitter su ogni Parent → Child chunk
-        4. Inietta doc_id (riferimento Parent) nei metadati Child
-        5. Vettorializza e salva Child in Chroma
+        Parent-Child per regolamenti e piani di studio.
+        Identico al vecchio comportamento, ma limitato ai documenti che
+        effettivamente beneficiano di questo pattern.
         """
         loader = PyPDFLoader(local_path)
         pages = loader.load()
-        
+
         for page in pages:
-            page.metadata["source_url"] = source_url
-            page.metadata["doc_type"] = "pdf"
-        
-        # Cattura ID prima dell'inserimento per il registro incrementale
-        existing_data = self._pdf_child_vectorstore.get()
-        ids_before = set(existing_data["ids"]) if existing_data["ids"] else set()
-        
-        # Delega interamente a LangChain
-        self._pdf_retriever.add_documents(pages)
-        
-        ids_after = set(self._pdf_child_vectorstore.get()["ids"])
+            page.metadata.update({
+                "source_url": source_url,
+                "doc_type": "pdf",
+                **extra_meta,
+            })
+
+        ids_before = set(self._pc_child_vectorstore.get()["ids"] or [])
+        self._parent_child_retriever.add_documents(pages)
+        ids_after = set(self._pc_child_vectorstore.get()["ids"])
+
         new_ids = list(ids_after - ids_before)
-        
         logger.debug(
-            f"PDF '{os.path.basename(local_path)}': "
-            f"{len(new_ids)} child chunks via ParentDocumentRetriever"
+            f"PDF Parent-Child '{os.path.basename(local_path)}': "
+            f"{len(new_ids)} child chunks"
         )
         return new_ids
 
+    def _index_pdf_direct(
+        self,
+        local_path: str,
+        source_url: str,
+        collection: CollectionTarget,
+        extra_meta: dict,
+    ) -> List[str]:
+        """
+        Chunking diretto per bandi e PDF che NON necessitano di Parent-Child.
+        
+        Usa chunk ampi (1500 chars) per catturare il contesto del bando
+        senza la risalita al Parent che causa i falsi positivi.
+        """
+        loader = PyPDFLoader(local_path)
+        pages = loader.load()
+
+        for page in pages:
+            page.metadata.update({
+                "source_url": source_url,
+                "doc_type": "pdf",
+                **extra_meta,
+            })
+
+        chunks = self._pdf_direct_splitter.split_documents(pages)
+        if not chunks:
+            return []
+
+        vectorstore = self._collections[collection]
+        filename = os.path.basename(local_path)
+        chroma_ids = [
+            f"{collection.value}_pdf_{filename}_{i}"
+            for i in range(len(chunks))
+        ]
+        vectorstore.add_documents(chunks, ids=chroma_ids)
+
+        logger.debug(
+            f"PDF diretto '{filename}': "
+            f"{len(chunks)} chunks → {collection.value}"
+        )
+        return chroma_ids
+
     # ==========================================================
-    # RETRIEVER ACCESSORS
+    # RETRIEVER ACCESSORS (uno per collection + merge)
     # ==========================================================
 
-    def get_html_retriever(self, search_type: Optional[str] = None, k: Optional[int] = None):
-        """Retriever per HTML (chunk diretti)."""
-        return self._html_vectorstore.as_retriever(
+    def get_collection_retriever(
+        self,
+        collection: CollectionTarget,
+        search_type: Optional[str] = None,
+        k: Optional[int] = None,
+    ):
+        """Retriever per una singola collection (chunk diretti)."""
+        return self._collections[collection].as_retriever(
             search_type=search_type or self._settings.vectorstore.search_type,
             search_kwargs={"k": k or self._settings.vectorstore.search_k},
         )
-    
-    def get_pdf_retriever(self, k: Optional[int] = None):
-        """
-        Retriever per PDF (Parent-Child nativo LangChain).
-        invoke() restituisce direttamente i Parent.
-        """
-        self._pdf_retriever.search_kwargs = {
+
+    def get_parent_child_retriever(self, k: Optional[int] = None):
+        """Retriever Parent-Child per regolamenti/piani di studio."""
+        self._parent_child_retriever.search_kwargs = {
             "k": k or self._settings.vectorstore.search_k
         }
-        return self._pdf_retriever
+        return self._parent_child_retriever
+
+    def get_all_retrievers(self):
+        """Restituisce tutti i retriever per query cross-collection."""
+        retrievers = {}
+        for target in CollectionTarget:
+            retrievers[target] = self.get_collection_retriever(target)
+        retrievers["parent_child"] = self.get_parent_child_retriever()
+        return retrievers
 
     # ==========================================================
-    # UTILITÀ
+    # UTILITÀ (invariate)
     # ==========================================================
 
     @staticmethod
@@ -337,6 +450,7 @@ class KnowledgeBaseIndexer:
         if os.path.exists(local_path):
             return True
         try:
+            import requests
             response = requests.get(url, timeout=60)
             if response.ok:
                 with open(local_path, "wb") as f:
@@ -346,13 +460,18 @@ class KnowledgeBaseIndexer:
         except Exception as e:
             logger.error(f"Errore download {url}: {e}")
             return False
-    
+
     @staticmethod
     def _extract_source_url(html_content: str) -> Optional[str]:
-        match = re.search(r"<!--\s*SOURCE:\s*(https?://[^\s]+)\s*-->", html_content)
+        match = re.search(
+            r"<!--\s*SOURCE:\s*(https?://[^\s]+)\s*-->", html_content
+        )
         return match.group(1).strip() if match else None
-    
+
     @staticmethod
     def _safe_filename(url: str) -> str:
-        name = re.sub(r'[<>:"/\\|?*]', '_', url.replace("https://", "").replace("http://", ""))
+        name = re.sub(
+            r'[<>:"/\\|?*]', '_',
+            url.replace("https://", "").replace("http://", "")
+        )
         return name[:120]
