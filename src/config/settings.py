@@ -14,6 +14,7 @@ degli esperimenti e facilita il tuning dei parametri per massimizzare le metrich
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,26 @@ class IngestionConfig:
     
     # --- Registro incrementale (hash-based deduplication) ---
     index_registry_path: str = "data/vectorstore/index_registry.json"
+    
+    # --- Derived helpers (non frozen-safe, quindi metodi) ---
+    
+    def get_allowed_domains(self) -> set[str]:
+        """Deriva i domini consentiti dalle seed_urls."""
+        domains = set()
+        for url in self.seed_urls:
+            parsed = urlparse(url)
+            if parsed.netloc:
+                domains.add(parsed.netloc)
+        # Aggiungi docenti.unisa.it (non è nelle seed ma è un dominio valido)
+        domains.add("docenti.unisa.it")
+        return domains
+    
+    def get_allowed_prefixes(self) -> tuple[str, ...]:
+        """Deriva i prefissi consentiti dalle seed_urls (esclude easycourse)."""
+        return tuple(
+            url for url in self.seed_urls 
+            if "easycourse" not in url
+        )
 
 
 @dataclass(frozen=True)
@@ -100,8 +121,17 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class EasyCourseConfig:
+    """Parametri per il tool EasyCourse (Sprint 5)."""
+    
+    base_url: str = "https://easycourse.unisa.it"
+    timeout: int = 30
+    user_agent: str = "DIEM-RAG-Bot/1.0 (Università di Salerno)"
+
+
+@dataclass(frozen=True)
 class GuardrailsConfig:
-    """Parametri per i guardrails di sicurezza."""
+    """Parametri per i guardrails di sicurezza (Sprint 4)."""
     
     allowed_scope_description: str = (
         "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
@@ -113,6 +143,16 @@ class GuardrailsConfig:
 
 
 @dataclass(frozen=True)
+class ObservabilityConfig:
+    """Parametri per logging e tracciamento della pipeline."""
+    
+    enable_verbose_callbacks: bool = True
+    log_retrieved_chunks: bool = True
+    log_tool_invocations: bool = True
+    max_chunk_preview_chars: int = 200
+
+
+@dataclass(frozen=True)
 class AppSettings:
     """Aggregatore di tutte le configurazioni."""
     
@@ -121,19 +161,18 @@ class AppSettings:
     vectorstore: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    easycourse: EasyCourseConfig = field(default_factory=EasyCourseConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 
 
 def load_settings() -> AppSettings:
     """
     Factory method che costruisce le impostazioni leggendo le variabili d'ambiente.
+    Ogni parametro ha un default sensato; le env var permettono l'override.
     """
     return AppSettings(
-        ingestion=IngestionConfig(
-            html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),
-            pdf_links_file=os.getenv("PDF_LINKS_FILE", "data/raw/html_samples/pdf_links.txt"),
-            pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
-        ),
+
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "huggingface"),
             model_name=os.getenv("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
@@ -147,5 +186,12 @@ def load_settings() -> AppSettings:
         vectorstore=VectorStoreConfig(
             persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
             parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore/parent_docstore"),
+        ),
+        easycourse=EasyCourseConfig(
+            base_url=os.getenv("EASYCOURSE_BASE_URL", "https://easycourse.unisa.it"),
+            timeout=int(os.getenv("EASYCOURSE_TIMEOUT", "30")),
+        ),
+        observability=ObservabilityConfig(
+            enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
         ),
     )
