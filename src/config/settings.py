@@ -13,13 +13,20 @@ REFACTORING MULTI-COLLECTION:
   Aggiunto get_collection_html_params() per l'indexer.
   VectorStoreConfig ora include parent_child_collection_name.
 
+REFACTORING CRAWLER (Sprint Filtri Docenti):
+  Aggiunto CrawlerConfig con:
+  - Calcolo dinamico conservativo dei thread (cpu_count-based).
+  - cutoff_year condiviso per filtraggio pubblicazioni.
+  - Parametri I/O (write_buffer_size, lock strategy).
+  - Regex patterns per filtri URL docenti (progetti, pubblicazioni, didattica).
+
 KPI Impact: Tutti. La configurazione centralizzata garantisce riproducibilità
 degli esperimenti e facilita il tuning dei parametri per massimizzare le metriche RAGAS.
 """
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 
@@ -63,9 +70,6 @@ class IngestionConfig:
     html_chunk_overlap: int = 50
     
     # --- Chunking HTML PER-COLLECTION ---
-    # Ogni collection ha parametri ottimizzati per il tipo di contenuto.
-    # Docenti e dipartimento: chunk più ampi (pagine con molto contesto).
-    # Offerta e bandi: chunk standard (contenuto più strutturato).
     docenti_html_chunk_size: int = 800
     docenti_html_chunk_overlap: int = 100
     
@@ -94,7 +98,6 @@ class IngestionConfig:
     # --- Derived helpers ---
     
     def get_allowed_domains(self) -> set[str]:
-        """Deriva i domini consentiti dalle seed_urls."""
         domains = set()
         for url in self.seed_urls:
             parsed = urlparse(url)
@@ -104,26 +107,12 @@ class IngestionConfig:
         return domains
     
     def get_allowed_prefixes(self) -> tuple[str, ...]:
-        """Deriva i prefissi consentiti dalle seed_urls (esclude easycourse)."""
         return tuple(
             url for url in self.seed_urls 
             if "easycourse" not in url
         )
     
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
-        """
-        Restituisce (chunk_size, chunk_overlap) per una data collection.
-        
-        L'indexer chiama questo metodo per costruire lo splitter HTML
-        specifico di ogni collection, garantendo Single Source of Truth.
-        
-        Args:
-            collection_name: Il value dell'enum CollectionTarget
-                             (es. "docenti_e_didattica").
-        
-        Returns:
-            Tupla (chunk_size, chunk_overlap).
-        """
         mapping = {
             "docenti_e_didattica": (
                 self.docenti_html_chunk_size,
@@ -148,10 +137,71 @@ class IngestionConfig:
         )
 
 
+# ============================================================
+# CRAWLER CONFIG (NUOVA — Sprint Filtri Docenti)
+# ============================================================
+
+@dataclass(frozen=True)
+class CrawlerConfig:
+    """
+    Parametri specifici per il crawler (UnisaCrawler).
+
+    Centralizza:
+    - Calcolo thread dinamico conservativo.
+    - Parametri di filtraggio URL per sezione docenti
+      (progetti, pubblicazioni, didattica).
+    - Parametri I/O per scrittura su disco.
+    """
+
+    # --- Thread pool ---
+    # Fattore moltiplicativo per il calcolo dei worker.
+    # Formula: max_workers = max(2, int(cpu_count * thread_cpu_factor))
+    # Con 0.75 su una macchina a 8 core → 6 thread (conservativo).
+    thread_cpu_factor: float = 0.75
+    # Floor assoluto: mai meno di 2 thread
+    thread_min_workers: int = 2
+    # Tetto assoluto: mai più di 16 thread (evita saturazione I/O)
+    thread_max_workers: int = 16
+
+    # --- Filtraggio URL docenti: Ricerca Progetti ---
+    # Pattern URL figli da SCARTARE sotto ricerca/progetti
+    progetti_discard_params: tuple[str, ...] = (
+        "progetto=", "ruolo=componente", "ruolo=responsabile",
+        "tip=", "stato=",
+    )
+
+    # --- Filtraggio URL docenti: Ricerca Pubblicazioni ---
+    # Solo anno=0 viene salvato e analizzato; tutti gli altri anni scartati.
+    # Il cutoff_year per il filtering del contenuto HTML è in IngestionConfig.
+
+    # --- Filtraggio contenuto HTML: Pubblicazioni anno=0 ---
+    # Le pubblicazioni con anno < cutoff_year vengono rimosse dal DOM prima
+    # del salvataggio. Il cutoff è condiviso con IngestionConfig.cutoff_year.
+
+    # --- I/O su disco ---
+    # Dimensione buffer per il writer thread-safe (bytes).
+    # 0 = unbuffered (flush immediato), >0 = buffered.
+    write_buffer_size: int = 0
+
+    def compute_max_workers(self) -> int:
+        """
+        Calcola il numero ottimale di thread per il ThreadPoolExecutor.
+
+        Strategia conservativa:
+          - Usa il 75% dei core CPU disponibili (configurabile).
+          - Mai meno di thread_min_workers (2).
+          - Mai più di thread_max_workers (16).
+
+        Questo evita di saturare CPU e RAM su macchine con molti core,
+        lasciando risorse per il sistema operativo e altri processi.
+        """
+        cpu = os.cpu_count() or 4
+        computed = max(self.thread_min_workers, int(cpu * self.thread_cpu_factor))
+        return min(computed, self.thread_max_workers)
+
+
 @dataclass(frozen=True)
 class EmbeddingConfig:
-    """Parametri per il modello di embedding."""
-    
     model_name: str = "BAAI/bge-m3"
     normalize_embeddings: bool = True
     expected_dim: int = 1024
@@ -159,42 +209,26 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class VectorStoreConfig:
-    """
-    Parametri per il database vettoriale.
-    
-    REFACTORING: collection_name mantenuto per backward compatibility.
-    Le 4 collection usano nomi derivati dall'enum CollectionTarget.
-    parent_child_collection_name è la collection Chroma dedicata ai
-    child chunks del ParentDocumentRetriever.
-    """
-    
     persist_directory: str = "data/vectorstore/chroma"
-    collection_name: str = "diem_knowledge_base"  # legacy, non più usato
+    collection_name: str = "diem_knowledge_base"
     parent_store_directory: str = "data/vectorstore/parent_docstore"
     search_type: str = "similarity"
     search_k: int = 20
-    
-    # Collection Chroma dedicata ai child chunks del Parent-Child
     parent_child_collection_name: str = "offerta_formativa_pdf_childs"
 
 
 @dataclass(frozen=True)
 class RerankerConfig:
-    """Parametri per il Cross-Encoder di re-ranking post-retrieval."""
-    
     model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     top_n: int = 5
 
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Parametri per il Large Language Model (Strategy Pattern ready)."""
-    
     provider: str = "huggingface"
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     temperature: float = 0.1
     max_tokens: int = 1024
-    
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
     ollama_base_url: str = "http://localhost:11434"
@@ -202,8 +236,6 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class EasyCourseConfig:
-    """Parametri per il tool EasyCourse."""
-    
     base_url: str = "https://easycourse.unisa.it"
     timeout: int = 30
     user_agent: str = "DIEM-RAG-Bot/1.0 (Università di Salerno)"
@@ -211,8 +243,6 @@ class EasyCourseConfig:
 
 @dataclass(frozen=True)
 class GuardrailsConfig:
-    """Parametri per i guardrails di sicurezza."""
-    
     allowed_scope_description: str = (
         "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
@@ -224,8 +254,6 @@ class GuardrailsConfig:
 
 @dataclass(frozen=True)
 class ObservabilityConfig:
-    """Parametri per logging e tracciamento della pipeline."""
-    
     enable_verbose_callbacks: bool = True
     log_retrieved_chunks: bool = True
     log_tool_invocations: bool = True
@@ -237,6 +265,7 @@ class AppSettings:
     """Aggregatore di tutte le configurazioni."""
     
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
+    crawler: CrawlerConfig = field(default_factory=CrawlerConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vectorstore: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
@@ -249,7 +278,6 @@ class AppSettings:
 def load_settings() -> AppSettings:
     """
     Factory method che costruisce le impostazioni leggendo le variabili d'ambiente.
-    Ogni parametro ha un default sensato; le env var permettono l'override.
     """
     return AppSettings(
         ingestion=IngestionConfig(
@@ -258,6 +286,10 @@ def load_settings() -> AppSettings:
             pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
+        ),
+        crawler=CrawlerConfig(
+            thread_cpu_factor=float(os.getenv("CRAWLER_THREAD_FACTOR", "0.75")),
+            thread_max_workers=int(os.getenv("CRAWLER_MAX_WORKERS", "16")),
         ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "ollama"),
