@@ -1,8 +1,9 @@
 """
-ingestion/router.py — Routing aggiornato con docente_sezione.
+ingestion/router.py — Routing aggiornato con docente_sezione e doc_category robusto.
 
-Modifiche rispetto alla versione corrente:
-  - extract_metadata() ora estrae docente_sezione dal path URL.
+FIX APPLICATI:
+  - extract_metadata() ora usa regex robusti per classificare doc_category
+    per strutture fisiche. Copre singolare/plurale e query parameters.
   - Nuova regola HTML per spostare strutture-didattiche in Collection 4.
   - Helper _classify_docente_sezione() per il mapping URL → sezione.
 """
@@ -24,7 +25,7 @@ class CollectionTarget(str, Enum):
 
 
 # ============================================================
-# NUOVO: Mapping sottosezione docente
+# Mapping sottosezione docente
 # ============================================================
 
 class DocenteSezione(str, Enum):
@@ -83,7 +84,7 @@ class DocumentRouter:
         (r"diem\.unisa\.it/didattica", CollectionTarget.OFFERTA_FORMATIVA),
         (r"diem\.unisa\.it/dipartimento/personale", CollectionTarget.DOCENTI_DIDATTICA),
         
-        # MODIFICA: strutture-didattiche ora va in DIPARTIMENTO_RICERCA
+        # strutture-didattiche e laboratori fisici → DIPARTIMENTO_RICERCA
         (r"diem\.unisa\.it/.*strutture-didattiche", CollectionTarget.DIPARTIMENTO_RICERCA),
         (r"diem\.unisa\.it/.*strutture.*laboratori", CollectionTarget.DIPARTIMENTO_RICERCA),
         
@@ -126,8 +127,21 @@ class DocumentRouter:
     @classmethod
     def extract_metadata(cls, source_url: str, collection: CollectionTarget) -> dict:
         """
-        Metadati arricchiti — AGGIORNATO con docente_sezione e doc_category
-        granulare per strutture fisiche.
+        Metadati arricchiti — FIX con doc_category granulare robusto.
+
+        FIX APPLICATO:
+          Prima: il matching per doc_category cercava "laboratori" (plurale)
+          ma gli URL reali contengono "laboratorio" (singolare nei query params).
+          Inoltre il match per "aule" era troppo restrittivo.
+          Ora: regex robusti che coprono singolare/plurale, path e query params.
+          Il blocco di classificazione strutture fisiche viene eseguito SOLO
+          per la collection dipartimento_e_ricerca.
+
+        Mapping:
+          URL con "strutture-didattiche", "aula", "aule"   → doc_category = "aula"
+          URL con "laboratorio", "laboratori", "lab"        → doc_category = "laboratorio"
+          URL con "sede", "sedi", "edificio", "campus"      → doc_category = "sede"
+          Tutto il resto di dipartimento_e_ricerca          → doc_category = "dipartimento_e_ricerca" (default)
         """
         metadata = {
             "doc_category": collection.value,
@@ -139,7 +153,7 @@ class DocumentRouter:
         if matricola_match:
             metadata["docente_matricola"] = matricola_match.group(1)
             
-            # NUOVO: classificazione della sottosezione
+            # Classificazione della sottosezione
             sezione = _classify_docente_sezione(source_url)
             if sezione:
                 metadata["docente_sezione"] = sezione
@@ -154,12 +168,34 @@ class DocumentRouter:
         if anno_match:
             metadata["anno"] = anno_match.group(1)
         
-        # --- NUOVO: Strutture fisiche (doc_category granulare) ---
-        url_lower = source_url.lower()
-        if "strutture-didattiche" in url_lower or "aule" in url_lower:
-            metadata["doc_category"] = "aula"
-        elif "laboratori" in url_lower:
-            metadata["doc_category"] = "laboratorio"
+        # --- Strutture fisiche: doc_category granulare (FIX) ---
+        # Solo per la collection dipartimento_e_ricerca, dove coesistono
+        # documenti su aule, laboratori, sedi E documenti su ricerca/progetti.
+        # Per le altre collection il doc_category resta uguale al valore
+        # della collection (che è già specifico).
+        if collection == CollectionTarget.DIPARTIMENTO_RICERCA:
+            url_lower = source_url.lower()
+            
+            # AULA: match su "strutture-didattiche", "aula", "aule"
+            # (sia nel path che nei query parameters)
+            # Regex: strutture-didattiche OPPURE aul + a/e (singolare/plurale)
+            if re.search(r"strutture[-_]didattiche|aul[ae]", url_lower):
+                metadata["doc_category"] = "aula"
+            
+            # LABORATORIO: match su "laboratorio", "laboratori", "lab"
+            # Attenzione: "laboratorio" appare anche nei query params
+            # (es. ?laboratorio=722). Includiamo anche queste pagine
+            # perché descrivono laboratori fisici del dipartimento.
+            # Regex: laborator + io/i (singolare/plurale) OPPURE "lab" come parola intera
+            elif re.search(r"laborator[io]|laboratori|\blab\b", url_lower):
+                metadata["doc_category"] = "laboratorio"
+            
+            # SEDE: match su "sede", "sedi", "edificio", "campus"
+            # Regex: sed + e/i OPPURE edificio OPPURE campus
+            elif re.search(r"\bsed[ei]\b|edifici[o]|campus", url_lower):
+                metadata["doc_category"] = "sede"
+            
+            # Tutto il resto rimane "dipartimento_e_ricerca" (default già impostato)
 
         return metadata
 

@@ -1,10 +1,13 @@
 """
 retrieval/engine.py — QueryOptimizer con Domain-Aware Rewriting.
 
-Modifiche:
-  - REWRITE_PROMPT riscritto con 5 regole di dominio
-  - current_datetime iniettato automaticamente
-  - Preservazione dell'intento interrogativo
+FIX APPLICATI:
+  1. QueryOptimizer.rewrite(): rimosso early-return che bypassava il rewriting
+     per query con >10 parole senza history.
+  2. RetrievalEngine.retrieve(): il rewriting è ora SEMPRE attivo quando
+     self._optimizer è presente, indipendentemente dalla presenza di chat_history.
+  3. CrossEncoderReranker.rerank(): aggiunto score_threshold per filtrare
+     documenti con score sotto -5.0 (falsi positivi semantici).
 """
 
 import logging
@@ -113,35 +116,54 @@ class QueryOptimizer:
     def rewrite(self, question: str, history: Optional[list] = None) -> str:
         """
         Riscrivi la query con espansione di dominio e risoluzione temporale.
-        
-        Se non c'è history e la query è già specifica, la restituisce invariata
-        per evitare overhead LLM inutile.
+
+        FIX APPLICATO:
+          Rimosso l'early-return per query lunghe senza history.
+          Prima: query con >10 parole senza history venivano restituite
+          invariate. Questo impediva l'espansione di dominio su query
+          già strutturate ma prive di contesto DIEM.
+          Ora: il rewriting viene eseguito SEMPRE, indipendentemente dalla
+          lunghezza della query o dalla presenza di history.
+          Il sanity check sulla compressione è mantenuto come guardia.
+
+        Args:
+            question: La query originale dell'utente.
+            history: Lista opzionale di BaseMessage LangChain per contesto.
+                     Se presente, il rewriter risolve coreferenze anaforiche.
+
+        Returns:
+            La query riscritta (espansa, contestualizzata al DIEM) oppure
+            la query originale se il rewriting fallisce o produce output
+            sospetto (compressione).
         """
-        if not history:
-            # Senza history, il rewriting è utile solo per espansione di dominio.
-            # Per query brevi o ambigue, lo eseguiamo comunque.
-            if len(question.split()) > 10:
-                return question
-        
+        # ── RIMOSSO EARLY-RETURN ──
+        # Prima c'era:
+        #   if not history:
+        #       if len(question.split()) > 10:
+        #           return question
+        # Questo causava il bypass del rewriting per query lunghe senza history.
+        # Ora il rewriting è SEMPRE eseguito per garantire l'espansione di dominio.
+
         try:
             result = self._rewrite_chain.invoke({
                 "question": question,
                 "history": history or [],
                 "current_datetime": self._get_current_datetime_str(),
             })
-            
-            # Sanity check: se il risultato è più corto della query originale,
-            # probabilmente il modello ha "compresso" — torniamo all'originale
+
+            # Sanity check: se il risultato è più corto del 50% della query
+            # originale, il modello ha probabilmente "compresso" la query
+            # invece di espanderla → torniamo alla query originale.
             if len(result) < len(question) * 0.5:
                 logger.warning(
                     f"Query rewriting sospetto (compressione): "
                     f"'{question}' → '{result}'. Uso l'originale."
                 )
                 return question
-            
+
             logger.info(f"Query rewritten: '{question}' → '{result}'")
             return result
-            
+
         except Exception as e:
             logger.warning(f"Errore rewriting, uso query originale: {e}")
             return question
@@ -161,30 +183,84 @@ class QueryOptimizer:
 # ============================================================
 
 class CrossEncoderReranker:
-    """Post-Retrieval: ri-ordina i documenti candidati con Cross-Encoder."""
-    
+    """
+    Post-Retrieval: ri-ordina i documenti candidati con Cross-Encoder.
+
+    FIX APPLICATO:
+      Aggiunto score_threshold per filtrare documenti con score sotto -5.0.
+      Il CrossEncoder ms-marco-MiniLM-L6-v2 restituisce logits raw dove
+      valori negativi indicano bassa rilevanza. Un threshold di -5.0
+      elimina i risultati chiaramente irrilevanti pur mantenendo un
+      margine di tolleranza.
+    """
+
+    # Soglia minima di rilevanza. I documenti con score inferiore vengono
+    # esclusi dai risultati finali. Valore scelto empiricamente:
+    # - Score > 0: alta rilevanza (match semantico forte)
+    # - Score tra -5 e 0: rilevanza incerta (potenzialmente utile)
+    # - Score < -5: irrilevante (rumore semantico)
+    DEFAULT_SCORE_THRESHOLD = -5.0
+
     def __init__(self, config: RerankerConfig):
         from sentence_transformers import CrossEncoder
         self._model = CrossEncoder(config.model_name)
         self._top_n = config.top_n
+        # Il threshold può essere reso configurabile in RerankerConfig
+        self._score_threshold = self.DEFAULT_SCORE_THRESHOLD
         logger.info(f"Cross-Encoder Reranker: {config.model_name}")
-    
+
     def rerank(
         self, query: str, documents: List[Document], top_n: Optional[int] = None
     ) -> List[Document]:
-        """Ri-ordina i documenti per rilevanza rispetto alla query."""
+        """
+        Ri-ordina i documenti per rilevanza rispetto alla query.
+
+        FIX APPLICATO:
+          Aggiunto filtraggio per score_threshold DOPO l'ordinamento.
+          Prima: tutti i top_n documenti venivano restituiti, anche con
+          score -10 (chiaramente irrilevanti).
+          Ora: solo i documenti con score >= threshold vengono inclusi.
+          Se tutti i documenti sono sotto threshold, restituisce lista vuota.
+          Questo permette al tool di mostrare il messaggio "Non ho trovato
+          informazioni pertinenti" invece di restituire risultati fuorvianti.
+        """
         if not documents:
             return []
-        
+
         top_n = top_n or self._top_n
+
+        # Calcola gli score di rilevanza per ogni coppia (query, documento)
         pairs = [[query, doc.page_content] for doc in documents]
         scores = self._model.predict(pairs)
+
+        # Ordina per score decrescente
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
-        
+
         result = []
         for doc, score in ranked[:top_n]:
+            # ── NUOVO: Filtraggio per score threshold ──
+            # Documenti con score sotto la soglia sono considerati irrilevanti
+            # e vengono esclusi. Questo previene i "falsi positivi semantici"
+            # dove Chroma restituisce i documenti più vicini nel vectorspace
+            # anche se non sono realmente pertinenti alla query.
+            if score < self._score_threshold:
+                logger.debug(
+                    f"Documento filtrato (score {score:.4f} < threshold "
+                    f"{self._score_threshold}): "
+                    f"{doc.metadata.get('source_url', 'N/D')[:80]}"
+                )
+                continue
+
             doc.metadata["relevance_score"] = float(score)
             result.append(doc)
+
+        # Log se tutti i documenti sono stati filtrati
+        if not result and documents:
+            logger.warning(
+                f"Tutti i {len(documents)} documenti candidati filtrati "
+                f"(score < {self._score_threshold}). Query: '{query[:80]}'"
+            )
+
         return result
 
 
@@ -194,7 +270,8 @@ class CrossEncoderReranker:
 
 class RetrievalEngine:
     """
-    Orchestratore retrieval — AGGIORNATO con metadata filtering.
+    Orchestratore retrieval — AGGIORNATO con metadata filtering e
+    query rewriting sempre attiva.
     """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
@@ -216,16 +293,36 @@ class RetrievalEngine:
         chat_history: Optional[list] = None,
     ) -> tuple:
         """
-        Retrieval con supporto metadata filtering.
+        Retrieval con query rewriting SEMPRE attiva e supporto metadata filtering.
+
+        FIX APPLICATO:
+          Prima: il rewriting era condizionato a `if self._optimizer and chat_history`.
+          Poiché i tool non passavano mai chat_history, il rewriting era SEMPRE
+          saltato. Ora la condizione è `if self._optimizer` (senza `and chat_history`).
+          La chat_history è opzionale e serve solo per risolvere coreferenze.
 
         Args:
-            query: La query di ricerca.
-            collection: CollectionTarget.value.
-            metadata_filter: Filtro Chroma (es. {"docente_sezione": "didattica"}).
-            chat_history: Storico per query rewriting.
+            query: La query di ricerca originale dell'utente.
+            collection: CollectionTarget.value (es. "dipartimento_e_ricerca").
+                        Se None, esegue retrieve_from_all().
+            metadata_filter: Filtro Chroma per restringere i risultati
+                             (es. {"doc_category": "aula"}).
+            chat_history: Lista di BaseMessage LangChain per contesto
+                          conversazionale. Opzionale.
+
+        Returns:
+            Tupla (documenti_reranked: List[Document], query_effettiva: str).
+            La query_effettiva è quella riscritta dal QueryOptimizer (o l'originale
+            se il rewriting fallisce o non è configurato).
         """
+        # ── QUERY REWRITING (SEMPRE ATTIVO) ──
+        # FIX: rimossa la condizione `and chat_history`.
+        # Prima: if self._optimizer and chat_history → il rewriting era condizionato
+        #        alla presenza di chat_history, che non veniva mai passata dai tool.
+        # Ora:   if self._optimizer → il rewriting viene eseguito SEMPRE.
+        #        La chat_history è opzionale e serve solo per risolvere coreferenze.
         effective_query = query
-        if self._optimizer and chat_history:
+        if self._optimizer:
             effective_query = self._optimizer.rewrite(query, chat_history)
 
         if collection is None:
@@ -255,6 +352,39 @@ class RetrievalEngine:
 
         final_docs = self._reranker.rerank(effective_query, candidates)
         return final_docs, effective_query
+
+    def retrieve_from_all(self, query: str) -> tuple:
+        """
+        Retrieval cross-collection: cerca in tutte le collection e nel
+        Parent-Child retriever, poi aggrega e rerank.
+        """
+        all_candidates = []
+        seen_hashes = set()
+
+        for collection_name, retriever in self._collection_retrievers.items():
+            try:
+                docs = retriever.invoke(query)
+                for doc in docs:
+                    h = hash(doc.page_content[:200])
+                    if h not in seen_hashes:
+                        seen_hashes.add(h)
+                        all_candidates.append(doc)
+            except Exception as e:
+                logger.warning(f"Errore retrieval da {collection_name}: {e}")
+
+        # Aggiungi risultati Parent-Child
+        try:
+            pc_docs = self._pc_retriever.invoke(query)
+            for doc in pc_docs:
+                h = hash(doc.page_content[:200])
+                if h not in seen_hashes:
+                    seen_hashes.add(h)
+                    all_candidates.append(doc)
+        except Exception as e:
+            logger.warning(f"Errore retrieval Parent-Child: {e}")
+
+        final_docs = self._reranker.rerank(query, all_candidates)
+        return final_docs, query
 
     def _get_filtered_retriever(self, collection_name: str, metadata_filter: dict):
         """

@@ -4,6 +4,13 @@ Agente RAG DIEM — Orchestratore principale.
 Assembla i componenti del sistema RAG in un agente conversazionale
 basato su `create_agent` di LangChain (NO LangGraph diretto).
 
+FIX APPLICATI:
+  1. chat(): integrazione PromptDumpHandler per salvare il prompt completo
+     su file ad ogni chiamata LLM (logs/prompts/).
+  2. chat(): iniezione della chat_history nei tool tramite set_chat_history()
+     prima di invocare l'agente, per abilitare il query rewriting contestuale.
+  3. Entrambi i fix applicati anche al percorso di retry.
+
 Architettura:
   create_agent(model, tools, system_prompt)
       ↓
@@ -11,11 +18,12 @@ Architettura:
       ↓
   Esterno: ConversationMemory gestisce lo storico multi-turno
            RAGObservabilityHandler traccia ogni fase
+           PromptDumpHandler salva i prompt su file
 
 Pattern GoF applicati:
   - Factory Method: RAGAgentFactory costruisce l'agente con tutte le dipendenze.
   - Strategy: ConversationMemory è intercambiabile (in-memory / persistent).
-  - Observer: RAGObservabilityHandler osserva il ciclo senza modificarlo.
+  - Observer: RAGObservabilityHandler + PromptDumpHandler osservano senza modificare.
   - Facade: RAGAgent espone un'API semplice (.chat()) che orchestra tutto.
   - Builder: PipelineTrace viene costruita incrementalmente dai callback.
 
@@ -25,12 +33,6 @@ Vincoli rispettati:
   ✅ Osservabilità totale tramite callbacks
   ✅ Integrazione con RetrievalEngine esistente
   ✅ Coerenza con settings.py e SoC del progetto
-
-KPI Impact:
-  - Scope Awareness: system prompt + ScopeGuardrail.
-  - Faithfulness: grounding al contesto via search_knowledge_base tool.
-  - Correctness: fonti citate, EasyCourse per orari real-time.
-  - Robustness: InputSanitizer + OutputValidator.
 """
 
 import logging
@@ -39,7 +41,12 @@ from typing import Optional, List, Dict, Any
 from langchain_core.messages import AIMessage, BaseMessage
 
 from config.settings import AppSettings, load_settings
-from agent.callbacks import RAGObservabilityHandler, create_observability_handler
+from agent.callbacks import (
+    RAGObservabilityHandler,
+    create_observability_handler,
+    PromptDumpHandler,
+    create_prompt_dump_handler,
+)
 from agent.memory import ConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
 from agent.guardrails import (
@@ -49,7 +56,7 @@ from agent.guardrails import (
     ScopeViolationError,
     InputInjectionError,
 )
-from agent.tools import set_retrieval_engine, get_all_tools
+from agent.tools import set_retrieval_engine, set_chat_history, get_all_tools
 from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine
 
@@ -59,15 +66,6 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # FACADE: RAGAgent
 # ============================================================
-
-"""
-agent/agent.py — Fix loop infinito + recursion_limit.
-
-Modifiche:
-  - recursion_limit dalla config in invoke()
-  - Catch di GraphRecursionError
-  - _retry_count inizializzato nel __init__
-"""
 
 class RAGAgent:
     
@@ -82,7 +80,7 @@ class RAGAgent:
         self._output_validator = output_validator
         self._settings = settings
         self._traces = []
-        self._retry_count = 0  # NUOVO: inizializzazione esplicita
+        self._retry_count = 0
     
     def chat(self, user_query: str) -> dict:
         """
@@ -91,9 +89,10 @@ class RAGAgent:
         Flusso completo:
           1. Pre-processing: guardrails (scope + sanitization)
           2. Memory: costruzione messaggi con storico
-          3. Agent: invocazione create_agent con callbacks
-          4. Post-processing: output validation
-          5. Memory: aggiornamento storico
+          3. Chat history injection: set_chat_history() per i tool
+          4. Agent: invocazione create_agent con callbacks (obs + prompt dump)
+          5. Post-processing: output validation
+          6. Memory: aggiornamento storico
         
         Args:
             user_query: La domanda dell'utente.
@@ -138,17 +137,36 @@ class RAGAgent:
         turn_number = self._memory.add_user_message(sanitized_query)
         messages = self._memory.get_messages_for_agent(sanitized_query)
         
+        # ── FIX: Inietta la chat history nei tool per il query rewriting ──
+        # Questo permette ai tool di passare la history al RetrievalEngine,
+        # che a sua volta la usa nel QueryOptimizer per risolvere coreferenze
+        # anaforiche (es. "e dove insegna?" → "Dove insegna il prof. Vento?").
+        set_chat_history(self._memory.get_langchain_history())
+        
         obs_handler = create_observability_handler(
             self._settings.observability,
             conversation_turn=turn_number,
         )
         
+        # ── FIX: Crea il PromptDumpHandler per salvare i prompt su file ──
+        # Ogni prompt LLM (system + history + query + contesto RAG) viene
+        # salvato integralmente in logs/prompts/ senza troncamenti.
+        prompt_dumper = create_prompt_dump_handler(
+            output_dir="logs/prompts",
+            conversation_turn=turn_number,
+        )
+        
         try:
-            # FIX 1: recursion_limit esplicito
             result = self._agent.invoke(
                 {"messages": messages},
                 config={
-                    "callbacks": [obs_handler],
+                    # ── FIX: aggiungi prompt_dumper ai callbacks ──
+                    # Prima: [obs_handler]
+                    # Ora:   [obs_handler, prompt_dumper]
+                    # Entrambi gli handler ricevono gli stessi eventi.
+                    # obs_handler traccia la pipeline a terminale.
+                    # prompt_dumper salva i prompt su file.
+                    "callbacks": [obs_handler, prompt_dumper],
                     "recursion_limit": self._settings.guardrails.max_agent_iterations,
                 },
             )
@@ -170,10 +188,15 @@ class RAGAgent:
                     self._settings.observability,
                     conversation_turn=turn_number,
                 )
+                # ── FIX: anche il retry ha il suo prompt dumper ──
+                prompt_dumper_retry = create_prompt_dump_handler(
+                    output_dir="logs/prompts",
+                    conversation_turn=turn_number,
+                )
                 result = self._agent.invoke(
                     {"messages": forced_messages},
                     config={
-                        "callbacks": [obs_handler_retry],
+                        "callbacks": [obs_handler_retry, prompt_dumper_retry],
                         "recursion_limit": self._settings.guardrails.max_agent_iterations,
                     },
                 )
@@ -186,7 +209,7 @@ class RAGAgent:
             error_str = str(e).lower()
             error_type = type(e).__name__
             
-            # FIX 2: Catch specifico per loop/recursion
+            # Catch specifico per loop/recursion
             if ("recursion" in error_str or "recursion" in error_type.lower()
                     or "iteration" in error_str):
                 logger.error(

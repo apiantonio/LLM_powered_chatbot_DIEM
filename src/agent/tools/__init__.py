@@ -1,15 +1,20 @@
 """
 agent/tools/__init__.py — Tool multi-collection con metadata filtering.
 
-Modifiche:
-  - search_docenti con parametro sezione opzionale.
-  - Nuovo tool search_strutture_fisiche.
-  - Description ottimizzate con anti-pattern.
+FIX APPLICATI:
+  1. Aggiunta variabile globale _chat_history e funzione set_chat_history()
+     per iniettare la history conversazionale nei tool.
+  2. _search_collection() ora passa _chat_history a RetrievalEngine.retrieve()
+     per abilitare il query rewriting contestuale.
+  3. search_strutture_fisiche: nuovo parametro tipo_struttura con inferenza
+     automatica dalla query per filtrare aule/laboratori/sedi.
+  4. _format_results(): ora include TUTTI i metadati aggiuntivi dei documenti
+     in formato [meta: key=value | key=value].
 """
 
 from __future__ import annotations
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 from langchain.tools import tool
 from agent.tools.easycourse import get_easycourse_client
 from ingestion.router import CollectionTarget
@@ -20,10 +25,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _retrieval_engine: "RetrievalEngine | None" = None
 
+# ── NUOVO: Chat history globale per il query rewriting contestuale ──
+# Viene iniettata da RAGAgent.chat() prima di invocare l'agente,
+# in modo che quando i tool vengono eseguiti nel loop ReAct,
+# abbiano accesso alla history per la risoluzione delle coreferenze.
+_chat_history: list = []
+
 
 def set_retrieval_engine(engine: "RetrievalEngine") -> None:
+    """Inietta il RetrievalEngine nei tool (chiamata dalla Factory)."""
     global _retrieval_engine
     _retrieval_engine = engine
+
+
+def set_chat_history(history: list) -> None:
+    """
+    Inietta la chat history corrente nei tool per il query rewriting contestuale.
+
+    Chiamata da RAGAgent.chat() prima di invocare l'agente, in modo che
+    quando i tool vengono eseguiti nel loop ReAct, abbiano accesso alla
+    history per la risoluzione delle coreferenze anaforiche.
+
+    Args:
+        history: Lista di BaseMessage LangChain (HumanMessage, AIMessage)
+                 dalla ConversationMemory corrente.
+    """
+    global _chat_history
+    _chat_history = history
+
 
 from typing import Dict
 
@@ -39,10 +68,14 @@ def _search_collection(
     metadata_filter: Optional[dict] = None,
 ) -> str:
     """
-    Helper condiviso — AGGIORNATO con anti-loop error handling.
-    
-    Se lo stesso tool fallisce 2+ volte con la stessa query, restituisce
-    un messaggio che ISTRUISCE il modello a NON riprovare.
+    Helper condiviso — AGGIORNATO con chat_history e anti-loop error handling.
+
+    FIX APPLICATO:
+      Prima: retrieve(query, collection, metadata_filter) — senza chat_history.
+      Ora:   retrieve(query, collection, metadata_filter, _chat_history) — con history.
+      La chat_history viene usata dal QueryOptimizer per risolvere
+      coreferenze anaforiche (es. "e dove insegna?" → "Dove insegna
+      il prof. Vento?").
     """
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."
@@ -50,10 +83,12 @@ def _search_collection(
     tool_key = f"{collection.value}:{query[:50]}"
     
     try:
+        # ── FIX: passa _chat_history al RetrievalEngine ──
         documents, used_query = _retrieval_engine.retrieve(
             query,
             collection=collection.value,
             metadata_filter=metadata_filter,
+            chat_history=_chat_history,
         )
         # Reset contatore su successo
         _tool_error_counts.pop(tool_key, None)
@@ -88,9 +123,15 @@ def _search_collection(
         )
 
 
-
 def _format_results(documents) -> str:
-    """Formatta i documenti — INVARIATO."""
+    """
+    Formatta i documenti recuperati per l'output del tool.
+
+    FIX APPLICATO:
+      Aggiunta riga [meta: ...] con TUTTI i metadati aggiuntivi del documento
+      (docente_sezione, docente_matricola, corso_slug, source_domain, ecc.)
+      in formato key=value per facilitare il parsing nel callback e il debug.
+    """
     context_parts = []
     for i, doc in enumerate(documents, 1):
         source = doc.metadata.get("source_url", "fonte non disponibile")
@@ -98,15 +139,32 @@ def _format_results(documents) -> str:
         category = doc.metadata.get("doc_category", "")
         score = doc.metadata.get("relevance_score", None)
         score_str = f" — score: {score:.4f}" if score is not None else ""
+        
+        # ── NUOVO: Raccolta metadati aggiuntivi ──
+        # Campi standard già nell'header
+        standard_keys = {
+            "source_url", "doc_type", "doc_category",
+            "relevance_score", "start_index",
+        }
+        extra_meta = {
+            k: v for k, v in doc.metadata.items()
+            if k not in standard_keys and v is not None and v != ""
+        }
+        extra_meta_str = ""
+        if extra_meta:
+            # Formato: [meta: key1=val1 | key2=val2]
+            pairs = " | ".join(f"{k}={v}" for k, v in extra_meta.items())
+            extra_meta_str = f"\n[meta: {pairs}]"
+        
         context_parts.append(
             f"[Documento {i} — {doc_type} — {category} — "
-            f"{source}{score_str}]\n{doc.page_content}"
+            f"{source}{score_str}]{extra_meta_str}\n{doc.page_content}"
         )
     return "\n\n---\n\n".join(context_parts)
 
 
 # ============================================================
-# TOOL 1: Docenti (AGGIORNATO con sezione)
+# TOOL 1: Docenti (con sezione)
 # ============================================================
 
 @tool("search_docenti")
@@ -205,25 +263,53 @@ def search_dipartimento(query: str) -> str:
 
 
 # ============================================================
-# TOOL 5: Strutture Fisiche (NUOVO)
+# TOOL 5: Strutture Fisiche (FIX con tipo_struttura)
 # ============================================================
 
 @tool("search_strutture_fisiche")
-def search_strutture_fisiche(query: str) -> str:
+def search_strutture_fisiche(query: str, tipo_struttura: Optional[str] = None) -> str:
     """Cerca informazioni su AULE, LABORATORI e SEDI del DIEM.
 
     USA QUESTO TOOL per: dove si trova un'aula, quali laboratori sono
     disponibili, attrezzature, sedi del dipartimento, mappa campus.
 
     Esempi: "Dove si trova l'aula F8?", "Laboratori DIEM",
-    "Sede del dipartimento", "Attrezzature laboratorio X".
+    "Sede del dipartimento", "Attrezzature laboratorio X",
+    "Informazioni sull'aula 126".
 
     Args:
         query: Domanda su strutture fisiche del DIEM.
+        tipo_struttura: Filtro opzionale. Valori ammessi: "aula", "laboratorio", "sede".
+                        Se omesso, il tipo viene inferito dalla query automaticamente.
+                        Usa "aula" quando la domanda riguarda un'AULA specifica.
+                        Usa "laboratorio" quando riguarda un LABORATORIO specifico.
+                        Usa "sede" quando riguarda la SEDE o l'EDIFICIO.
     """
-    metadata_filter = {
-        "doc_category": ["aula", "laboratorio", "sede"]
-    }
+    # ── LOGICA DI INFERENZA DEL TIPO ──
+    # Se l'utente non specifica il tipo_struttura, lo inferiamo dalla query.
+    # Questo permette all'LLM di non dover sempre specificare il parametro,
+    # ma il filtro viene comunque applicato correttamente.
+    if tipo_struttura is None:
+        query_lower = query.lower()
+        if "aula" in query_lower:
+            tipo_struttura = "aula"
+        elif any(kw in query_lower for kw in ["laboratorio", "lab "]):
+            tipo_struttura = "laboratorio"
+        elif any(kw in query_lower for kw in ["sede", "edificio", "campus"]):
+            tipo_struttura = "sede"
+    
+    # ── COSTRUZIONE FILTRO METADATA ──
+    if tipo_struttura and tipo_struttura in ("aula", "laboratorio", "sede"):
+        # Filtro specifico: cerca SOLO documenti con quel tipo di struttura.
+        # Questo previene i falsi positivi (es. cerco "aula 126" ma trovo
+        # pagine di laboratori di ricerca).
+        metadata_filter = {"doc_category": tipo_struttura}
+    else:
+        # Nessun tipo specificato o inferito: cerca in tutte le strutture
+        metadata_filter = {
+            "doc_category": ["aula", "laboratorio", "sede"]
+        }
+
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO_RICERCA, metadata_filter
     )
