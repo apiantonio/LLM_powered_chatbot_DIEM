@@ -4,5 +4,6 @@ data/raw/**/*.html
 data/vectorstore
 data/evaluation
 data/raw/pdfs
+data/log/
 *.zip
 __pycache__
