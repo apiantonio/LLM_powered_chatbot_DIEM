@@ -3,35 +3,28 @@
 run_t6_4_ingestion.py — Script di Ingestion Definitiva (Task T6.4)
 
 Esegue la re-indicizzazione COMPLETA della Knowledge Base DIEM nelle
-4 collection Chroma multi-tematiche, secondo l'architettura definita in
-DIEM_RAG_Ingestion_Redesign.md.
+4 collection Chroma multi-tematiche.
 
 PREREQUISITI (già completati):
-  ✅ T6.1 — Vector store Chroma svuotato (tutte le collection legacy)
-  ✅ T6.2 — Parent store (LocalFileStore) svuotato
+  ✅ T6.1 — Vector store Chroma svuotato
+  ✅ T6.2 — Parent store svuotato
   ✅ T6.3 — index_registry.json resettato
 
 QUESTO SCRIPT ESEGUE:
   1. Caricamento delle impostazioni centralizzate (config/settings.py)
   2. Inizializzazione del KnowledgeBaseIndexer multi-collection
   3. Indicizzazione HTML con routing automatico (DocumentRouter)
-  4. Indicizzazione PDF con chunking differenziato (Parent-Child vs diretto)
+  4. Indicizzazione PDF con chunking differenziato
   5. Report finale con breakdown per collection e statistiche
 
 Uso:
   cd src/
-  python run_t6_4_ingestion.py                          # indicizzazione standard
-  python run_t6_4_ingestion.py --skip-crawl             # salta il crawling, indicizza file esistenti
-  python run_t6_4_ingestion.py --crawl                  # esegue crawling + indicizzazione
-  python run_t6_4_ingestion.py --log-level DEBUG        # logging dettagliato su file
-  python run_t6_4_ingestion.py --verify-only            # solo verifica collection (no ingestion)
-  python run_t6_4_ingestion.py --log-dir my_logs        # directory custom per i log
-
-LOGGING:
-  Tutto l'output di logging viene scritto su file .txt nella cartella logs/
-  (o nella directory specificata con --log-dir). Ogni esecuzione produce un
-  file dedicato con timestamp: logs/t6_4_ingestion_20260509_143022.txt
-  Sul terminale viene stampato solo il feedback essenziale (avvio, esito, percorsi).
+  python ingestion_main.py
+  python ingestion_main.py --skip-crawl
+  python ingestion_main.py --crawl
+  python ingestion_main.py --log-level DEBUG
+  python ingestion_main.py --verify-only
+  python ingestion_main.py --log-dir my_logs
 """
 
 import sys
@@ -41,10 +34,10 @@ import time
 import logging
 import argparse
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # ============================================================
-# PATH SETUP — assicura che 'src/' sia nel PYTHONPATH
+# PATH SETUP
 # ============================================================
 _src_dir = os.path.dirname(os.path.abspath(__file__))
 if _src_dir not in sys.path:
@@ -62,20 +55,10 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> Dict[str, Any]:
-    """
-    Verifica lo stato di ogni collection Chroma dopo l'ingestion.
-
-    Per ciascuna delle 4 collection + la collection Parent-Child,
-    conta i documenti e stampa un riepilogo diagnostico.
-
-    Returns:
-        Dict con il conteggio per collection e lo stato complessivo.
-    """
+    """Verifica lo stato di ogni collection Chroma dopo l'ingestion."""
     verification: Dict[str, Any] = {"collections": {}, "total_chunks": 0, "ok": True}
 
-    # Verifica le 4 collection tematiche
     for target in CollectionTarget:
-        # Accesso alla collection Chroma tramite il dict interno dell'indexer
         # pylint: disable=protected-access
         collection = indexer._collections[target]
         try:
@@ -90,7 +73,6 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
         verification["total_chunks"] += count
         logger.info(f"  📊 {target.value}: {count} chunks")
 
-    # Verifica la collection Parent-Child (child chunks)
     pc_collection_name = settings.vectorstore.parent_child_collection_name
     try:
         # pylint: disable=protected-access
@@ -105,7 +87,6 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
     verification["total_chunks"] += pc_count
     logger.info(f"  📊 {pc_collection_name} (Parent-Child childs): {pc_count} chunks")
 
-    # Soglia minima: almeno 1 chunk in totale
     if verification["total_chunks"] == 0:
         verification["ok"] = False
         logger.warning("⚠️  ATTENZIONE: nessun chunk indicizzato!")
@@ -114,10 +95,7 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
 
 
 def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int = 3) -> None:
-    """
-    Logga un campione di documenti per ogni collection per verifica visiva.
-    Mostra source_url, doc_category e un'anteprima del contenuto.
-    """
+    """Logga un campione di documenti per ogni collection per verifica visiva."""
     logger.info("\n" + "=" * 60)
     logger.info("🔎 CAMPIONE DOCUMENTI PER COLLECTION (verifica routing)")
     logger.info("=" * 60)
@@ -160,13 +138,6 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
       2. Indicizzazione HTML con routing nelle 4 collection
       3. Indicizzazione PDF con chunking differenziato
       4. Verifica post-ingestion
-
-    Args:
-        settings: Configurazione centralizzata dell'applicazione.
-        skip_crawl: Se True (default), salta il crawling e indicizza i file esistenti.
-
-    Returns:
-        Report completo dell'esecuzione.
     """
     start_time = time.time()
     report: Dict[str, Any] = {
@@ -196,7 +167,6 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     logger.info("\n[STEP 0/4] Inizializzazione KnowledgeBaseIndexer multi-collection...")
     indexer = KnowledgeBaseIndexer(settings)
 
-    # Log delle configurazioni di chunking per ogni collection
     logger.info("\n  Configurazioni chunking HTML per collection:")
     for target in CollectionTarget:
         chunk_size, chunk_overlap = settings.ingestion.get_collection_html_params(target.value)
@@ -217,11 +187,9 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         logger.info("\n[STEP 1/4] Avvio crawling siti DIEM...")
         try:
             from ingestion.scrapers import UnisaCrawler
-            from transform.core.base_rule import CleaningRule, PdfFilterRule
 
-            # Carica le regole di filtro (se disponibili nel progetto)
-            html_rules = _load_html_cleaning_rules()
-            pdf_rules = _load_pdf_filter_rules()
+            html_rules = _load_html_cleaning_rules(settings)
+            pdf_rules = _load_pdf_filter_rules(settings)
 
             crawler = UnisaCrawler(
                 max_depth=settings.ingestion.max_depth,
@@ -230,6 +198,8 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
                 output_dir=settings.ingestion.html_raw_dir,
                 html_rules=html_rules,
                 pdf_rules=pdf_rules,
+                crawler_config=settings.crawler,
+                ingestion_config=settings.ingestion,
             )
             crawler.run()
 
@@ -251,7 +221,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         logger.info("\n[STEP 1/4] Crawling SALTATO (skip_crawl=True)")
         report["crawl"] = "skipped"
 
-    # --- STEP 2: Indicizzazione HTML (con routing automatico) ---
+    # --- STEP 2: Indicizzazione HTML ---
     logger.info("\n[STEP 2/4] Indicizzazione HTML con routing multi-collection...")
     try:
         html_stats = indexer.index_html_directory()
@@ -274,7 +244,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         logger.error(f"  ❌ Errore indicizzazione HTML: {e}", exc_info=True)
         report["html_indexing"] = {"error": str(e)}
 
-    # --- STEP 3: Indicizzazione PDF (con chunking differenziato) ---
+    # --- STEP 3: Indicizzazione PDF ---
     logger.info("\n[STEP 3/4] Indicizzazione PDF con chunking differenziato...")
     try:
         pdf_stats = indexer.index_pdf_list()
@@ -305,7 +275,6 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     verification = verify_collections(indexer, settings)
     report["verification"] = verification
 
-    # Log campione documenti per verifica visiva del routing
     log_sample_documents(indexer, max_per_collection=3)
 
     # --- REPORT FINALE ---
@@ -341,14 +310,19 @@ def _no_critical_errors(report: Dict[str, Any]) -> bool:
     return True
 
 
-def _load_html_cleaning_rules():
+def _load_html_cleaning_rules(settings: AppSettings):
     """
-    Tenta di caricare le regole di pulizia HTML dal modulo transform.
-    Restituisce lista vuota se il modulo non è disponibile.
+    Carica le regole di pulizia HTML dal modulo transform.
+
+    NOTA: "obsolete_url" e "didattica" RIMOSSI dallo Sprint Filtri Docenti.
     """
     try:
         from transform.rules import get_all_html_rules
-        rules = get_all_html_rules()
+        rules = get_all_html_rules(
+            directory=settings.ingestion.html_raw_dir,
+            cutoff_year=settings.ingestion.cutoff_year,
+            target_department=settings.ingestion.target_department,
+        )
         logger.info(f"  Caricate {len(rules)} regole HTML cleaning")
         return rules
     except ImportError:
@@ -356,14 +330,11 @@ def _load_html_cleaning_rules():
         return []
 
 
-def _load_pdf_filter_rules():
-    """
-    Tenta di caricare le regole di filtro PDF dal modulo transform.
-    Restituisce lista vuota se il modulo non è disponibile.
-    """
+def _load_pdf_filter_rules(settings: AppSettings):
+    """Carica le regole di filtro PDF dal modulo transform."""
     try:
         from transform.rules import get_all_pdf_rules
-        rules = get_all_pdf_rules()
+        rules = get_all_pdf_rules(cutoff_year=settings.ingestion.cutoff_year)
         logger.info(f"  Caricate {len(rules)} regole PDF filter")
         return rules
     except ImportError:
@@ -391,17 +362,17 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Esempi:
-  python run_t6_4_ingestion.py                    # indicizza file esistenti (default)
-  python run_t6_4_ingestion.py --crawl            # crawling + indicizzazione
-  python run_t6_4_ingestion.py --verify-only      # solo verifica delle collection
-  python run_t6_4_ingestion.py --log-level DEBUG  # logging dettagliato
+  python ingestion_main.py                    # indicizza file esistenti (default)
+  python ingestion_main.py --crawl            # crawling + indicizzazione
+  python ingestion_main.py --verify-only      # solo verifica delle collection
+  python ingestion_main.py --log-level DEBUG  # logging dettagliato
         """,
     )
     parser.add_argument(
         "--crawl",
         action="store_true",
         default=False,
-        help="Esegui anche il crawling prima dell'indicizzazione (default: solo indicizzazione).",
+        help="Esegui anche il crawling prima dell'indicizzazione.",
     )
     parser.add_argument(
         "--skip-crawl",
@@ -413,13 +384,13 @@ Esempi:
         "--verify-only",
         action="store_true",
         default=False,
-        help="Esegui solo la verifica delle collection (senza indicizzazione).",
+        help="Esegui solo la verifica delle collection.",
     )
     parser.add_argument(
         "--report-path",
         type=str,
         default="t6_4_report.json",
-        help="Percorso del file di report JSON (default: t6_4_report.json).",
+        help="Percorso del file di report JSON.",
     )
     parser.add_argument(
         "--log-level",
@@ -431,7 +402,7 @@ Esempi:
         "--log-dir",
         type=str,
         default="logs",
-        help="Directory di destinazione dei file di log (default: logs/).",
+        help="Directory di destinazione dei file di log.",
     )
     return parser.parse_args()
 
@@ -441,34 +412,17 @@ Esempi:
 # ============================================================
 
 def setup_file_logger(log_level: str, log_dir: str = "logs") -> str:
-    """
-    Configura il logging su file .txt con nome timestampato.
-
-    Ogni esecuzione produce un file dedicato nella cartella `log_dir/`,
-    così da avere uno storico completo consultabile a posteriori.
-
-    Args:
-        log_level: Livello di logging (DEBUG, INFO, WARNING, ERROR).
-        log_dir: Directory di destinazione dei file di log.
-
-    Returns:
-        Il percorso assoluto del file di log creato.
-    """
+    """Configura il logging su file .txt con nome timestampato."""
     os.makedirs(log_dir, exist_ok=True)
 
-    # Nome file con timestamp: t6_4_ingestion_20260509_143022.txt
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"t6_4_ingestion_{timestamp_str}.txt"
     log_filepath = os.path.join(log_dir, log_filename)
 
-    # Configura il root logger per scrivere SOLO su file
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level))
-
-    # Rimuove eventuali handler preesistenti (es. StreamHandler di default)
     root_logger.handlers.clear()
 
-    # FileHandler con encoding UTF-8 per supportare emoji e caratteri speciali
     file_handler = logging.FileHandler(
         log_filepath, mode="w", encoding="utf-8"
     )
@@ -485,17 +439,14 @@ def setup_file_logger(log_level: str, log_dir: str = "logs") -> str:
 def main() -> None:
     args = parse_args()
 
-    # --- Logging su file .txt (un file per esecuzione) ---
     log_filepath = setup_file_logger(args.log_level, log_dir=args.log_dir)
     print(f"📝 Log di esecuzione: {log_filepath}")
 
-    # --- Settings ---
     settings = load_settings()
 
-    # --- Modalità verify-only ---
     if args.verify_only:
         print("🔎 Modalità VERIFY-ONLY: verifica delle collection senza indicizzazione")
-        logger.info("🔎 Modalità VERIFY-ONLY: verifica delle collection senza indicizzazione")
+        logger.info("🔎 Modalità VERIFY-ONLY")
         indexer = KnowledgeBaseIndexer(settings)
         verification = verify_collections(indexer, settings)
         log_sample_documents(indexer, max_per_collection=5)
@@ -503,20 +454,17 @@ def main() -> None:
         print(f"\n📝 Dettagli completi nel log: {log_filepath}")
         return
 
-    # --- Ingestion completa T6.4 ---
     print("🚀 Avvio ingestion T6.4... (l'output dettagliato è nel file di log)")
     skip_crawl = not args.crawl
     report = run_ingestion(settings, skip_crawl=skip_crawl)
 
-    # --- Salvataggio report ---
     save_report(report, output_path=args.report_path)
 
-    # --- Feedback a terminale + exit code ---
     total_chunks = report.get("verification", {}).get("total_chunks", 0)
     duration = report.get("duration_seconds", 0)
 
     if not report.get("success"):
-        logger.warning("⚠️  L'ingestion è terminata con problemi. Controlla il report.")
+        logger.warning("⚠️  L'ingestion è terminata con problemi.")
         print(f"\n⚠️  Ingestion terminata CON PROBLEMI in {duration}s ({total_chunks} chunks)")
         print(f"   📝 Log completo: {log_filepath}")
         print(f"   📊 Report JSON: {args.report_path}")

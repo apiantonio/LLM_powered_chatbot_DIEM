@@ -7,38 +7,28 @@ Principi:
 - Type-safe tramite dataclass + factory method.
 - Le API key NON vengono mai hardcodate; si leggono dall'ambiente.
 
-REFACTORING MULTI-COLLECTION:
-  Aggiunti parametri per-collection HTML chunking (docenti, offerta, bandi, dipartimento).
-  Aggiunti parametri pdf_direct_chunk_size/overlap per bandi e PDF generici.
-  Aggiunto get_collection_html_params() per l'indexer.
-  VectorStoreConfig ora include parent_child_collection_name.
-
 REFACTORING CRAWLER (Sprint Filtri Docenti):
-  Aggiunto CrawlerConfig con:
+  CrawlerConfig centralizza:
   - Calcolo dinamico conservativo dei thread (cpu_count-based).
-  - cutoff_year condiviso per filtraggio pubblicazioni.
-  - Parametri I/O (write_buffer_size, lock strategy).
-  - Regex patterns per filtri URL docenti (progetti, pubblicazioni, didattica).
-
-KPI Impact: Tutti. La configurazione centralizzata garantisce riproducibilità
-degli esperimenti e facilita il tuning dei parametri per massimizzare le metriche RAGAS.
+  - cutoff_year condiviso per filtraggio pubblicazioni (in IngestionConfig).
+  - Parametri I/O (write_buffer_size).
 """
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
 class IngestionConfig:
     """Parametri per la pipeline di scraping e indicizzazione."""
-    
+
     # --- Sorgenti dati ---
     html_raw_dir: str = "data/raw/html_samples"
     pdf_links_file: str = "data/raw/html_samples/pdf_links.txt"
     pdf_download_dir: str = "data/raw/pdfs"
-    
+
     # --- Domini consentiti (bounded knowledge scope) ---
     seed_urls: tuple[str, ...] = (
         "https://www.diem.unisa.it",
@@ -51,12 +41,12 @@ class IngestionConfig:
         "https://corsi.unisa.it/photovoltaics",
         "https://easycourse.unisa.it/",
     )
-    
+
     # --- Crawler ---
     max_depth: int = 5
     batch_size: int = 1024
     crawl_delay_seconds: float = 2.0
-    
+
     # --- Pulizia (centralizzata per scrapers e transform) ---
     cutoff_year: int = 2020
     target_department: str = "300638"
@@ -64,39 +54,39 @@ class IngestionConfig:
         '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
         '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     )
-    
+
     # --- Chunking HTML LEGACY (fallback per compatibilità) ---
     html_chunk_size: int = 700
     html_chunk_overlap: int = 50
-    
+
     # --- Chunking HTML PER-COLLECTION ---
     docenti_html_chunk_size: int = 800
     docenti_html_chunk_overlap: int = 100
-    
+
     offerta_html_chunk_size: int = 700
     offerta_html_chunk_overlap: int = 50
-    
+
     bandi_html_chunk_size: int = 700
     bandi_html_chunk_overlap: int = 50
-    
+
     dipartimento_html_chunk_size: int = 800
     dipartimento_html_chunk_overlap: int = 100
-    
-    # --- Chunking PDF Parent-Child (SOLO per regolamenti/piani di studio) ---
+
+    # --- Chunking PDF Parent-Child ---
     pdf_parent_chunk_size: int = 3000
     pdf_parent_chunk_overlap: int = 500
     pdf_child_chunk_size: int = 400
     pdf_child_chunk_overlap: int = 50
-    
-    # --- Chunking PDF diretto (bandi e PDF generici, NO Parent-Child) ---
+
+    # --- Chunking PDF diretto ---
     pdf_direct_chunk_size: int = 1500
     pdf_direct_chunk_overlap: int = 200
-    
-    # --- Registro incrementale (hash-based deduplication) ---
+
+    # --- Registro incrementale ---
     index_registry_path: str = "data/vectorstore/index_registry.json"
-    
+
     # --- Derived helpers ---
-    
+
     def get_allowed_domains(self) -> set[str]:
         domains = set()
         for url in self.seed_urls:
@@ -105,13 +95,13 @@ class IngestionConfig:
                 domains.add(parsed.netloc)
         domains.add("docenti.unisa.it")
         return domains
-    
+
     def get_allowed_prefixes(self) -> tuple[str, ...]:
         return tuple(
-            url for url in self.seed_urls 
+            url for url in self.seed_urls
             if "easycourse" not in url
         )
-    
+
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
         mapping = {
             "docenti_e_didattica": (
@@ -138,7 +128,7 @@ class IngestionConfig:
 
 
 # ============================================================
-# CRAWLER CONFIG (NUOVA — Sprint Filtri Docenti)
+# CRAWLER CONFIG
 # ============================================================
 
 @dataclass(frozen=True)
@@ -148,39 +138,15 @@ class CrawlerConfig:
 
     Centralizza:
     - Calcolo thread dinamico conservativo.
-    - Parametri di filtraggio URL per sezione docenti
-      (progetti, pubblicazioni, didattica).
     - Parametri I/O per scrittura su disco.
     """
 
     # --- Thread pool ---
-    # Fattore moltiplicativo per il calcolo dei worker.
-    # Formula: max_workers = max(2, int(cpu_count * thread_cpu_factor))
-    # Con 0.75 su una macchina a 8 core → 6 thread (conservativo).
     thread_cpu_factor: float = 0.75
-    # Floor assoluto: mai meno di 2 thread
     thread_min_workers: int = 2
-    # Tetto assoluto: mai più di 16 thread (evita saturazione I/O)
     thread_max_workers: int = 16
 
-    # --- Filtraggio URL docenti: Ricerca Progetti ---
-    # Pattern URL figli da SCARTARE sotto ricerca/progetti
-    progetti_discard_params: tuple[str, ...] = (
-        "progetto=", "ruolo=componente", "ruolo=responsabile",
-        "tip=", "stato=",
-    )
-
-    # --- Filtraggio URL docenti: Ricerca Pubblicazioni ---
-    # Solo anno=0 viene salvato e analizzato; tutti gli altri anni scartati.
-    # Il cutoff_year per il filtering del contenuto HTML è in IngestionConfig.
-
-    # --- Filtraggio contenuto HTML: Pubblicazioni anno=0 ---
-    # Le pubblicazioni con anno < cutoff_year vengono rimosse dal DOM prima
-    # del salvataggio. Il cutoff è condiviso con IngestionConfig.cutoff_year.
-
     # --- I/O su disco ---
-    # Dimensione buffer per il writer thread-safe (bytes).
-    # 0 = unbuffered (flush immediato), >0 = buffered.
     write_buffer_size: int = 0
 
     def compute_max_workers(self) -> int:
@@ -191,9 +157,6 @@ class CrawlerConfig:
           - Usa il 75% dei core CPU disponibili (configurabile).
           - Mai meno di thread_min_workers (2).
           - Mai più di thread_max_workers (16).
-
-        Questo evita di saturare CPU e RAM su macchine con molti core,
-        lasciando risorse per il sistema operativo e altri processi.
         """
         cpu = os.cpu_count() or 4
         computed = max(self.thread_min_workers, int(cpu * self.thread_cpu_factor))
@@ -263,7 +226,7 @@ class ObservabilityConfig:
 @dataclass(frozen=True)
 class AppSettings:
     """Aggregatore di tutte le configurazioni."""
-    
+
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     crawler: CrawlerConfig = field(default_factory=CrawlerConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
@@ -276,9 +239,7 @@ class AppSettings:
 
 
 def load_settings() -> AppSettings:
-    """
-    Factory method che costruisce le impostazioni leggendo le variabili d'ambiente.
-    """
+    """Factory method che costruisce le impostazioni leggendo le variabili d'ambiente."""
     return AppSettings(
         ingestion=IngestionConfig(
             html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),

@@ -25,16 +25,19 @@ if __name__ == "__main__":
 
     output_dir = settings.ingestion.html_raw_dir
 
-    # --- Costruzione regole con le Factory esistenti ---
+    # --- Costruzione regole con le Factory ---
+    # NOTA: "obsolete_url" e "didattica" RIMOSSI (Sprint Filtri Docenti).
+    # Il filtraggio URL è ora gestito dai classificatori in docenti_url_rules.py,
+    # il post-processing didattica è nel crawler stesso.
     html_factory = RuleFactory(
         directory=Path(output_dir),
         cutoff_year=settings.ingestion.cutoff_year,
         target_department=settings.ingestion.target_department,
     )
     html_rules = html_factory.create_rules([
-        "obsolete_url", "publication_tip", "exact_publications",
+        "publication_tip", "exact_publications",
         "department_bandi", "calendar", "news",
-        "404", "nocontent", "empty_body", "didattica", "filename",
+        "404", "nocontent", "empty_body", "filename",
     ])
 
     pdf_factory = PdfRuleFactory(cutoff_year=settings.ingestion.cutoff_year)
