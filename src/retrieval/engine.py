@@ -1,27 +1,15 @@
 """
-retrieval/engine.py — Retrieval Engine multi-collection.
+retrieval/engine.py — QueryOptimizer con Domain-Aware Rewriting.
 
-Flusso:
-  Query → [Query Optimizer] → Query riscritta
-        → [Collection Retriever] → chunk → [Reranker] → top-N
-  oppure
-  Query → [All Retrievers] → merge → [Reranker] → top-N
-
-Coerenza con gli altri moduli:
-  - ingestion/indexer.py: usa get_collection_retriever(CollectionTarget) e
-                          get_parent_child_retriever() dall'Indexer.
-  - ingestion/router.py: CollectionTarget.value viene usato come chiave
-                          nel dict _collection_retrievers.
-  - agent/tools/__init__.py: ogni tool chiama retrieve(collection=CollectionTarget.value)
-                              o retrieve_from_all().
-
-NOTA: QueryOptimizer e CrossEncoderReranker sono definiti in questo modulo
-perché agent_main.py li importa da qui:
-  from retrieval.engine import RetrievalEngine, QueryOptimizer, CrossEncoderReranker
+Modifiche:
+  - REWRITE_PROMPT riscritto con 5 regole di dominio
+  - current_datetime iniettato automaticamente
+  - Preservazione dell'intento interrogativo
 """
 
 import logging
-from typing import List, Optional, TYPE_CHECKING
+from datetime import datetime
+from typing import List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -30,41 +18,73 @@ from langchain_core.runnables import RunnableLambda
 from config.settings import RerankerConfig
 from ingestion.router import CollectionTarget
 
-if TYPE_CHECKING:
-    from ingestion.indexer import KnowledgeBaseIndexer
-
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# QUERY OPTIMIZER (Pre-Retrieval)
-# ============================================================
-
 class QueryOptimizer:
     """
-    Pre-Retrieval: riscrittura e espansione query.
+    Pre-Retrieval: Domain-Aware Query Expansion.
     
-    1. Conversational Rewriting: risolve coreferenze anaforiche.
-    2. Multi-Query: genera varianti per copertura semantica.
+    Sostituisce il vecchio rewriter che "comprimeva" le query.
+    Il nuovo prompt:
+      1. Espande sempre (mai comprime)
+      2. Inietta contesto DIEM
+      3. Applica regole specifiche per persone
+      4. Risolve coreferenze dalla history
+      5. Risolve riferimenti temporali relativi
     """
     
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         "Sei un ottimizzatore di query di ricerca. "
-         "Riscrivi la domanda dell'utente in una query autonoma e specifica "
-         "per la ricerca semantica in un database vettoriale universitario. "
-         "Risolvi pronomi e riferimenti impliciti usando la cronologia. "
-         "Usa terminologia tecnica e accademica dove appropriato. "
-         "Restituisci SOLO la query riscritta, nient'altro."),
+         """Sei un ottimizzatore di query per un sistema di ricerca semantica del \
+        Dipartimento DIEM dell'Università degli Studi di Salerno.
+
+        Data e ora correnti: {current_datetime}
+
+        Il tuo compito è RISCRIVERE la domanda dell'utente in una query ottimizzata \
+        per la ricerca in un database vettoriale. Segui queste regole:
+
+        REGOLA 1 — ESPANSIONE, MAI COMPRESSIONE:
+        La query riscritta DEVE essere più specifica e dettagliata dell'originale. \
+        MAI ridurre a semplici keyword. Mantieni l'intento interrogativo.
+        SBAGLIATO: "Chi è Mario Vento?" → "Mario Vento"
+        CORRETTO:  "Chi è Mario Vento?" → "Profilo accademico, qualifica, ruolo e \
+        contatti istituzionali del professore Mario Vento del dipartimento DIEM \
+        Università di Salerno"
+
+        REGOLA 2 — CONTESTO DI DOMINIO:
+        Aggiungi "dipartimento DIEM" o "Università di Salerno" se non presenti.
+
+        REGOLA 3 — QUERY SU PERSONE:
+        Quando si chiede CHI È una persona:
+        → Espandi verso: curriculum, qualifica accademica, ruolo, contatti, ricevimento
+        → NON includere: bandi, progetti di ricerca (a meno che richiesto esplicitamente)
+        Quando si chiedono CORSI INSEGNATI:
+        → Espandi verso: insegnamenti, corsi di laurea, anno accademico
+        Quando si chiede la RICERCA di un docente:
+        → Espandi verso: aree di ricerca, pubblicazioni, gruppi
+
+        REGOLA 4 — RISOLUZIONE COREFERENZE:
+        Usa la cronologia per risolvere pronomi e riferimenti impliciti.
+        "e dove insegna?" → "Quali corsi insegna il professore [NOME dal contesto] \
+        del dipartimento DIEM?"
+
+        REGOLA 5 — RISOLUZIONE TEMPORALE:
+        Se la domanda contiene riferimenti temporali relativi, risolvili:
+        "domani" → la data del giorno successivo a quello corrente
+        "lunedì prossimo" → la data del prossimo lunedì
+
+        Rispondi con SOLO la query riscritta. Nient'altro."""),
         ("placeholder", "{history}"),
         ("human", "{question}"),
     ])
     
     MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         "Sei un ottimizzatore di ricerca. Genera esattamente 3 varianti diverse "
-         "della seguente domanda, ciascuna che esplori un angolo diverso dell'argomento. "
-         "Restituisci solo le 3 query, una per riga, senza numerazione."),
+         "Sei un ottimizzatore di ricerca per il dipartimento DIEM UniSA. "
+         "Genera esattamente 3 varianti diverse della seguente domanda, "
+         "ciascuna che esplori un angolo diverso del tema nel contesto "
+         "universitario. Restituisci solo le 3 query, una per riga."),
         ("human", "{question}"),
     ])
     
@@ -77,16 +97,53 @@ class QueryOptimizer:
             lambda msg: [q.strip() for q in msg.content.strip().split("\n") if q.strip()]
         )
     
+    @staticmethod
+    def _get_current_datetime_str() -> str:
+        """Genera una stringa datetime leggibile in italiano."""
+        now = datetime.now()
+        giorni = ["lunedì", "martedì", "mercoledì", "giovedì",
+                  "venerdì", "sabato", "domenica"]
+        mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+                "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+        return (
+            f"{giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {now.year}, "
+            f"ore {now.strftime('%H:%M')}"
+        )
+    
     def rewrite(self, question: str, history: Optional[list] = None) -> str:
-        """Riscrivi la query risolvendo coreferenze dalla cronologia."""
+        """
+        Riscrivi la query con espansione di dominio e risoluzione temporale.
+        
+        Se non c'è history e la query è già specifica, la restituisce invariata
+        per evitare overhead LLM inutile.
+        """
         if not history:
-            return question
+            # Senza history, il rewriting è utile solo per espansione di dominio.
+            # Per query brevi o ambigue, lo eseguiamo comunque.
+            if len(question.split()) > 10:
+                return question
+        
         try:
-            return self._rewrite_chain.invoke(
-                {"question": question, "history": history}
-            )
+            result = self._rewrite_chain.invoke({
+                "question": question,
+                "history": history or [],
+                "current_datetime": self._get_current_datetime_str(),
+            })
+            
+            # Sanity check: se il risultato è più corto della query originale,
+            # probabilmente il modello ha "compresso" — torniamo all'originale
+            if len(result) < len(question) * 0.5:
+                logger.warning(
+                    f"Query rewriting sospetto (compressione): "
+                    f"'{question}' → '{result}'. Uso l'originale."
+                )
+                return question
+            
+            logger.info(f"Query rewritten: '{question}' → '{result}'")
+            return result
+            
         except Exception as e:
-            logger.warning(f"Errore rewriting: {e}")
+            logger.warning(f"Errore rewriting, uso query originale: {e}")
             return question
     
     def expand(self, question: str) -> List[str]:
@@ -232,30 +289,31 @@ class RetrievalEngine:
     @staticmethod
     def _build_chroma_filter(metadata_filter: dict) -> dict:
         """
-        Converte un dict semplice in formato filtro Chroma.
+        Converte un dict in formato filtro Chroma.
         
-        Input:  {"docente_sezione": "didattica"}
-        Output: {"docente_sezione": {"$eq": "didattica"}}
-        
-        Input:  {"doc_category": ["aula", "laboratorio"]}
-        Output: {"doc_category": {"$in": ["aula", "laboratorio"]}}
+        GESTIONE CASI (fix del bug che causava il loop):
+        {"docente_sezione": "didattica"}         → {"docente_sezione": {"$eq": "didattica"}}
+        {"doc_category": ["aula", "lab"]}        → {"doc_category": {"$in": ["aula", "lab"]}}
+        {"doc_category": {"$in": ["aula"]}}      → passa direttamente (già formato Chroma)
+        {"$or": [...]}                           → passa direttamente (operatore top-level)
         """
-        chroma_filter = {}
         conditions = []
         
         for key, value in metadata_filter.items():
             if key.startswith("$"):
-                # Già in formato Chroma ($or, $and)
-                chroma_filter[key] = value
+                # Operatore top-level ($or, $and) — passa direttamente
+                return metadata_filter
+            elif isinstance(value, dict):
+                # Già in formato Chroma (es. {"$in": [...]}) — passa direttamente
+                conditions.append({key: value})
             elif isinstance(value, list):
                 conditions.append({key: {"$in": value}})
             else:
                 conditions.append({key: {"$eq": value}})
         
-        if not chroma_filter:
-            if len(conditions) == 1:
-                return conditions[0]
-            elif len(conditions) > 1:
-                return {"$and": conditions}
+        if len(conditions) == 1:
+            return conditions[0]
+        elif len(conditions) > 1:
+            return {"$and": conditions}
         
-        return chroma_filter or {}
+        return {}

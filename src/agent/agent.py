@@ -60,54 +60,31 @@ logger = logging.getLogger(__name__)
 # FACADE: RAGAgent
 # ============================================================
 
+"""
+agent/agent.py — Fix loop infinito + recursion_limit.
+
+Modifiche:
+  - recursion_limit dalla config in invoke()
+  - Catch di GraphRecursionError
+  - _retry_count inizializzato nel __init__
+"""
+
 class RAGAgent:
-    """
-    Facade (GoF) per l'agente RAG conversazionale.
     
-    Espone un'unica interfaccia semplice — .chat(query) — che orchestra
-    internamente: guardrails, memory, create_agent, callbacks e output validation.
+    _MAX_RETRY_NO_TOOL = 1
     
-    Responsabilità:
-      1. Riceve la query utente.
-      2. Applica guardrails pre-agent (scope check, input sanitization).
-      3. Costruisce la lista messaggi con storico conversazionale.
-      4. Invoca l'agente create_agent con callbacks di osservabilità.
-      5. Applica guardrails post-agent (output validation).
-      6. Aggiorna la memoria conversazionale.
-      7. Restituisce la risposta + trace di osservabilità.
-    
-    NON contiene logica di business — la delega ai componenti specializzati.
-    """
-    
-    def __init__(
-        self,
-        agent_graph,
-        memory: ConversationMemory,
-        scope_guardrail: Optional[ScopeGuardrail],
-        input_sanitizer: InputSanitizer,
-        output_validator: OutputValidator,
-        settings: AppSettings,
-    ):
-        """
-        Args:
-            agent_graph: Il grafo compilato restituito da create_agent().
-            memory: Strategia di memoria conversazionale.
-            scope_guardrail: Guardrail pre-agent per scope check (opzionale).
-            input_sanitizer: Guardrail per sanitizzazione input.
-            output_validator: Guardrail per validazione output.
-            settings: Configurazione centralizzata dell'applicazione.
-        """
+    def __init__(self, agent_graph, memory, scope_guardrail, 
+                 input_sanitizer, output_validator, settings):
         self._agent = agent_graph
         self._memory = memory
         self._scope_guardrail = scope_guardrail
         self._input_sanitizer = input_sanitizer
         self._output_validator = output_validator
         self._settings = settings
-        self._traces: List[Dict[str, Any]] = []
+        self._traces = []
+        self._retry_count = 0  # NUOVO: inizializzazione esplicita
     
-    _MAX_RETRY_NO_TOOL = 1  # Max 1 retry con prompt forzato
-
-    def chat(self, user_query: str) -> Dict[str, Any]:
+    def chat(self, user_query: str) -> dict:
         """
         Punto di ingresso principale per l'interazione con l'agente.
         
@@ -167,49 +144,67 @@ class RAGAgent:
         )
         
         try:
+            # FIX 1: recursion_limit esplicito
             result = self._agent.invoke(
                 {"messages": messages},
-                config={"callbacks": [obs_handler]},
+                config={
+                    "callbacks": [obs_handler],
+                    "recursion_limit": self._settings.guardrails.max_agent_iterations,
+                },
             )
             response_text = self._extract_final_response(result)
             
-            # --- STEP 4b: POST-HOC VALIDATION (NUOVO) ---
+            # Post-hoc validation (invariato)
             trace = obs_handler.get_trace()
             if (len(trace.tools_invoked) == 0
                     and not self._is_meta_query(sanitized_query)
                     and self._retry_count < self._MAX_RETRY_NO_TOOL):
                 
-                logger.warning(
-                    f"⚠️ Nessun tool invocato per query non-meta. "
-                    f"Retry con prompt forzato."
-                )
                 self._retry_count += 1
-                
-                # Modifica l'ultimo messaggio con istruzione di forza
                 forced_messages = messages.copy()
                 forced_messages[-1]["content"] = (
-                    f"[OBBLIGATORIO: Invoca un tool di ricerca ADESSO.] "
+                    f"[Invoca un tool di ricerca per rispondere.] "
                     f"{sanitized_query}"
                 )
-                
                 obs_handler_retry = create_observability_handler(
                     self._settings.observability,
                     conversation_turn=turn_number,
                 )
                 result = self._agent.invoke(
                     {"messages": forced_messages},
-                    config={"callbacks": [obs_handler_retry]},
+                    config={
+                        "callbacks": [obs_handler_retry],
+                        "recursion_limit": self._settings.guardrails.max_agent_iterations,
+                    },
                 )
                 response_text = self._extract_final_response(result)
-                obs_handler = obs_handler_retry  # Usa il nuovo handler
+                obs_handler = obs_handler_retry
             
-            self._retry_count = 0  # Reset dopo successo
+            self._retry_count = 0
             
         except Exception as e:
-            logger.error(f"Errore agente: {e}", exc_info=True)
-            response_text = (
-                "Mi scuso, si è verificato un errore. Riprova tra qualche istante."
-            )
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            
+            # FIX 2: Catch specifico per loop/recursion
+            if ("recursion" in error_str or "recursion" in error_type.lower()
+                    or "iteration" in error_str):
+                logger.error(
+                    f"🔄 LOOP RILEVATO — Agente terminato forzatamente dopo "
+                    f"{self._settings.guardrails.max_agent_iterations} iterazioni. "
+                    f"Query: '{sanitized_query[:80]}'"
+                )
+                response_text = (
+                    "Mi scuso, ho riscontrato difficoltà nell'elaborare la tua "
+                    "domanda. Prova a riformularla in modo più specifico, ad "
+                    "esempio indicando il nome completo del docente o del corso."
+                )
+            else:
+                logger.error(f"Errore agente: {e}", exc_info=True)
+                response_text = (
+                    "Mi scuso, si è verificato un errore. "
+                    "Riprova tra qualche istante."
+                )
         
         # --- STEP 5: Post-processing (Output Validation) ---
         passed, validated_response = self._output_validator.check(response_text)
