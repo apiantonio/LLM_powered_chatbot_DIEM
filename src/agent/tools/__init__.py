@@ -25,30 +25,68 @@ def set_retrieval_engine(engine: "RetrievalEngine") -> None:
     global _retrieval_engine
     _retrieval_engine = engine
 
+from typing import Dict
+
+_VALID_SEZIONI = frozenset({"profilo", "didattica", "ricerca", "international"})
+
+# Contatore errori per tool (anti-loop)
+_tool_error_counts: Dict[str, int] = {}
+_MAX_TOOL_RETRIES = 2
 
 def _search_collection(
     query: str,
     collection: CollectionTarget,
     metadata_filter: Optional[dict] = None,
 ) -> str:
-    """Helper condiviso — AGGIORNATO con metadata_filter."""
+    """
+    Helper condiviso — AGGIORNATO con anti-loop error handling.
+    
+    Se lo stesso tool fallisce 2+ volte con la stessa query, restituisce
+    un messaggio che ISTRUISCE il modello a NON riprovare.
+    """
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."
+    
+    tool_key = f"{collection.value}:{query[:50]}"
+    
     try:
         documents, used_query = _retrieval_engine.retrieve(
             query,
             collection=collection.value,
             metadata_filter=metadata_filter,
         )
+        # Reset contatore su successo
+        _tool_error_counts.pop(tool_key, None)
+        
         if not documents:
             return (
                 f"Non ho trovato informazioni pertinenti per: '{query}'. "
                 "Prova a riformulare la domanda."
             )
         return _format_results(documents)
+    
     except Exception as e:
-        logger.error(f"Errore ricerca {collection.value}: {e}")
-        return f"Errore durante la ricerca: {str(e)}"
+        logger.error(f"Errore ricerca {collection.value}: {e}", exc_info=True)
+        
+        # Conteggio errori per prevenire loop
+        _tool_error_counts[tool_key] = _tool_error_counts.get(tool_key, 0) + 1
+        error_count = _tool_error_counts[tool_key]
+        
+        if error_count >= _MAX_TOOL_RETRIES:
+            _tool_error_counts.pop(tool_key, None)
+            return (
+                "La ricerca non è disponibile al momento per un problema tecnico. "
+                "NON riprovare con questo stesso tool. "
+                "Rispondi all'utente che le informazioni non sono al momento "
+                "reperibili e suggerisci di consultare il sito web del DIEM."
+            )
+        
+        return (
+            "La ricerca ha riscontrato un problema temporaneo. "
+            "Prova a usare un tool di ricerca diverso (es. search_dipartimento "
+            "o search_all) oppure riformula la domanda."
+        )
+
 
 
 def _format_results(documents) -> str:
@@ -91,10 +129,23 @@ def search_docenti(query: str, sezione: Optional[str] = None) -> str:
                  Usa "didattica" per: corsi insegnati, materiale didattico.
                  Usa "ricerca" per: aree di ricerca, progetti, pubblicazioni.
     """
+    # Validazione input
+    if sezione and sezione.lower().strip() not in _VALID_SEZIONI:
+        logger.warning(
+            f"Parametro sezione non valido: '{sezione}'. "
+            f"Valori ammessi: {_VALID_SEZIONI}. Ignoro il filtro."
+        )
+        sezione = None
+    elif sezione:
+        sezione = sezione.lower().strip()
+    
     metadata_filter = None
     if sezione:
         metadata_filter = {"docente_sezione": sezione}
-    return _search_collection(query, CollectionTarget.DOCENTI_DIDATTICA, metadata_filter)
+    
+    return _search_collection(
+        query, CollectionTarget.DOCENTI_DIDATTICA, metadata_filter
+    )
 
 
 # ============================================================
@@ -171,7 +222,7 @@ def search_strutture_fisiche(query: str) -> str:
         query: Domanda su strutture fisiche del DIEM.
     """
     metadata_filter = {
-        "doc_category": {"$in": ["aula", "laboratorio", "sede"]}
+        "doc_category": ["aula", "laboratorio", "sede"]
     }
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO_RICERCA, metadata_filter

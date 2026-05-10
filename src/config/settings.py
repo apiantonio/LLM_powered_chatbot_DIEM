@@ -254,7 +254,7 @@ def load_settings() -> AppSettings:
         ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "ollama"),
-            model_name=os.getenv("LLM_MODEL", "llama3.2"),
+            model_name=os.getenv("LLM_MODEL", "qwen2.5"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),

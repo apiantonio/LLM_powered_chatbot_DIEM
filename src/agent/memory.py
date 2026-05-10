@@ -36,11 +36,12 @@ logger = logging.getLogger(__name__)
 
 # Reminder iniettato alla fine di ogni messaggio utente
 _RETRIEVAL_REMINDER = (
-    "\n\n[SISTEMA: Per rispondere a questa domanda, DEVI invocare almeno un "
-    "tool di ricerca nella knowledge base. NON rispondere a memoria. "
-    "Se la domanda richiede informazioni da più aree, invoca più tool "
-    "in step separati.]"
+    "\n\n[SISTEMA: Se questa domanda riguarda il DIEM, usa un tool di ricerca "
+    "per trovare le informazioni necessarie. Se il tool restituisce un errore, "
+    "NON riprovare lo stesso tool — usa un tool alternativo oppure comunica "
+    "all'utente che l'informazione non è al momento disponibile.]"
 )
+
 
 # Query che NON necessitano di retrieval
 _META_PATTERNS = [
