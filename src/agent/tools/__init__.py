@@ -1,17 +1,16 @@
 """
-agent/tools/__init__.py — Tool multi-collection per l'agente RAG.
+agent/tools/__init__.py — Tool multi-collection con metadata filtering.
 
-Ogni tool interroga una collection specifica, eliminando
-l'inquinamento cross-dominio che causava i falsi positivi.
+Modifiche:
+  - search_docenti con parametro sezione opzionale.
+  - Nuovo tool search_strutture_fisiche.
+  - Description ottimizzate con anti-pattern.
 """
 
 from __future__ import annotations
-
 import logging
-from typing import TYPE_CHECKING
-
+from typing import Optional, TYPE_CHECKING
 from langchain.tools import tool
-
 from agent.tools.easycourse import get_easycourse_client
 from ingestion.router import CollectionTarget
 
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
     from retrieval.engine import RetrievalEngine
 
 logger = logging.getLogger(__name__)
-
 _retrieval_engine: "RetrievalEngine | None" = None
 
 
@@ -28,13 +26,19 @@ def set_retrieval_engine(engine: "RetrievalEngine") -> None:
     _retrieval_engine = engine
 
 
-def _search_collection(query: str, collection: CollectionTarget) -> str:
-    """Helper condiviso per la ricerca in una singola collection."""
+def _search_collection(
+    query: str,
+    collection: CollectionTarget,
+    metadata_filter: Optional[dict] = None,
+) -> str:
+    """Helper condiviso — AGGIORNATO con metadata_filter."""
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."
     try:
         documents, used_query = _retrieval_engine.retrieve(
-            query, collection=collection.value
+            query,
+            collection=collection.value,
+            metadata_filter=metadata_filter,
         )
         if not documents:
             return (
@@ -48,7 +52,7 @@ def _search_collection(query: str, collection: CollectionTarget) -> str:
 
 
 def _format_results(documents) -> str:
-    """Formatta i documenti recuperati con citazione fonti e score."""
+    """Formatta i documenti — INVARIATO."""
     context_parts = []
     for i, doc in enumerate(documents, 1):
         source = doc.metadata.get("source_url", "fonte non disponibile")
@@ -64,129 +68,127 @@ def _format_results(documents) -> str:
 
 
 # ============================================================
-# TOOL 1: Docenti e Didattica
+# TOOL 1: Docenti (AGGIORNATO con sezione)
 # ============================================================
 
-@tool("search_docenti_didattica")
-def search_docenti_didattica(query: str) -> str:
-    """
-    Cerca informazioni su docenti e personale del DIEM.
+@tool("search_docenti")
+def search_docenti(query: str, sezione: Optional[str] = None) -> str:
+    """Cerca informazioni su un DOCENTE specifico del DIEM.
 
-    Usa questo strumento per domande su: curriculum di un docente,
-    qualifica accademica, contatti e email istituzionale, orario di
-    ricevimento, corsi insegnati, aree di ricerca personali,
-    pubblicazioni, ufficio e laboratorio.
+    USA QUESTO TOOL per domande su PERSONE: profilo, curriculum, email,
+    ricevimento, corsi insegnati da un docente, aree di ricerca personali.
 
-    Esempi di query appropriate:
-    - "Chi è Mario Vento?"
-    - "Corsi insegnati dal prof. Capuano"
-    - "Ricevimento del prof. Greco"
-    - "Email del prof. Napoli"
+    NON usare per: corsi di laurea (usa search_offerta_formativa),
+    bandi (usa search_bandi), strutture fisiche (usa search_strutture_fisiche).
 
     Args:
-        query: Domanda o termini di ricerca sul docente.
+        query: Domanda sul docente. Esempi: "Chi è Mario Vento?",
+               "Corsi insegnati dal prof. Capuano", "Email prof. Greco".
+        sezione: Filtro opzionale sulla sottosezione del docente.
+                 Valori ammessi: "profilo", "didattica", "ricerca", "international".
+                 Se omesso, cerca in tutte le sezioni.
+                 Usa "profilo" per: chi è, email, ufficio, ricevimento, curriculum.
+                 Usa "didattica" per: corsi insegnati, materiale didattico.
+                 Usa "ricerca" per: aree di ricerca, progetti, pubblicazioni.
     """
-    return _search_collection(query, CollectionTarget.DOCENTI_DIDATTICA)
+    metadata_filter = None
+    if sezione:
+        metadata_filter = {"docente_sezione": sezione}
+    return _search_collection(query, CollectionTarget.DOCENTI_DIDATTICA, metadata_filter)
 
 
 # ============================================================
-# TOOL 2: Offerta Formativa e Corsi
+# TOOL 2-3: Offerta Formativa e Bandi — INVARIATI
 # ============================================================
 
 @tool("search_offerta_formativa")
 def search_offerta_formativa(query: str) -> str:
-    """
-    Cerca informazioni su corsi di laurea, piani di studio e regolamenti.
+    """Cerca informazioni su corsi di laurea, piani di studio e regolamenti.
 
-    Usa questo strumento per domande su: corsi di laurea offerti dal DIEM,
-    piani di studio, regolamenti didattici, requisiti di ammissione,
-    crediti formativi, programmi degli insegnamenti, statistiche dei corsi,
-    procedure di iscrizione, trasferimenti, OFA, tesi.
+    USA QUESTO TOOL per: corsi di laurea del DIEM, piani di studio,
+    regolamenti didattici, requisiti di ammissione, crediti, programmi,
+    OFA, tesi, statistiche corsi.
 
-    Esempi di query appropriate:
-    - "Corsi di laurea del DIEM"
-    - "Piano di studi Ingegneria Informatica triennale"
-    - "Requisiti ammissione magistrale"
-    - "Regolamento didattico corso di laurea"
-    - "Punteggio TOLC per iscriversi"
+    NON usare per: informazioni su un docente specifico (usa search_docenti),
+    orari lezioni (usa get_course_schedule).
 
     Args:
-        query: Domanda o termini di ricerca su corsi e offerta formativa.
+        query: Domanda su corsi e offerta formativa.
     """
     return _search_collection(query, CollectionTarget.OFFERTA_FORMATIVA)
 
 
-# ============================================================
-# TOOL 3: Bandi e Amministrazione
-# ============================================================
+@tool("search_bandi")
+def search_bandi(query: str) -> str:
+    """Cerca bandi, borse di studio, assegni di ricerca e avvisi del DIEM.
 
-@tool("search_bandi_amministrazione")
-def search_bandi_amministrazione(query: str) -> str:
-    """
-    Cerca bandi, borse di studio, assegni di ricerca e avvisi del DIEM.
+    USA QUESTO TOOL SOLO per: bandi di concorso, borse di studio,
+    assegni di ricerca, avvisi amministrativi, dottorato.
 
-    Usa questo strumento SOLO per domande specifiche su: bandi di concorso,
-    borse di studio, assegni di ricerca, avvisi amministrativi, opportunità
-    di finanziamento, contratti di collaborazione.
-
-    NON usare questo strumento per cercare informazioni generali su un
-    docente — anche se il docente è menzionato nel bando come responsabile.
-
-    Esempi di query appropriate:
-    - "Bandi borse di studio DIEM"
-    - "Assegni di ricerca attivi"
-    - "Bandi dottorato di ricerca"
+    NON usare per: informazioni generali su un docente (usa search_docenti),
+    anche se il docente è menzionato come responsabile in un bando.
 
     Args:
-        query: Domanda o termini di ricerca su bandi e avvisi.
+        query: Domanda su bandi e avvisi.
     """
     return _search_collection(query, CollectionTarget.BANDI_AMMINISTRAZIONE)
 
 
 # ============================================================
-# TOOL 4: Dipartimento e Ricerca
+# TOOL 4: Dipartimento e Ricerca — INVARIATO
 # ============================================================
 
-@tool("search_dipartimento_ricerca")
-def search_dipartimento_ricerca(query: str) -> str:
-    """
-    Cerca informazioni istituzionali sul DIEM: strutture, laboratori,
-    aree di ricerca, progetti, sedi, internazionalizzazione.
+@tool("search_dipartimento")
+def search_dipartimento(query: str) -> str:
+    """Cerca informazioni istituzionali sul DIEM: ricerca, progetti,
+    internazionalizzazione, terza missione, organi dipartimentali.
 
-    Usa questo strumento per domande su: dove si trova il DIEM,
-    laboratori disponibili, attrezzature, aree di ricerca del dipartimento,
-    progetti finanziati, terza missione, mobilità internazionale, Erasmus,
-    commissioni, organi dipartimentali.
-
-    Esempi di query appropriate:
-    - "Dove si trova il DIEM?"
-    - "Laboratori disponibili al DIEM"
-    - "Aree di ricerca attive"
-    - "Progetti finanziati del dipartimento"
-    - "Opportunità Erasmus DIEM"
+    USA QUESTO TOOL per: aree di ricerca del dipartimento, progetti
+    finanziati, Erasmus, commissioni, organi. Per aule e laboratori
+    usa search_strutture_fisiche.
 
     Args:
-        query: Domanda su strutture, ricerca o servizi dipartimentali.
+        query: Domanda su ricerca o servizi dipartimentali.
     """
     return _search_collection(query, CollectionTarget.DIPARTIMENTO_RICERCA)
 
 
 # ============================================================
-# TOOL 5: Ricerca Trasversale (Fallback)
+# TOOL 5: Strutture Fisiche (NUOVO)
 # ============================================================
 
-@tool("search_all_collections")
-def search_all_collections(query: str) -> str:
+@tool("search_strutture_fisiche")
+def search_strutture_fisiche(query: str) -> str:
+    """Cerca informazioni su AULE, LABORATORI e SEDI del DIEM.
+
+    USA QUESTO TOOL per: dove si trova un'aula, quali laboratori sono
+    disponibili, attrezzature, sedi del dipartimento, mappa campus.
+
+    Esempi: "Dove si trova l'aula F8?", "Laboratori DIEM",
+    "Sede del dipartimento", "Attrezzature laboratorio X".
+
+    Args:
+        query: Domanda su strutture fisiche del DIEM.
     """
-    Ricerca trasversale su TUTTA la knowledge base del DIEM.
+    metadata_filter = {
+        "doc_category": {"$in": ["aula", "laboratorio", "sede"]}
+    }
+    return _search_collection(
+        query, CollectionTarget.DIPARTIMENTO_RICERCA, metadata_filter
+    )
 
-    Usa questo strumento SOLO quando:
-    - La domanda è ambigua e potrebbe riguardare più domini
-    - Gli altri strumenti specifici non hanno dato risultati sufficienti
-    - La domanda copre più aspetti (es. "tutto su Mario Vento" include
-      sia info personali che eventuali bandi)
 
-    Per domande chiare, preferisci SEMPRE i tool specifici.
+# ============================================================
+# TOOL 6: Ricerca Trasversale — INVARIATO
+# ============================================================
+
+@tool("search_all")
+def search_all(query: str) -> str:
+    """Ricerca trasversale su TUTTA la knowledge base del DIEM.
+
+    Usa SOLO quando: la domanda è ambigua, copre più aree, o gli
+    altri tool non hanno dato risultati. Per domande chiare,
+    preferisci SEMPRE i tool specifici.
 
     Args:
         query: Domanda generica o cross-dominio.
@@ -196,9 +198,7 @@ def search_all_collections(query: str) -> str:
     try:
         documents, used_query = _retrieval_engine.retrieve_from_all(query)
         if not documents:
-            return (
-                f"Non ho trovato informazioni in nessuna collection per: '{query}'."
-            )
+            return f"Non ho trovato informazioni per: '{query}'."
         return _format_results(documents)
     except Exception as e:
         logger.error(f"Errore ricerca all: {e}")
@@ -206,17 +206,15 @@ def search_all_collections(query: str) -> str:
 
 
 # ============================================================
-# TOOL 6: EasyCourse (invariato)
+# TOOL 7: EasyCourse — INVARIATO
 # ============================================================
 
 @tool("get_course_schedule")
 def get_course_schedule(course_or_professor: str) -> str:
-    """
-    Cerca gli orari delle lezioni e degli esami su EasyCourse UniSA.
+    """Cerca orari delle lezioni e degli esami su EasyCourse UniSA.
 
-    Usa questo strumento SOLO per domande specifiche su orari, calendario
-    delle lezioni, o quando degli esami. Per altre informazioni sui corsi
-    (programma, crediti, prerequisiti) usa search_offerta_formativa.
+    Usa SOLO per orari e calendario lezioni. Per programmi, crediti
+    o prerequisiti usa search_offerta_formativa.
 
     Args:
         course_or_professor: Nome del corso o cognome del docente.
@@ -232,10 +230,11 @@ def get_course_schedule(course_or_professor: str) -> str:
 def get_all_tools() -> list:
     """Restituisce tutti i tool disponibili per l'agente."""
     return [
-        search_docenti_didattica,
+        search_docenti,
         search_offerta_formativa,
-        search_bandi_amministrazione,
-        search_dipartimento_ricerca,
-        search_all_collections,
+        search_bandi,
+        search_dipartimento,
+        search_strutture_fisiche,
+        search_all,
         get_course_schedule,
     ]

@@ -46,11 +46,13 @@ _SEARCH_TOOL_PREFIX = "search_"
 
 # Mapping tool_name → collection (per osservabilità)
 _TOOL_COLLECTION_MAP = {
-    "search_docenti_didattica": "docenti_e_didattica",
+    "search_docenti": "docenti_e_didattica",
     "search_offerta_formativa": "offerta_formativa_e_corsi",
-    "search_bandi_amministrazione": "bandi_e_amministrazione",
-    "search_dipartimento_ricerca": "dipartimento_e_ricerca",
-    "search_all_collections": "ALL",
+    "search_bandi": "bandi_e_amministrazione",
+    "search_dipartimento": "dipartimento_e_ricerca",
+    "search_strutture_fisiche": "dipartimento_e_ricerca",
+    "search_all": "ALL",
+    "get_course_schedule": "easycourse",
 }
 
 

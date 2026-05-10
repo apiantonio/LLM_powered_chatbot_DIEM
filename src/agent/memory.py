@@ -34,6 +34,29 @@ from langchain_core.messages import (
 logger = logging.getLogger(__name__)
 
 
+# Reminder iniettato alla fine di ogni messaggio utente
+_RETRIEVAL_REMINDER = (
+    "\n\n[SISTEMA: Per rispondere a questa domanda, DEVI invocare almeno un "
+    "tool di ricerca nella knowledge base. NON rispondere a memoria. "
+    "Se la domanda richiede informazioni da più aree, invoca più tool "
+    "in step separati.]"
+)
+
+# Query che NON necessitano di retrieval
+_META_PATTERNS = [
+    r"^(ciao|salve|buongiorno|buonasera|hey|hi|hello)\b",
+    r"^grazie",
+    r"^(come stai|come va|chi sei|cosa sai fare)",
+]
+
+import re
+
+def _is_meta_query(query: str) -> bool:
+    """Rileva saluti e meta-domande che non richiedono retrieval."""
+    q = query.strip().lower()
+    return any(re.match(p, q) for p in _META_PATTERNS)
+
+
 @dataclass
 class ConversationTurn:
     """Singolo turno di conversazione (domanda + risposta)."""
@@ -125,28 +148,25 @@ class ConversationMemory:
             f"Memoria aggiornata: {len(self._turns)} turni"
         )
     
-    def get_messages_for_agent(self, current_query: str) -> List[dict]:
+    def get_messages_for_agent(self, current_query: str) -> list:
         """
-        Restituisce la lista messaggi nel formato atteso da create_agent.invoke().
-        
-        Include lo storico + la query corrente come ultimo HumanMessage.
-        Formato: [{"role": "user"|"assistant", "content": "..."}]
-        
-        Args:
-            current_query: La domanda corrente dell'utente (ultimo messaggio).
-        
-        Returns:
-            Lista di dict compatibile con create_agent.invoke({"messages": [...]}).
+        AGGIORNATO: inietta il RETRIEVAL_REMINDER alla fine della query
+        utente per prevenire l'amnesia dell'agente.
         """
         messages = []
         
-        # Aggiungi lo storico (turni precedenti, senza il turno corrente)
         for turn in self._turns:
             messages.append({"role": "user", "content": turn.user_message})
             messages.append({"role": "assistant", "content": turn.assistant_message})
         
-        # Aggiungi la query corrente
-        messages.append({"role": "user", "content": current_query})
+        # Inietta il reminder SOLO per query non-meta
+        if _is_meta_query(current_query):
+            messages.append({"role": "user", "content": current_query})
+        else:
+            messages.append({
+                "role": "user",
+                "content": current_query + _RETRIEVAL_REMINDER,
+            })
         
         return messages
     

@@ -105,6 +105,8 @@ class RAGAgent:
         self._settings = settings
         self._traces: List[Dict[str, Any]] = []
     
+    _MAX_RETRY_NO_TOOL = 1  # Max 1 retry con prompt forzato
+
     def chat(self, user_query: str) -> Dict[str, Any]:
         """
         Punto di ingresso principale per l'interazione con l'agente.
@@ -159,33 +161,54 @@ class RAGAgent:
         turn_number = self._memory.add_user_message(sanitized_query)
         messages = self._memory.get_messages_for_agent(sanitized_query)
         
-        # --- STEP 3: Crea callback handler per questo turno ---
         obs_handler = create_observability_handler(
             self._settings.observability,
             conversation_turn=turn_number,
         )
         
-        if not self._memory.is_empty and turn_number > 1:
-            logger.info(
-                f"\n📜 STORICO CONVERSAZIONE (context awareness):\n"
-                f"{self._memory.get_history_summary()}"
-            )
-        
-        # --- STEP 4: Invoca l'agente ---
         try:
             result = self._agent.invoke(
                 {"messages": messages},
                 config={"callbacks": [obs_handler]},
             )
-            
-            # Estrai la risposta finale dall'ultimo AIMessage
             response_text = self._extract_final_response(result)
             
+            # --- STEP 4b: POST-HOC VALIDATION (NUOVO) ---
+            trace = obs_handler.get_trace()
+            if (len(trace.tools_invoked) == 0
+                    and not self._is_meta_query(sanitized_query)
+                    and self._retry_count < self._MAX_RETRY_NO_TOOL):
+                
+                logger.warning(
+                    f"⚠️ Nessun tool invocato per query non-meta. "
+                    f"Retry con prompt forzato."
+                )
+                self._retry_count += 1
+                
+                # Modifica l'ultimo messaggio con istruzione di forza
+                forced_messages = messages.copy()
+                forced_messages[-1]["content"] = (
+                    f"[OBBLIGATORIO: Invoca un tool di ricerca ADESSO.] "
+                    f"{sanitized_query}"
+                )
+                
+                obs_handler_retry = create_observability_handler(
+                    self._settings.observability,
+                    conversation_turn=turn_number,
+                )
+                result = self._agent.invoke(
+                    {"messages": forced_messages},
+                    config={"callbacks": [obs_handler_retry]},
+                )
+                response_text = self._extract_final_response(result)
+                obs_handler = obs_handler_retry  # Usa il nuovo handler
+            
+            self._retry_count = 0  # Reset dopo successo
+            
         except Exception as e:
-            logger.error(f"Errore durante l'invocazione dell'agente: {e}", exc_info=True)
+            logger.error(f"Errore agente: {e}", exc_info=True)
             response_text = (
-                "Mi scuso, si è verificato un errore durante l'elaborazione "
-                "della tua domanda. Riprova tra qualche istante."
+                "Mi scuso, si è verificato un errore. Riprova tra qualche istante."
             )
         
         # --- STEP 5: Post-processing (Output Validation) ---
@@ -261,6 +284,11 @@ class RAGAgent:
         
         return ""
 
+    @staticmethod
+    def _is_meta_query(query: str) -> bool:
+        """Rileva saluti e meta-domande."""
+        from agent.memory import _is_meta_query
+        return _is_meta_query(query)
 
 # ============================================================
 # FACTORY: RAGAgentFactory

@@ -137,58 +137,36 @@ class CrossEncoderReranker:
 
 class RetrievalEngine:
     """
-    Orchestratore retrieval multi-collection.
-    
-    Supporta:
-    1. retrieve(query, collection) → ricerca in una singola collection
-    2. retrieve_from_all(query) → ricerca cross-collection con merge + rerank
-    
-    Il parametro `collection` accetta CollectionTarget.value (stringa),
-    coerente con quanto passato dai tool dell'agente.
+    Orchestratore retrieval — AGGIORNATO con metadata filtering.
     """
 
-    def __init__(
-        self,
-        indexer: "KnowledgeBaseIndexer",
-        reranker: CrossEncoderReranker,
-        query_optimizer: Optional[QueryOptimizer] = None,
-    ):
+    def __init__(self, indexer, reranker, query_optimizer=None):
         self._indexer = indexer
         self._reranker = reranker
         self._optimizer = query_optimizer
-
-        # Cache dei retriever: chiave = CollectionTarget.value (stringa)
         self._collection_retrievers = {}
         for target in CollectionTarget:
             self._collection_retrievers[target.value] = (
                 indexer.get_collection_retriever(target)
             )
         self._pc_retriever = indexer.get_parent_child_retriever()
-        
-        logger.info(
-            f"RetrievalEngine inizializzato con "
-            f"{len(self._collection_retrievers)} collection retrievers "
-            f"+ 1 Parent-Child retriever"
-        )
 
     def retrieve(
         self,
         query: str,
         collection: Optional[str] = None,
+        metadata_filter: Optional[dict] = None,
         chat_history: Optional[list] = None,
-    ) -> tuple[List[Document], str]:
+    ) -> tuple:
         """
-        Retrieval da una singola collection (o tutte se collection=None).
-        
+        Retrieval con supporto metadata filtering.
+
         Args:
             query: La query di ricerca.
-            collection: CollectionTarget.value (stringa). Se None, usa retrieve_from_all.
-            chat_history: Storico conversazionale per query rewriting.
-        
-        Returns:
-            Tupla (documenti_rerankati, query_effettiva).
+            collection: CollectionTarget.value.
+            metadata_filter: Filtro Chroma (es. {"docente_sezione": "didattica"}).
+            chat_history: Storico per query rewriting.
         """
-        # Query Optimization
         effective_query = query
         if self._optimizer and chat_history:
             effective_query = self._optimizer.rewrite(query, chat_history)
@@ -196,17 +174,20 @@ class RetrievalEngine:
         if collection is None:
             return self.retrieve_from_all(effective_query)
 
-        # Retrieval dalla collection specifica
-        retriever = self._collection_retrievers.get(collection)
+        # Se c'è un metadata_filter, crea un retriever filtrato ad-hoc
+        if metadata_filter:
+            retriever = self._get_filtered_retriever(collection, metadata_filter)
+        else:
+            retriever = self._collection_retrievers.get(collection)
+
         if retriever is None:
             logger.error(f"Collection sconosciuta: {collection}")
             return [], effective_query
 
         candidates = retriever.invoke(effective_query)
 
-        # Se la collection è offerta_formativa, aggiungi anche i
-        # risultati Parent-Child (regolamenti/piani di studio)
-        if collection == CollectionTarget.OFFERTA_FORMATIVA.value:
+        # Parent-Child merge per offerta_formativa (invariato)
+        if collection == CollectionTarget.OFFERTA_FORMATIVA.value and not metadata_filter:
             pc_docs = self._pc_retriever.invoke(effective_query)
             seen = {hash(d.page_content[:200]) for d in candidates}
             for doc in pc_docs:
@@ -215,53 +196,66 @@ class RetrievalEngine:
                     seen.add(h)
                     candidates.append(doc)
 
-        # Reranking
         final_docs = self._reranker.rerank(effective_query, candidates)
-
-        logger.info(
-            f"Retrieval [{collection}]: '{query[:50]}' → "
-            f"{len(candidates)} candidati → {len(final_docs)} dopo reranking"
-        )
         return final_docs, effective_query
 
-    def retrieve_from_all(
-        self,
-        query: str,
-        chat_history: Optional[list] = None,
-    ) -> tuple[List[Document], str]:
+    def _get_filtered_retriever(self, collection_name: str, metadata_filter: dict):
         """
-        Retrieval cross-collection: interroga tutte le collection,
-        fa merge dei risultati e applica reranking unificato.
+        Crea un retriever Chroma con filtro metadata.
+        
+        Chroma supporta i filtri nativamente:
+          {"docente_sezione": "didattica"}
+          → Chroma where clause: {"docente_sezione": {"$eq": "didattica"}}
+        
+        Per filtri multipli (OR):
+          {"$or": [{"doc_category": "aula"}, {"doc_category": "laboratorio"}]}
         """
-        effective_query = query
-        if self._optimizer and chat_history:
-            effective_query = self._optimizer.rewrite(query, chat_history)
+        try:
+            target = CollectionTarget(collection_name)
+        except ValueError:
+            return None
 
-        all_candidates = []
-        seen = set()
+        # Accede alla collection Chroma dall'indexer
+        chroma_collection = self._indexer._collections[target]
 
-        # Interroga tutte le 4 collection
-        for name, retriever in self._collection_retrievers.items():
-            docs = retriever.invoke(effective_query)
-            for doc in docs:
-                h = hash(doc.page_content[:200])
-                if h not in seen:
-                    seen.add(h)
-                    all_candidates.append(doc)
+        # Costruisce il filtro Chroma-native
+        chroma_where = self._build_chroma_filter(metadata_filter)
 
-        # Aggiungi Parent-Child (regolamenti/piani)
-        pc_docs = self._pc_retriever.invoke(effective_query)
-        for doc in pc_docs:
-            h = hash(doc.page_content[:200])
-            if h not in seen:
-                seen.add(h)
-                all_candidates.append(doc)
-
-        # Reranking unificato
-        final_docs = self._reranker.rerank(effective_query, all_candidates)
-
-        logger.info(
-            f"Retrieval [ALL]: '{query[:50]}' → "
-            f"{len(all_candidates)} candidati → {len(final_docs)} dopo reranking"
+        return chroma_collection.as_retriever(
+            search_type=self._indexer._settings.vectorstore.search_type,
+            search_kwargs={
+                "k": self._indexer._settings.vectorstore.search_k,
+                "filter": chroma_where,
+            },
         )
-        return final_docs, effective_query
+
+    @staticmethod
+    def _build_chroma_filter(metadata_filter: dict) -> dict:
+        """
+        Converte un dict semplice in formato filtro Chroma.
+        
+        Input:  {"docente_sezione": "didattica"}
+        Output: {"docente_sezione": {"$eq": "didattica"}}
+        
+        Input:  {"doc_category": ["aula", "laboratorio"]}
+        Output: {"doc_category": {"$in": ["aula", "laboratorio"]}}
+        """
+        chroma_filter = {}
+        conditions = []
+        
+        for key, value in metadata_filter.items():
+            if key.startswith("$"):
+                # Già in formato Chroma ($or, $and)
+                chroma_filter[key] = value
+            elif isinstance(value, list):
+                conditions.append({key: {"$in": value}})
+            else:
+                conditions.append({key: {"$eq": value}})
+        
+        if not chroma_filter:
+            if len(conditions) == 1:
+                return conditions[0]
+            elif len(conditions) > 1:
+                return {"$and": conditions}
+        
+        return chroma_filter or {}
