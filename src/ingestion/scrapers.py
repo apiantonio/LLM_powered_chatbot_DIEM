@@ -9,6 +9,11 @@ ARCHITETTURA (Sprint Filtri Docenti):
   - Thread pool: calcolo dinamico conservativo da CrawlerConfig
   - I/O thread-safe con lock
 
+AGGIORNAMENTO (Sprint Filtri v2):
+  - RicercaBaseUrlClassifier (Req 6): navigate-only per /ricerca base
+  - InternationalUrlClassifier (Req 7): navigate-only per /international
+  - Post-ingestion cleanup: eliminazione file con -anno=YYYY (YYYY < 2020, eccezione anno=0)
+
 Pattern: Strategy (filtri iniettati) + Template Method (ciclo BFS fisso)
 
 Lo scrapers.py fa SOLO scraping: discovery URL, fetch HTML, parsing DOM, salvataggio.
@@ -35,6 +40,8 @@ from transform.rules.docenti_url_rules import (
     PubblicazioniUrlClassifier,
     DidatticaOrariUrlClassifier,
     DidatticaIdUrlClassifier,
+    RicercaBaseUrlClassifier,
+    InternationalUrlClassifier,
 )
 from transform.rules.html_content_rules import PublicationsHtmlFilter
 from config.settings import CrawlerConfig, IngestionConfig
@@ -64,6 +71,8 @@ class UnisaCrawler:
       - DidatticaOrariUrlClassifier (Req 3)
       - PublicationsHtmlFilter (Req 4)
       - DidatticaIdUrlClassifier (Req 5)
+      - RicercaBaseUrlClassifier (Req 6)
+      - InternationalUrlClassifier (Req 7)
     """
 
     ALLOWED_DOMAINS = {
@@ -124,6 +133,10 @@ class UnisaCrawler:
         self._pubblicazioni_classifier = PubblicazioniUrlClassifier()
         self._orari_classifier = DidatticaOrariUrlClassifier()
         self._didattica_id_classifier = DidatticaIdUrlClassifier()
+
+        # --- NUOVI classificatori (Sprint Filtri v2) ---
+        self._ricerca_base_classifier = RicercaBaseUrlClassifier()
+        self._international_classifier = InternationalUrlClassifier()
 
         # --- Filtro contenuto HTML pubblicazioni (da transform/rules/) ---
         self._publications_filter = PublicationsHtmlFilter(
@@ -424,6 +437,71 @@ class UnisaCrawler:
         self._didattica_pending_deletions.clear()
         return deleted_count
 
+    # ============================================================
+    # POST-INGESTION: CLEANUP FILE CON -anno=YYYY (Feature 3)
+    # ============================================================
+
+    def _postprocess_anno_cleanup(self) -> int:
+        """
+        Elimina i file salvati il cui nome contiene -anno=YYYY con YYYY < cutoff_year.
+
+        ECCEZIONE CRITICA: i file con -anno=0 NON vengono MAI eliminati.
+        Lo "0" è un valore speciale che indica "tutte le pubblicazioni" e
+        viene gestito come eccezione esplicita.
+
+        Eseguito DOPO la fine di tutti i batch, quando tutti i file sono su disco.
+
+        Returns:
+            Numero di file eliminati.
+        """
+        output_path = Path(self.output_dir)
+        deleted_count = 0
+
+        # Pattern: cattura -anno=YYYY dove YYYY è un numero.
+        # Usiamo un pattern che matcha qualsiasi sequenza di cifre dopo -anno=
+        anno_pattern = re.compile(r'-anno=(\d+)')
+
+        for saved_file in output_path.glob("*.html"):
+            filename = saved_file.name
+
+            match = anno_pattern.search(filename)
+            if not match:
+                continue
+
+            anno_str = match.group(1)
+            try:
+                anno_value = int(anno_str)
+            except ValueError:
+                continue
+
+            # --- ECCEZIONE CRITICA: anno=0 NON viene MAI eliminato ---
+            if anno_value == 0:
+                continue
+
+            # --- Anno < cutoff_year → eliminare ---
+            if anno_value < self._ingestion_cfg.cutoff_year:
+                try:
+                    saved_file.unlink()
+                    deleted_count += 1
+                    logger.debug(
+                        f"  Post-ingestion anno cleanup: eliminato {filename} "
+                        f"(anno={anno_value} < {self._ingestion_cfg.cutoff_year})"
+                    )
+                except OSError as e:
+                    logger.warning(
+                        f"  Impossibile eliminare {filename}: {e}"
+                    )
+
+        if deleted_count > 0:
+            logger.info(
+                f"Post-ingestion anno cleanup: {deleted_count} file eliminati "
+                f"(anno < {self._ingestion_cfg.cutoff_year}, eccezione anno=0 preservata)"
+            )
+        else:
+            logger.info("Post-ingestion anno cleanup: nessun file da eliminare.")
+
+        return deleted_count
+
     # ==========================================
     # DECISIONE SALVATAGGIO
     # ==========================================
@@ -451,6 +529,28 @@ class UnisaCrawler:
 
         # --- STEP 3: Classificazione pubblicazioni URL (Req 2) ---
         pubblicazioni_class = self._pubblicazioni_classifier.classify(source_url)
+
+        # ============================================================
+        # STEP 3b (NUOVO — Req 6): Ricerca base → navigate-only
+        # La pagina /ricerca (senza sotto-path) viene visitata per
+        # estrarre link figli ma NON salvata su disco.
+        # ============================================================
+        ricerca_class = self._ricerca_base_classifier.classify(source_url)
+        if ricerca_class == "navigate":
+            self.filtered_count += 1
+            logger.debug(f"Ricerca base (navigate-only, non salvato): {source_url}")
+            return False
+
+        # ============================================================
+        # STEP 3c (NUOVO — Req 7): International → navigate-only
+        # Le pagine /international vengono visitate per estrarre link
+        # figli ma NON salvate su disco.
+        # ============================================================
+        international_class = self._international_classifier.classify(source_url)
+        if international_class == "navigate":
+            self.filtered_count += 1
+            logger.debug(f"International (navigate-only, non salvato): {source_url}")
+            return False
 
         # --- STEP 4: Regole di pulizia inline (invariate) ---
         should_discard, reason = self._should_discard_html(source_url, clean_html)
@@ -562,14 +662,19 @@ class UnisaCrawler:
             time.sleep(self.delay)
 
         # ============================================================
-        # (Req 5) POST-PROCESSING: eliminazione file didattica padre
-        # Eseguito DOPO la fine di TUTTI i batch e TUTTI i thread.
+        # POST-PROCESSING (eseguito DOPO la fine di TUTTI i batch)
         # ============================================================
+
+        # (Req 5) Eliminazione file didattica padre
         didattica_deleted = self._postprocess_didattica_cleanup()
 
-        self._print_summary(didattica_deleted)
+        # (Feature 3) Eliminazione file con -anno=YYYY < cutoff_year
+        # ECCEZIONE: -anno=0 viene SEMPRE preservato.
+        anno_deleted = self._postprocess_anno_cleanup()
 
-    def _print_summary(self, didattica_deleted: int = 0):
+        self._print_summary(didattica_deleted, anno_deleted)
+
+    def _print_summary(self, didattica_deleted: int = 0, anno_deleted: int = 0):
         logger.info("====== RESOCONTO FINALE ======")
         logger.info(f"URL visitati: {len(self.visited_urls)}")
         logger.info(f"HTML salvati: {self.processed_count}")
@@ -578,3 +683,8 @@ class UnisaCrawler:
         logger.info(f"Thread pool utilizzato: {self.max_workers} workers")
         if didattica_deleted:
             logger.info(f"Didattica post-processing: {didattica_deleted} file padre rimossi")
+        if anno_deleted:
+            logger.info(
+                f"Anno post-processing: {anno_deleted} file con anno obsoleto rimossi "
+                f"(cutoff: {self._ingestion_cfg.cutoff_year}, anno=0 preservato)"
+            )

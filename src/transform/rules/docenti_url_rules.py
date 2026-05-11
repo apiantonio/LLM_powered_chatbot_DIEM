@@ -6,6 +6,8 @@ Incapsula le logiche di classificazione URL per:
   - Ricerca/Pubblicazioni (Req 2): solo anno=0 ammesso
   - Didattica/Orari (Req 3): scarto completo
   - Didattica id/cId/pId (Req 5): classificazione per post-processing
+  - Ricerca base docenti (Req 6): navigate-only (estrarre link, non salvare)
+  - International docenti/DIEM (Req 7): navigate-only (estrarre link, non salvare)
 
 Design: Strategy Pattern — ogni classificatore è una classe indipendente
 con interfaccia `classify(url) -> str`. Il crawler li inietta e li invoca
@@ -161,3 +163,70 @@ class DidatticaIdUrlClassifier:
         """Estrae il valore numerico di id= dall'URL."""
         match = self._id_pattern.search(url)
         return match.group(1) if match else None
+
+
+# ============================================================
+# NUOVI CLASSIFICATORI (Sprint Filtri v2)
+# ============================================================
+
+
+class RicercaBaseUrlClassifier:
+    """
+    Classificatore URL per la pagina base /ricerca dei docenti e del DIEM (Req 6).
+
+    Matcha:
+      - docenti.unisa.it/{matricola}/ricerca  (pagina indice ricerca docente)
+      - diem.unisa.it/ricerca                 (pagina indice ricerca DIEM)
+      - www.diem.unisa.it/ricerca
+
+    NON matcha (devono passare):
+      - /ricerca/progetti, /ricerca/pubblicazioni, /ricerca/qualsiasi-sotto-pagina
+
+    Logica:
+      - "navigate": pagina indice → estrarre link figli, NON salvare su disco
+      - "pass":     URL non corrispondente
+    """
+
+    # Matcha path che termina esattamente con /ricerca (senza sotto-path)
+    _ricerca_base_pattern = re.compile(
+        r'^https?://'
+        r'(?:(?:www\.)?diem\.unisa\.it|docenti\.unisa\.it/\d+)'
+        r'/ricerca/?$',
+        re.IGNORECASE,
+    )
+
+    def classify(self, url: str) -> str:
+        # Rimuovi query string e fragment per un match pulito
+        clean_url = url.split('?')[0].split('#')[0]
+        if self._ricerca_base_pattern.match(clean_url):
+            return "navigate"
+        return "pass"
+
+
+class InternationalUrlClassifier:
+    """
+    Classificatore URL per le pagine /international dei docenti e del DIEM (Req 7).
+
+    Matcha:
+      - docenti.unisa.it/{matricola}/international  (pagina international docente)
+      - diem.unisa.it/international                 (pagina international DIEM)
+      - www.diem.unisa.it/international
+
+    Logica:
+      - "navigate": pagina international → estrarre link figli, NON salvare su disco
+      - "pass":     URL non corrispondente
+    """
+
+    # Matcha path che contiene /international (con eventuali sotto-path)
+    _international_pattern = re.compile(
+        r'^https?://'
+        r'(?:(?:www\.)?diem\.unisa\.it|docenti\.unisa\.it/\d+)'
+        r'/international(?:/.*)?$',
+        re.IGNORECASE,
+    )
+
+    def classify(self, url: str) -> str:
+        clean_url = url.split('?')[0].split('#')[0]
+        if self._international_pattern.match(clean_url):
+            return "navigate"
+        return "pass"
