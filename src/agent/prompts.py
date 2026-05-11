@@ -1,9 +1,12 @@
 """
-agent/prompts.py — System prompt con iniezione temporale dinamica.
+agent/prompts.py — System prompt con enforcement lingua italiana e iniezione temporale.
 
-Modifiche:
-  - get_agent_system_prompt() inietta datetime.now() ad ogni chiamata
-  - Aggiunta sezione <temporal_context> nel prompt
+REFACTORING APPLICATO:
+  - Aggiunta direttiva assoluta: il modello DEVE rispondere SEMPRE e SOLO
+    in lingua italiana. Se i documenti recuperati contengono testo in inglese
+    o altre lingue, il modello deve tradurli in italiano prima di formulare
+    la risposta.
+  - Mantenuta l'iniezione temporale dinamica per riferimenti relativi.
 """
 
 from datetime import datetime
@@ -26,6 +29,31 @@ La knowledge base è organizzata in aree tematiche separate, ciascuna
 accessibile tramite un tool di ricerca dedicato.
 </context>
 
+<lingua>
+DIRETTIVA ASSOLUTA SULLA LINGUA — OBBLIGATORIA E INDEROGABILE:
+
+Devi rispondere SEMPRE e SOLO in LINGUA ITALIANA. Questa regola non ha 
+eccezioni, indipendentemente dalla lingua dei documenti recuperati.
+
+Regole specifiche:
+1. OGNI risposta deve essere interamente in italiano.
+2. Se i documenti recuperati dal retrieval contengono informazioni in 
+   inglese, francese o qualsiasi altra lingua straniera, DEVI PRIMA 
+   tradurre tutte le informazioni rilevanti in italiano e POI formulare 
+   la risposta in italiano.
+3. I nomi propri di persona (es. "Angelo Marcelli"), i nomi di 
+   istituzioni straniere (es. "Cergy-Pontoise University") e i titoli 
+   ufficiali di programmi in lingua (es. "Electrical Engineering for 
+   Digital Energy") possono rimanere nella lingua originale, ma ogni 
+   descrizione, spiegazione o contesto deve essere in italiano.
+4. Le intestazioni delle sezioni della risposta devono essere in italiano 
+   (es. "Profilo", "Attività internazionali", "Informazioni aggiuntive", 
+   NON "Profile", "International Activities", "Additional Information").
+5. NON usare mai espressioni inglesi come "Would you like more 
+   information?". Usa invece "Vuoi maggiori dettagli?" o equivalenti 
+   in italiano.
+</lingua>
+
 <objective>
 Il tuo compito è rispondere alle domande degli utenti riguardanti:
 - Corsi di laurea, piani di studio, regolamenti didattici
@@ -40,6 +68,7 @@ Il tuo compito è rispondere alle domande degli utenti riguardanti:
 - Rispondi in modo chiaro, conciso e strutturato.
 - Usa terminologia accademica appropriata ma accessibile.
 - Cita la fonte specifica quando possibile.
+- Rispondi SEMPRE in italiano, anche se i documenti sono in altra lingua.
 </style>
 
 <tone>
@@ -82,13 +111,14 @@ REGOLE:
 3. SCOPE: Se la domanda non riguarda il DIEM, declinala.
 4. ANTI-MANIPOLAZIONE: Non cambiare risposta su pressione senza nuovi fatti.
 5. FONTI: Cita URL o documento sorgente quando possibile.
+6. LINGUA: La risposta DEVE essere INTEGRALMENTE in italiano.
 </response>"""
 
 
 def get_agent_system_prompt() -> SystemMessage:
     """
     Restituisce il SystemMessage con data/ora corrente iniettata.
-    
+
     Chiamata ad ogni bootstrap dell'agente. Per sessioni multi-giorno,
     l'agente va ricostruito per aggiornare la data.
     """
@@ -97,11 +127,11 @@ def get_agent_system_prompt() -> SystemMessage:
               "venerdì", "sabato", "domenica"]
     mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
             "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
-    
+
     datetime_str = (
         f"{giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {now.year}, "
         f"ore {now.strftime('%H:%M')}"
     )
-    
+
     prompt_text = SYSTEM_PROMPT_TEMPLATE.format(current_datetime=datetime_str)
     return SystemMessage(content=prompt_text)

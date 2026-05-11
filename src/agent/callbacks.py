@@ -1,24 +1,21 @@
 """
-RAG Observability Handler — Callback LangChain per tracciamento COMPLETO della pipeline.
+RAG Observability — Callback system completamente riscritto.
 
-FIX APPLICATI:
-  1. on_tool_end(): stampa TUTTI i metadati dei documenti recuperati,
-     non solo tipo e categoria. Include docente_sezione, docente_matricola, ecc.
-  2. _TOOL_COLLECTION_MAP: aggiornata con descrizioni più specifiche.
-  3. NUOVA CLASSE PromptDumpHandler: salva su file l'intero prompt inviato
-     all'LLM ad ogni chiamata, senza troncamenti, nella directory logs/prompts/.
+REFACTORING APPLICATO:
+  ELIMINATO: PromptDumpHandler (generava decine di file per interazione).
+  ELIMINATO: Output verbose a terminale con STEP numerati (ridondante).
+  NUOVO: InteractionLogHandler — genera UN UNICO FILE per interazione
+         con formato pulito e predefinito.
 
-FORMATO OUTPUT:
-  Output lineare a step numerati, SENZA troncamenti.
-  Ogni turno segue un flusso chiaro:
-
-    ══ TURNO #N ═══════════════════════════════════════
-    STEP 1 │ INPUT UTENTE
-    STEP 2 │ QUERY RISCRITTA (solo se diversa)
-    STEP 3 │ ROUTING → tool [collection] (sezione)
-    STEP 4 │ DOCUMENTI RECUPERATI (fonte + score + metadati completi)
-    STEP 5 │ RISPOSTA FINALE (testo COMPLETO)
-    ══ FINE TURNO #N ══ 2 LLM calls ══ 1245ms ════════
+Formato del file di log per ogni interazione:
+  === SYSTEM PROMPT ===
+  === HISTORY ===
+  === USER QUERY ===
+  === REWRITTEN QUERY ===
+  === MULTIQUERIES ===
+  === TOOL CALLED & METADATA ===
+  === TOP 5 RETRIEVED LINKS ===
+  === FINAL RESPONSE ===
 
 Pattern: Observer (GoF), Builder (GoF).
 """
@@ -38,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# ENUMS & DATA CLASSES
+# ENUMS & DATA CLASSES (mantenuti per compatibilità trace dict)
 # ============================================================
 
 class PipelinePhase(Enum):
@@ -54,7 +51,6 @@ class PipelinePhase(Enum):
 
 _SEARCH_TOOL_PREFIX = "search_"
 
-# ── FIX: Mappa aggiornata con descrizioni più specifiche ──
 _TOOL_COLLECTION_MAP = {
     "search_docenti": "docenti_e_didattica",
     "search_offerta_formativa": "offerta_formativa_e_corsi",
@@ -93,21 +89,20 @@ class PipelineTrace:
 
 
 # ============================================================
-# OBSERVER: RAGObservabilityHandler (FIX: metadati completi)
+# RAGObservabilityHandler (semplificato — solo tracking, no dump)
 # ============================================================
 
 class RAGObservabilityHandler(BaseCallbackHandler):
     """
-    Callback handler con output LINEARE e COMPLETO.
-    
-    Nessun troncamento. Nessuna preview. Nessun dump della struttura prompt.
-    Solo i passi della pipeline, in ordine, con tutti i dati visibili.
+    Callback handler per tracciamento della pipeline.
 
-    FIX: on_tool_end() ora mostra TUTTI i metadati dei documenti recuperati.
+    Semplificato: traccia i dati internamente per il trace dict
+    e per l'output a terminale leggero. NON genera file.
+    La generazione del file unico è delegata a InteractionLogHandler.
     """
-    
+
     name = "RAGObservabilityHandler"
-    
+
     def __init__(
         self,
         verbose: bool = True,
@@ -116,7 +111,7 @@ class RAGObservabilityHandler(BaseCallbackHandler):
     ):
         super().__init__()
         self._verbose = verbose
-        self._max_preview = max_preview_chars  # Mantenuto per compatibilità trace dict
+        self._max_preview = max_preview_chars
         self._trace = PipelineTrace(conversation_turn=conversation_turn)
         self._current_tool: Optional[ToolInvocation] = None
         self._tool_start_time: float = 0.0
@@ -124,59 +119,66 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         self._llm_call_index: int = 0
         self._react_iteration: int = 0
         self._header_printed: bool = False
-    
+        # Cattura il system prompt dalla prima chiamata LLM
+        self._system_prompt: str = ""
+
     # ==============================
     # CHAT MODEL TRACKING
     # ==============================
-    
+
     def on_chat_model_start(
         self, serialized: Dict[str, Any], messages: List, **kwargs: Any
     ) -> None:
         self._llm_call_index += 1
         self._trace.llm_calls_count = self._llm_call_index
-        
+
         if not messages:
             return
-        
+
+        # Estrai messaggi flat
+        flat_messages = []
+        for batch in messages:
+            if isinstance(batch, list):
+                flat_messages.extend(batch)
+            else:
+                flat_messages.append(batch)
+
+        # Cattura il system prompt dalla prima chiamata
+        if self._llm_call_index == 1:
+            for msg in flat_messages:
+                if hasattr(msg, 'type') and msg.type == 'system':
+                    self._system_prompt = msg.content
+                    break
+
         # Estrai l'input utente (solo la prima volta)
         if not self._trace.user_input:
-            flat_messages = []
-            for batch in messages:
-                if isinstance(batch, list):
-                    flat_messages.extend(batch)
-                else:
-                    flat_messages.append(batch)
-            
             for msg in reversed(flat_messages):
                 if hasattr(msg, 'type') and msg.type == 'human':
                     raw_content = msg.content
-                    # Rimuovi il reminder di sistema dall'input visualizzato
                     clean_input = raw_content.split("\n\n[SISTEMA:")[0].strip()
                     clean_input = clean_input.split("\n\n[Invoca un tool")[0].strip()
                     self._trace.user_input = clean_input
                     break
-            
-            # STEP 1: Stampa l'header del turno e l'input
+
             if self._verbose and self._trace.user_input:
                 self._header_printed = True
                 turn = self._trace.conversation_turn
                 print(f"\n{'═' * 70}")
                 print(f"  TURNO #{turn}")
                 print(f"{'═' * 70}")
-                print(f"  STEP 1 │ INPUT UTENTE")
-                print(f"         │ \"{self._trace.user_input}\"")
-    
+                print(f"  INPUT │ \"{self._trace.user_input}\"")
+
     # ==============================
     # TOOL TRACKING
     # ==============================
-    
+
     def on_tool_start(
         self, serialized: Dict[str, Any], input_str: str, **kwargs: Any
     ) -> None:
         tool_name = serialized.get("name", "unknown_tool")
         self._tool_start_time = time.time()
         self._react_iteration += 1
-        
+
         tool_params = self._extract_tool_input(input_str)
         clean_query = tool_params.get(
             "query",
@@ -185,11 +187,9 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                 str(next(iter(tool_params.values()), ""))
             )
         )
-        
+
         collection_queried = _TOOL_COLLECTION_MAP.get(tool_name, "")
-        sezione = tool_params.get("sezione", None)
-        tipo_struttura = tool_params.get("tipo_struttura", None)
-        
+
         self._current_tool = ToolInvocation(
             tool_name=tool_name,
             tool_input=clean_query,
@@ -197,191 +197,101 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             collection_queried=collection_queried,
             react_iteration=self._react_iteration,
         )
-        
-        if not self._verbose:
-            return
-        
-        # STEP 2: Query riscritta (solo se diversa dall'input originale)
-        if (self._trace.user_input 
-                and clean_query.strip().lower() != self._trace.user_input.strip().lower()
-                and not self._trace.query_rewritten):
-            self._trace.query_rewritten = clean_query
-            print(f"  STEP 2 │ QUERY RISCRITTA")
-            print(f"         │ originale:  \"{self._trace.user_input}\"")
-            print(f"         │ riscritta:  \"{clean_query}\"")
-        
-        # STEP 3: Routing
-        step_num = 3 if self._trace.query_rewritten else 2
-        iter_str = f" (iter #{self._react_iteration})" if self._react_iteration > 1 else ""
-        
-        print(f"  STEP {step_num} │ ROUTING{iter_str}")
-        print(f"         │ tool:       {tool_name}")
-        print(f"         │ collection: {collection_queried}")
-        print(f"         │ query:      \"{clean_query}\"")
-        
-        # ── FIX: Mostra il metadata filter usato ──
-        if sezione:
-            print(f"         │ filtro metadati: docente_sezione=\"{sezione}\"")
-        if tipo_struttura:
-            print(f"         │ filtro metadati: doc_category=\"{tipo_struttura}\"")
-        elif tool_name == "search_strutture_fisiche" and not tipo_struttura:
-            # Inferenza automatica: mostra cosa sarà inferito
-            query_lower = clean_query.lower()
-            if "aula" in query_lower:
-                print(f"         │ filtro metadati: doc_category=\"aula\" (inferito)")
-            elif any(kw in query_lower for kw in ["laboratorio", "lab "]):
-                print(f"         │ filtro metadati: doc_category=\"laboratorio\" (inferito)")
-            elif any(kw in query_lower for kw in ["sede", "edificio", "campus"]):
-                print(f"         │ filtro metadati: doc_category=\"sede\" (inferito)")
-            else:
-                print(f"         │ filtro metadati: doc_category IN [\"aula\", \"laboratorio\", \"sede\"]")
-    
-    def on_tool_end(self, output: Any, **kwargs: Any) -> None:
-        """
-        Callback invocato alla fine dell'esecuzione di un tool.
 
-        FIX APPLICATO:
-          La stampa dei documenti ora mostra TUTTI i metadati disponibili,
-          non solo tipo e categoria. Questo include: doc_category, 
-          docente_sezione, docente_matricola, corso_slug, source_domain,
-          e qualsiasi altro metadato presente nel documento.
-        """
+        if self._verbose:
+            print(f"  TOOL  │ {tool_name} → {collection_queried}")
+
+    def on_tool_end(self, output: Any, **kwargs: Any) -> None:
         if self._current_tool is None:
             return
-        
+
         if isinstance(output, str):
             output_str = output
         elif hasattr(output, 'content'):
             output_str = str(output.content)
         else:
             output_str = str(output)
-        
+
         duration = (time.time() - self._tool_start_time) * 1000
         self._current_tool.tool_output = output_str
         self._current_tool.duration_ms = round(duration, 1)
-        
-        # Parsa i documenti
+
         if self._current_tool.tool_name.startswith(_SEARCH_TOOL_PREFIX):
             self._current_tool.documents_retrieved = self._parse_retrieved_docs(output_str)
-        
+
         if self._verbose:
             docs = self._current_tool.documents_retrieved
-            has_rewrite = bool(self._trace.query_rewritten)
-            step_num = 4 if has_rewrite else 3
-            
-            # STEP 4: Documenti recuperati — CON METADATI COMPLETI
             if docs:
                 print(
-                    f"  STEP {step_num} │ DOCUMENTI RECUPERATI: "
-                    f"{len(docs)} ({self._current_tool.duration_ms}ms)"
+                    f"  DOCS  │ {len(docs)} documenti recuperati "
+                    f"({self._current_tool.duration_ms}ms)"
                 )
-                for i, doc in enumerate(docs, 1):
-                    source = doc.get("source_url", "N/D")
-                    doc_type = doc.get("doc_type", "?")
-                    category = doc.get("doc_category", "?")
-                    score = doc.get("relevance_score", None)
-                    score_str = f"{score:.4f}" if score is not None else "N/D"
-                    
-                    print(
-                        f"         │   [{i}] score={score_str}  "
-                        f"tipo={doc_type}  cat={category}"
-                    )
-                    print(f"         │       fonte: {source}")
-                    
-                    # ── FIX: stampa TUTTI i metadati aggiuntivi ──
-                    # Esclude i campi già stampati sopra e il contenuto
-                    # (che può essere molto lungo).
-                    skip_keys = {
-                        "source_url", "doc_type", "doc_category",
-                        "relevance_score", "content",
-                    }
-                    extra_meta = {
-                        k: v for k, v in doc.items()
-                        if k not in skip_keys and v
-                    }
-                    if extra_meta:
-                        meta_str = "  ".join(
-                            f"{k}={v}" for k, v in extra_meta.items()
-                        )
-                        print(f"         │       metadati: {meta_str}")
-                        
             elif "Errore" in output_str:
-                print(
-                    f"  STEP {step_num} │ ERRORE TOOL "
-                    f"({self._current_tool.duration_ms}ms)"
-                )
-                # Mostra l'errore COMPLETO, senza troncamento
-                print(f"         │ {output_str}")
+                print(f"  ERR   │ Errore tool ({self._current_tool.duration_ms}ms)")
             else:
-                print(
-                    f"  STEP {step_num} │ NESSUN DOCUMENTO TROVATO "
-                    f"({self._current_tool.duration_ms}ms)"
-                )
-        
+                print(f"  DOCS  │ Nessun documento trovato ({self._current_tool.duration_ms}ms)")
+
         self._trace.tools_invoked.append(self._current_tool)
         self._current_tool = None
-    
+
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
         if self._current_tool:
             self._current_tool.tool_output = f"ERRORE: {error}"
             self._trace.tools_invoked.append(self._current_tool)
             self._current_tool = None
         if self._verbose:
-            print(f"         │ ❌ ERRORE TOOL: {error}")
-    
+            print(f"  ERR   │ ❌ {error}")
+
     def on_llm_start(
         self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any
     ) -> None:
-        pass  # Non loggare nulla per LLM non-chat
-    
+        pass
+
     # ==============================
     # PUBLIC API
     # ==============================
-    
+
+    def get_system_prompt(self) -> str:
+        """Restituisce il system prompt catturato."""
+        return self._system_prompt
+
     def set_final_output(self, output: str) -> None:
         self._trace.final_output = output
         self._trace.total_duration_ms = round(
             (time.time() - self._pipeline_start_time) * 1000, 1
         )
-        
+
         if self._verbose:
-            has_rewrite = bool(self._trace.query_rewritten)
-            step_num = 5 if has_rewrite else 4
-            
-            # STEP 5: Risposta finale — COMPLETA, senza troncamento
-            print(f"  STEP {step_num} │ RISPOSTA FINALE")
-            # Stampa ogni riga con indentazione
-            for line in output.split("\n"):
-                print(f"         │ {line}")
-            
-            # Footer del turno
             turn = self._trace.conversation_turn
             llm_calls = self._trace.llm_calls_count
             duration = self._trace.total_duration_ms
             tools_count = len(self._trace.tools_invoked)
+            # Mostra solo le prime 200 char della risposta a terminale
+            preview = output[:200] + "..." if len(output) > 200 else output
+            print(f"  RESP  │ {preview}")
             print(f"{'═' * 70}")
             print(
-                f"  FINE TURNO #{turn}  │  "
+                f"  FINE #{turn}  │  "
                 f"{tools_count} tool  │  "
                 f"{llm_calls} LLM calls  │  "
                 f"{duration:.0f}ms"
             )
             print(f"{'═' * 70}")
-    
+
     def get_trace(self) -> PipelineTrace:
         return self._trace
-    
+
     def get_trace_dict(self) -> Dict[str, Any]:
         all_contexts = []
         all_sources = []
-        
+
         for tool_inv in self._trace.tools_invoked:
             for doc in tool_inv.documents_retrieved:
                 all_contexts.append(doc.get("content", ""))
                 source = doc.get("source_url", "")
                 if source and source not in all_sources:
                     all_sources.append(source)
-        
+
         return {
             "user_input": self._trace.user_input,
             "query_rewritten": self._trace.query_rewritten,
@@ -407,33 +317,25 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             "total_react_iterations": self._react_iteration,
             "total_duration_ms": self._trace.total_duration_ms,
         }
-    
+
     def print_summary(self) -> None:
-        """
-        NON stampa nulla — il flusso è già stato stampato step-by-step.
-        
-        Il vecchio print_summary() duplicava tutto con troncamenti.
-        Ora l'output è già completo e lineare durante l'esecuzione.
-        """
+        """Noop — output già stampato inline."""
         pass
-    
+
     # ==============================
     # PRIVATE HELPERS
     # ==============================
-    
+
     @staticmethod
     def _extract_tool_input(input_str: str) -> dict:
-        """Parsa l'input del tool e restituisce TUTTI i parametri come dict."""
         if not input_str:
             return {"query": ""}
-        
         try:
             parsed = json.loads(input_str)
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
             pass
-        
         try:
             import ast
             parsed = ast.literal_eval(input_str)
@@ -441,30 +343,23 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                 return parsed
         except (ValueError, SyntaxError):
             pass
-        
         return {"query": input_str}
-    
+
     @staticmethod
     def _parse_retrieved_docs(tool_output: str) -> List[Dict[str, Any]]:
-        """
-        Parsa l'output dei tool search_* per estrarre i documenti.
-
-        FIX: ora parsa anche la riga [meta: ...] aggiunta da _format_results()
-        per estrarre tutti i metadati aggiuntivi.
-        """
         docs = []
         if not tool_output or "Errore" in tool_output or "Non ho trovato" in tool_output:
             return docs
-        
+
         blocks = tool_output.split("\n\n---\n\n")
         for block in blocks:
             doc_info: Dict[str, Any] = {}
             lines = block.strip().split("\n", 2)
-            
+
             if lines and lines[0].startswith("[Documento"):
                 header = lines[0].strip("[]")
                 parts = [p.strip() for p in header.split("—")]
-                
+
                 if len(parts) >= 2:
                     doc_info["doc_type"] = parts[1].strip()
                 if len(parts) >= 3:
@@ -480,8 +375,7 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                             )
                         except (ValueError, IndexError):
                             pass
-                
-                # ── FIX: Parsa la riga [meta: ...] per i metadati aggiuntivi ──
+
                 content_start = 1
                 if len(lines) > 1 and lines[1].startswith("[meta:"):
                     meta_line = lines[1].strip("[meta: ").rstrip("]")
@@ -490,203 +384,124 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                             k, v = pair.split("=", 1)
                             doc_info[k.strip()] = v.strip()
                     content_start = 2
-                
+
                 if len(lines) > content_start:
                     doc_info["content"] = lines[content_start].strip()
                 else:
                     doc_info["content"] = ""
             else:
                 doc_info["content"] = block.strip()
-            
+
             if doc_info.get("content"):
                 docs.append(doc_info)
-        
+
         return docs
 
 
 # ============================================================
-# NUOVO: PromptDumpHandler — Salvataggio prompt completo su file
+# NUOVO: InteractionLogHandler — 1 unico file per interazione
 # ============================================================
 
-class PromptDumpHandler(BaseCallbackHandler):
+class InteractionLogHandler:
     """
-    Callback handler che salva su file il prompt COMPLETO inviato all'LLM.
+    Genera UN UNICO FILE di log per ogni interazione (domanda → risposta).
 
-    Ad ogni chiamata LLM (on_chat_model_start), scrive un file con:
-      - Timestamp
-      - Turno di conversazione
-      - Numero della chiamata LLM nel turno
-      - TUTTI i messaggi inviati all'LLM (system, human, assistant, tool)
-        con il contenuto INTEGRALE, senza troncamenti
+    Il file contiene ESCLUSIVAMENTE le sezioni richieste, formattate
+    con i separatori === NOME SEZIONE ===.
 
-    I file vengono salvati nella directory configurata (default: logs/prompts/).
-    Naming convention: prompt_turn{N}_llm{M}_{timestamp}.txt
+    NON è un BaseCallbackHandler di LangChain: viene invocato
+    esplicitamente da RAGAgent.chat() a fine turno, quando tutti
+    i dati sono disponibili.
 
-    Questo handler è SEPARATO da RAGObservabilityHandler per rispettare
-    il Single Responsibility Principle: RAGObservabilityHandler traccia
-    la pipeline a terminale, PromptDumpHandler salva i prompt su file.
-
-    Pattern: Observer (GoF).
+    Naming convention: interaction_turn{N}_{timestamp}.txt
     """
 
-    name = "PromptDumpHandler"
-
-    def __init__(
-        self,
-        output_dir: str = "logs/prompts",
-        conversation_turn: int = 1,
-    ):
-        """
-        Args:
-            output_dir: Directory dove salvare i file di prompt.
-                        Creata automaticamente se non esiste.
-            conversation_turn: Numero del turno corrente (1-indexed).
-        """
-        super().__init__()
+    def __init__(self, output_dir: str = "logs/interactions"):
         self._output_dir = output_dir
-        self._conversation_turn = conversation_turn
-        self._llm_call_index = 0
-
-        # Crea la directory se non esiste
         os.makedirs(self._output_dir, exist_ok=True)
 
-    def on_chat_model_start(
-        self, serialized: Dict[str, Any], messages: List, **kwargs: Any
-    ) -> None:
+    def save_interaction(
+        self,
+        turn_number: int,
+        system_prompt: str,
+        history: str,
+        user_query: str,
+        rewritten_query: str,
+        multi_queries: List[str],
+        tool_name: str,
+        metadata_info: str,
+        top_links: List[str],
+        final_response: str,
+    ) -> str:
         """
-        Intercetta OGNI chiamata al ChatModel e salva il prompt completo.
+        Salva l'interazione completa su un unico file.
 
-        Questo metodo viene invocato dal framework LangChain ogni volta
-        che il ChatModel riceve un nuovo batch di messaggi. Nel loop ReAct
-        di create_agent, viene invocato:
-          - 1a volta: con il prompt iniziale (system + history + query)
-          - 2a+ volta: con il prompt + tool results (contesto RAG augmentato)
-
-        OGNI invocazione viene salvata su un file separato.
-
-        Args:
-            serialized: Metadati del modello serializzato (nome, provider).
-                        Contiene chiavi come "name", "id", ecc.
-            messages: Lista di batch di messaggi. Ogni batch è una lista
-                      di BaseMessage (SystemMessage, HumanMessage, AIMessage,
-                      ToolMessage). Questa è la struttura completa del prompt
-                      che il modello riceverà.
-            **kwargs: Argomenti aggiuntivi (invocation_params, tags, ecc.).
+        Returns:
+            Il path del file salvato.
         """
-        self._llm_call_index += 1
-
-        # ── Costruzione del contenuto del file ──
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         lines = []
-        lines.append("=" * 80)
-        lines.append(
-            f"PROMPT DUMP — Turno #{self._conversation_turn} — "
-            f"LLM Call #{self._llm_call_index}"
-        )
-        lines.append(f"Timestamp: {timestamp}")
 
-        # Estrai informazioni sul modello in modo sicuro
-        model_name = serialized.get("name", "unknown")
-        model_id = serialized.get("id", ["unknown"])
-        if isinstance(model_id, list):
-            model_id = "/".join(str(x) for x in model_id)
-        lines.append(f"Modello: {model_name} / {model_id}")
-        lines.append("=" * 80)
+        # === SYSTEM PROMPT ===
+        lines.append("=== SYSTEM PROMPT ===")
+        lines.append(system_prompt if system_prompt else "(non catturato)")
         lines.append("")
 
-        # ── Estrazione e scrittura di TUTTI i messaggi ──
-        # messages è una lista di batch. Ogni batch è a sua volta una lista
-        # di BaseMessage. Normalmente c'è un solo batch.
-        flat_messages = []
-        for batch in messages:
-            if isinstance(batch, list):
-                flat_messages.extend(batch)
-            else:
-                flat_messages.append(batch)
+        # === HISTORY ===
+        lines.append("=== HISTORY ===")
+        lines.append(history if history else "(nessuna history)")
+        lines.append("")
 
-        for i, msg in enumerate(flat_messages):
-            # Determina il tipo di messaggio
-            if hasattr(msg, 'type'):
-                msg_type = msg.type.upper()  # "system", "human", "ai", "tool"
-            elif isinstance(msg, dict):
-                msg_type = msg.get("role", "unknown").upper()
-            else:
-                msg_type = type(msg).__name__.upper()
+        # === USER QUERY ===
+        lines.append("=== USER QUERY ===")
+        lines.append(user_query)
+        lines.append("")
 
-            # Estrai il contenuto
-            if hasattr(msg, 'content'):
-                content = msg.content
-            elif isinstance(msg, dict):
-                content = msg.get("content", "")
-            else:
-                content = str(msg)
+        # === REWRITTEN QUERY ===
+        lines.append("=== REWRITTEN QUERY ===")
+        lines.append(rewritten_query if rewritten_query else user_query)
+        lines.append("")
 
-            # Estrai tool_calls se presenti (per AIMessage con tool invocations)
-            tool_calls_str = ""
-            if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                try:
-                    tool_calls_str = (
-                        f"\n  [TOOL CALLS: "
-                        f"{json.dumps(msg.tool_calls, ensure_ascii=False, indent=2)}]"
-                    )
-                except (TypeError, ValueError):
-                    tool_calls_str = f"\n  [TOOL CALLS: {msg.tool_calls}]"
+        # === MULTIQUERIES ===
+        lines.append("=== MULTIQUERIES ===")
+        if multi_queries:
+            for i, mq in enumerate(multi_queries, 1):
+                lines.append(f"{i}. {mq}")
+        else:
+            lines.append("(nessuna multiquery generata)")
+        lines.append("")
 
-            # Estrai tool_call_id se presente (per ToolMessage)
-            tool_id_str = ""
-            if hasattr(msg, 'tool_call_id') and msg.tool_call_id:
-                tool_id_str = f" (tool_call_id: {msg.tool_call_id})"
+        # === TOOL CALLED & METADATA ===
+        lines.append("=== TOOL CALLED & METADATA ===")
+        lines.append(f"{tool_name} - {metadata_info}")
+        lines.append("")
 
-            lines.append(f"{'─' * 60}")
-            lines.append(
-                f"MESSAGGIO [{i+1}/{len(flat_messages)}] — "
-                f"{msg_type}{tool_id_str}"
-            )
-            lines.append(f"{'─' * 60}")
+        # === TOP 5 RETRIEVED LINKS ===
+        lines.append("=== TOP 5 RETRIEVED LINKS ===")
+        if top_links:
+            for i, link in enumerate(top_links[:5], 1):
+                lines.append(f"{i}. {link}")
+        else:
+            lines.append("(nessun link recuperato)")
+        lines.append("")
 
-            # Contenuto INTEGRALE, senza troncamento
-            if isinstance(content, str):
-                lines.append(content)
-            elif isinstance(content, list):
-                # Contenuto multimodale (es. immagini + testo)
-                for block in content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            lines.append(block["text"])
-                        else:
-                            lines.append(
-                                f"[{block.get('type', 'unknown')} block]"
-                            )
-                    else:
-                        lines.append(str(block))
-            else:
-                lines.append(str(content))
+        # === FINAL RESPONSE ===
+        lines.append("=== FINAL RESPONSE ===")
+        lines.append(final_response)
 
-            if tool_calls_str:
-                lines.append(tool_calls_str)
-
-            lines.append("")  # Riga vuota tra messaggi
-
-        lines.append("=" * 80)
-        lines.append(
-            f"FINE PROMPT DUMP — {len(flat_messages)} messaggi totali"
-        )
-        lines.append("=" * 80)
-
-        # ── Scrittura su file ──
-        filename = (
-            f"prompt_turn{self._conversation_turn}_"
-            f"llm{self._llm_call_index}_{timestamp}.txt"
-        )
+        # Scrittura file
+        filename = f"interaction_turn{turn_number}_{timestamp}.txt"
         filepath = os.path.join(self._output_dir, filename)
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
-            logger.info(f"Prompt dump salvato: {filepath}")
+            logger.info(f"Log interazione salvato: {filepath}")
+            return filepath
         except Exception as e:
-            logger.error(f"Errore salvataggio prompt dump: {e}")
+            logger.error(f"Errore salvataggio log interazione: {e}")
+            return ""
 
 
 # ============================================================
@@ -705,12 +520,8 @@ def create_observability_handler(
     )
 
 
-def create_prompt_dump_handler(
-    output_dir: str = "logs/prompts",
-    conversation_turn: int = 1,
-) -> PromptDumpHandler:
-    """Factory Method: crea un PromptDumpHandler configurato."""
-    return PromptDumpHandler(
-        output_dir=output_dir,
-        conversation_turn=conversation_turn,
-    )
+def create_interaction_log_handler(
+    output_dir: str = "logs/interactions",
+) -> InteractionLogHandler:
+    """Factory Method: crea un InteractionLogHandler."""
+    return InteractionLogHandler(output_dir=output_dir)
