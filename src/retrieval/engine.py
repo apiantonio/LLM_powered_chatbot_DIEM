@@ -216,6 +216,16 @@ class CrossEncoderReranker:
         pairs = [[query, doc.page_content] for doc in documents]
         scores = self._model.predict(pairs)
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
+        
+        # ------------------------------------------------------------------
+        # INIZIO STAMPA DI TUTTI I CANDIDATI PRIMA DEI TAGLI (TOP_N/THRESHOLD)
+        # ------------------------------------------------------------------
+        print(f"\n--- CLASSIFICA COMPLETA ({len(ranked)} CANDIDATI) PRIMA DEL FILTRAGGIO ---")
+        for i, (doc, score) in enumerate(ranked):
+            print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
+            print(f"    Testo: {doc.page_content[:150]}...")
+        print("-" * 65)
+        # ------------------------------------------------------------------
 
         result = []
         for doc, score in ranked[:top_n]:
