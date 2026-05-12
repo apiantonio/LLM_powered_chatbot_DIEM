@@ -15,11 +15,12 @@ REFACTORING secondo audit_fattibilita_metadati.md §7-§8:
                            filtro sotto_area per bandi/laboratori/strutture
     - search_all: cross-collection su tutte e 3 le collection
 
-  ROUTING AUDIT §7:
-    - Query docente + insegnamento → search_persone
-    - Query corso senza docente → search_offerta_formativa
-    - Query bandi/laboratori/strutture → search_dipartimento
-    - Ponte unidirezionale PERSONE → OFFERTA via nomi_insegnamenti
+  FIX APPLICATI:
+    - Tool description con direttiva ANTI-COMPRESSIONE: "Passa la query
+      dell'utente INTEGRA e COMPLETA nel campo query."
+    - Segnale di FALLBACK esplicito nell'output quando non si trovano
+      risultati pertinenti, per guidare l'Agente verso il tool alternativo.
+    - Routing migliorato per "Chi insegna X?" → search_persone
 """
 
 from __future__ import annotations
@@ -81,6 +82,33 @@ _tool_error_counts: Dict[str, int] = {}
 _MAX_TOOL_RETRIES = 2
 
 
+# ── Segnale di FALLBACK per l'Agente ──
+_FALLBACK_SIGNAL_PERSONE = (
+    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store PERSONE. "
+    "SUGGERIMENTO: prova a cercare con search_offerta_formativa se la domanda "
+    "riguarda un corso di laurea o un piano di studi, oppure con search_dipartimento "
+    "se riguarda strutture, bandi o informazioni istituzionali."
+)
+
+_FALLBACK_SIGNAL_OFFERTA = (
+    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store OFFERTA_FORMATIVA. "
+    "SUGGERIMENTO: se la domanda riguarda un docente specifico o chi insegna un "
+    "certo insegnamento, prova con search_persone. Se riguarda bandi, strutture "
+    "o informazioni istituzionali, prova con search_dipartimento."
+)
+
+_FALLBACK_SIGNAL_DIPARTIMENTO = (
+    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store DIPARTIMENTO. "
+    "SUGGERIMENTO: prova con search_persone se la domanda riguarda un docente, "
+    "o con search_offerta_formativa se riguarda un corso di laurea."
+)
+
+_FALLBACK_SIGNAL_GENERIC = (
+    "Non ho trovato informazioni pertinenti per: '{query}'. "
+    "Prova a riformulare la domanda."
+)
+
+
 def _search_collection(
     query: str,
     collection: CollectionTarget,
@@ -92,6 +120,10 @@ def _search_collection(
 
     Flusso: retrieve() → (documents, rewritten_query, multi_queries)
     I metadati vengono salvati in _last_search_meta per il logging.
+
+    FIX: Quando non si trovano risultati, il messaggio di ritorno
+    include un SEGNALE DI FALLBACK esplicito che indica all'Agente
+    quale tool alternativo provare.
     """
     global _last_search_meta
 
@@ -138,10 +170,15 @@ def _search_collection(
         _tool_error_counts.pop(tool_key, None)
 
         if not documents:
-            return (
-                f"Non ho trovato informazioni pertinenti per: '{query}'. "
-                "Prova a riformulare la domanda."
-            )
+            # FIX: Segnale di fallback specifico per collection
+            fallback_map = {
+                CollectionTarget.PERSONE: _FALLBACK_SIGNAL_PERSONE,
+                CollectionTarget.OFFERTA_FORMATIVA: _FALLBACK_SIGNAL_OFFERTA,
+                CollectionTarget.DIPARTIMENTO: _FALLBACK_SIGNAL_DIPARTIMENTO,
+            }
+            signal = fallback_map.get(collection, _FALLBACK_SIGNAL_GENERIC)
+            return signal.format(query=query)
+
         return _format_results(documents)
 
     except Exception as e:
@@ -209,25 +246,42 @@ def _format_results(documents) -> str:
 def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
     """Cerca informazioni su PERSONE (docenti) del DIEM.
 
-    USA QUESTO TOOL per domande su PERSONE: profilo, curriculum, email,
-    ricevimento, corsi insegnati da un docente, aree di ricerca personali,
-    attività internazionali di un docente specifico.
+    <description>
+    ## Quando usare questo tool
+    Usa per domande su PERSONE: profilo, curriculum, email, ricevimento,
+    corsi insegnati da un docente, aree di ricerca personali, attività
+    internazionali di un docente specifico.
 
-    ROUTING (audit §7):
+    ## REGOLA CRITICA — "Chi insegna X?"
+    Se l'utente chiede "Chi insegna [insegnamento]?" o "Chi è il docente
+    di [insegnamento]?", questo è IL TOOL CORRETTO (non search_offerta_formativa).
+    Il VS PERSONE contiene il campo nomi_insegnamenti con i nomi degli
+    insegnamenti tenuti da ciascun docente.
+
+    ## Routing (audit §7):
     - "Chi è il prof. X?" → search_persone
     - "Cosa insegna il prof. X?" → search_persone
     - "Email/ricevimento del prof. X" → search_persone
+    - "Chi insegna Machine Learning?" → search_persone (NON offerta_formativa!)
     - Ponte verso OFFERTA: se il docente menziona un insegnamento, il
       campo nomi_insegnamenti consente di rintracciare il corso in
       search_offerta_formativa.
 
-    NON usare per: corsi di laurea senza riferimento a un docente
-    (usa search_offerta_formativa), bandi (usa search_dipartimento),
-    strutture fisiche (usa search_dipartimento).
+    ## NON usare per:
+    Corsi di laurea senza riferimento a un docente (usa search_offerta_formativa),
+    bandi (usa search_dipartimento), strutture fisiche (usa search_dipartimento).
+
+    ## DIRETTIVA ANTI-COMPRESSIONE:
+    Passa la query dell'utente INTEGRA e COMPLETA nel campo `query`.
+    NON ridurre la query a sole keyword o nomi propri.
+    Esempio CORRETTO: query="Chi è il Professore Francesco Basile?"
+    Esempio SBAGLIATO: query="Francesco Basile"
+    </description>
 
     Args:
-        query: Domanda sul docente. Esempi: "Chi è Mario Vento?",
-               "Corsi insegnati dal prof. Capuano", "Email prof. Greco".
+        query: La domanda COMPLETA dell'utente sul docente, passata INTEGRA.
+               Esempi: "Chi è Mario Vento?", "Corsi insegnati dal prof. Capuano",
+               "Email e ricevimento del prof. Greco", "Chi insegna Machine Learning?".
         sotto_area: Filtro opzionale sulla sottosezione del docente.
                     Valori ammessi: "profilo", "didattica", "ricerca",
                     "internazionale", "risorse".
@@ -244,7 +298,7 @@ def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
     metadata_filter = None
     if sotto_area:
         metadata_filter = {"sotto_area": sotto_area}
-    
+
     print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
 
     return _search_collection(
@@ -261,19 +315,35 @@ def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
 def search_offerta_formativa(query: str) -> str:
     """Cerca informazioni su corsi di laurea, piani di studio e regolamenti.
 
-    USA QUESTO TOOL per: corsi di laurea del DIEM, piani di studio,
-    regolamenti didattici, requisiti di ammissione, crediti, programmi,
-    OFA, tesi, statistiche corsi, insegnamenti (quando NON si cerca
-    un docente specifico).
+    <description>
+    ## Quando usare questo tool
+    Usa per: corsi di laurea del DIEM, piani di studio, regolamenti didattici,
+    requisiti di ammissione, crediti, programmi, OFA, tesi, statistiche corsi,
+    insegnamenti (quando NON si cerca un docente specifico e NON si chiede
+    "chi insegna").
 
-    ROUTING (audit §7):
+    ## Routing (audit §7):
     - "Piano di studi di Informatica triennale" → search_offerta_formativa
     - "Regolamento Ingegneria Informatica magistrale" → search_offerta_formativa
     - "Quali esami ci sono al primo anno?" → search_offerta_formativa
     - Se serve info su un DOCENTE → usa search_persone
+    - Se si chiede "Chi insegna X?" → usa search_persone (NON questo tool!)
+
+    ## IMPORTANTE:
+    Questo Vector Store NON contiene informazioni su chi insegna i singoli
+    insegnamenti. Per domande tipo "Chi insegna Machine Learning?" usa
+    search_persone.
+
+    ## DIRETTIVA ANTI-COMPRESSIONE:
+    Passa la query dell'utente INTEGRA e COMPLETA nel campo `query`.
+    NON ridurre la query a sole keyword o nomi propri.
+    Esempio CORRETTO: query="Parlami della didattica di Analisi Matematica 1 di Vittorio Zampoli"
+    Esempio SBAGLIATO: query="Analisi Matematica 1"
+    </description>
 
     Args:
-        query: Domanda su corsi e offerta formativa.
+        query: La domanda COMPLETA dell'utente su corsi e offerta formativa,
+               passata INTEGRA senza compressione.
     """
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
@@ -289,13 +359,15 @@ def search_offerta_formativa(query: str) -> str:
 def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     """Cerca informazioni istituzionali, bandi, laboratori e strutture del DIEM.
 
-    USA QUESTO TOOL per TUTTO ciò che riguarda il dipartimento DIEM
-    come istituzione: aree di ricerca dipartimentali, progetti finanziati,
-    Erasmus e internazionalizzazione, terza missione, organi, commissioni,
-    bandi, borse di studio, assegni di ricerca, avvisi amministrativi,
-    dottorato, aule, laboratori, sedi, strutture fisiche.
+    <description>
+    ## Quando usare questo tool
+    Usa per TUTTO ciò che riguarda il dipartimento DIEM come istituzione:
+    aree di ricerca dipartimentali, progetti finanziati, Erasmus e
+    internazionalizzazione, terza missione, organi, commissioni, bandi,
+    borse di studio, assegni di ricerca, avvisi amministrativi, dottorato,
+    aule, laboratori, sedi, strutture fisiche.
 
-    ROUTING (audit §7 — DIPARTIMENTO assorbe ex bandi e strutture):
+    ## Routing (audit §7 — DIPARTIMENTO assorbe ex bandi e strutture):
     - "Bandi di dottorato DIEM" → search_dipartimento (sotto_area="bandi")
     - "Borsa di studio DIEM" → search_dipartimento (sotto_area="bandi")
     - "Laboratorio ICAR" → search_dipartimento (sotto_area="laboratori")
@@ -303,8 +375,14 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     - "Progetti di ricerca DIEM" → search_dipartimento (sotto_area="ricerca")
     - "Erasmus DIEM" → search_dipartimento (sotto_area="internazionale")
 
+    ## DIRETTIVA ANTI-COMPRESSIONE:
+    Passa la query dell'utente INTEGRA e COMPLETA nel campo `query`.
+    NON ridurre la query a sole keyword o nomi propri.
+    </description>
+
     Args:
-        query: Domanda su dipartimento, bandi, strutture.
+        query: La domanda COMPLETA dell'utente su dipartimento, bandi, strutture,
+               passata INTEGRA senza compressione.
         sotto_area: Filtro opzionale. Valori ammessi: "bandi",
                     "laboratori", "ricerca", "terza_missione",
                     "internazionale", "organizzazione", "strutture", "generale".
@@ -354,14 +432,22 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
 def search_all(query: str) -> str:
     """Ricerca trasversale su TUTTA la knowledge base del DIEM.
 
+    <description>
+    ## Quando usare questo tool
     Usa SOLO quando: la domanda è ambigua, copre più aree (es. docente
     + corso + struttura), o gli altri tool non hanno dato risultati.
 
-    NON usare come prima scelta: prova prima il tool specifico
-    (search_persone, search_offerta_formativa, search_dipartimento).
+    ## NON usare come prima scelta:
+    Prova prima il tool specifico (search_persone, search_offerta_formativa,
+    search_dipartimento).
+
+    ## DIRETTIVA ANTI-COMPRESSIONE:
+    Passa la query dell'utente INTEGRA e COMPLETA nel campo `query`.
+    </description>
 
     Args:
-        query: Domanda generica o cross-dominio.
+        query: La domanda COMPLETA dell'utente, generica o cross-dominio,
+               passata INTEGRA senza compressione.
     """
     global _last_search_meta
 

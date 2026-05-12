@@ -233,6 +233,7 @@ def load_settings() -> AppSettings:
             pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
+            index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json")
         ),
         crawler=CrawlerConfig(
             thread_cpu_factor=float(os.getenv("CRAWLER_THREAD_FACTOR", "0.75")),
@@ -240,17 +241,18 @@ def load_settings() -> AppSettings:
         ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "ollama"),
-            model_name=os.getenv("LLM_MODEL", "gemma4"),
+            model_name=os.getenv("LLM_MODEL", "qwen2.5"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            
         ),
         embedding=EmbeddingConfig(
-            model_name=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
+            model_name=os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
         ),
         vectorstore=VectorStoreConfig(
-            persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
-            parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore/parent_docstore"),
+            persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore_qwen/chroma"),
+            parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore_qwen/parent_docstore"),
         ),
         easycourse=EasyCourseConfig(
             base_url=os.getenv("EASYCOURSE_BASE_URL", "https://easycourse.unisa.it"),
@@ -259,4 +261,7 @@ def load_settings() -> AppSettings:
         observability=ObservabilityConfig(
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
         ),
+        reranker=RerankerConfig(
+            model_name = os.getenv("RERANKER_MOIDEL", "Qwen/Qwen3-Reranker-0.6B")
+        )
     )

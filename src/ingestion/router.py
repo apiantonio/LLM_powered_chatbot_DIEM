@@ -10,6 +10,12 @@ REFACTORING ARCHITETTURALE (audit §6 e §8):
   La collection BANDI_AMMINISTRAZIONE è stata ELIMINATA e assorbita in
   DIPARTIMENTO con sotto_area = "bandi".
 
+BUG FIX APPLICATO:
+  - File tipo corsi.unisa.it-{nome_corso}-strutture-didattiche → DIPARTIMENTO
+  - File tipo corsi.unisa.it-{nome_corso}-terza-missione.html → DIPARTIMENTO
+  Questi file riguardano strutture fisiche e terza missione del dipartimento,
+  NON l'offerta formativa del corso.
+
 METADATI ESTRATTI (audit §6 — Schema Definitivo):
   PERSONE: matricola, nome_docente, sotto_area, nomi_insegnamenti,
            formato_sorgente, url_originale, anno
@@ -218,7 +224,6 @@ def _extract_nome_docente_from_html(html_content: str) -> Optional[str]:
     Pattern costante: <h1>...<span>Nome COGNOME | </span>...
     Il testo prima del " | " nel primo <span> contiene il nome del docente.
     """
-    # Pattern: primo <span> dentro <h1>, testo prima di " | "
     match = re.search(
         r"<h1[^>]*>.*?<span[^>]*>([^<]+?)\s*\|\s*</span>",
         html_content, re.DOTALL | re.IGNORECASE
@@ -362,14 +367,31 @@ class DocumentRouter:
       - I bandi (diem.unisa.it/bandi) vanno in DIPARTIMENTO (non in collection separata)
       - I metadati estratti seguono lo schema §6 dell'audit
       - Nuove funzioni di estrazione per chunking context-aware
+
+    BUG FIX APPLICATO:
+      - corsi.unisa.it/{corso}/strutture-didattiche → DIPARTIMENTO (strutture fisiche)
+      - corsi.unisa.it/{corso}/terza-missione → DIPARTIMENTO (terza missione dipartimentale)
+      Questi file NON sono offerta formativa ma riguardano strutture fisiche
+      e attività istituzionali del dipartimento.
     """
 
     # --- Regole di routing HTML (ordine: dal più specifico al più generico) ---
+    #
+    # BUG FIX: Le regole per corsi.unisa.it sono ora ordinate dal più
+    # specifico al più generico. Le pagine "strutture-didattiche" e
+    # "terza-missione" vengono intercettate PRIMA della regola generica
+    # per corsi.unisa.it/ e instradadate in DIPARTIMENTO.
     _HTML_RULES = [
         # PERSONE: tutte le pagine docente
         (r"docenti\.unisa\.it/", CollectionTarget.PERSONE),
 
-        # OFFERTA_FORMATIVA: pagine corsi
+        # ── BUG FIX: intercetta PRIMA della regola generica corsi.unisa.it ──
+        # strutture-didattiche su corsi.unisa.it → DIPARTIMENTO (sono aule/strutture fisiche)
+        (r"corsi\.unisa\.it/[^/]+/strutture[-_]didattiche", CollectionTarget.DIPARTIMENTO),
+        # terza-missione su corsi.unisa.it → DIPARTIMENTO (sono attività istituzionali)
+        (r"corsi\.unisa\.it/[^/]+/terza[-_]missione", CollectionTarget.DIPARTIMENTO),
+
+        # OFFERTA_FORMATIVA: pagine corsi (regola generica, DOPO le eccezioni)
         (r"corsi\.unisa\.it/", CollectionTarget.OFFERTA_FORMATIVA),
 
         # DIPARTIMENTO: tutto diem.unisa.it (inclusi bandi)
@@ -398,7 +420,14 @@ class DocumentRouter:
 
     @classmethod
     def route_html(cls, source_url: str) -> CollectionTarget:
-        """Determina la collection target per un documento HTML."""
+        """
+        Determina la collection target per un documento HTML.
+
+        BUG FIX: Le regole sono ora ordinate dal più specifico al più generico.
+        I file corsi.unisa.it/{corso}/strutture-didattiche e
+        corsi.unisa.it/{corso}/terza-missione vengono ora correttamente
+        instradati in DIPARTIMENTO anziché in OFFERTA_FORMATIVA.
+        """
         for pattern, target in cls._HTML_RULES:
             if re.search(pattern, source_url, re.IGNORECASE):
                 return target
