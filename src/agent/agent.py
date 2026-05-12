@@ -8,12 +8,24 @@ REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md):
     search_dipartimento, search_all
   - EasyCourse ESCLUSO
 
+AGGIORNAMENTO — Integrazione SmartConversationMemory e Prompt XML:
+  - SmartConversationMemory sostituisce ConversationMemory.
+    La nuova memoria richiede un LLM per la summarization (Stadio 2)
+    e un HuggingFaceEmbeddings per il filtraggio per similarità coseno
+    (Stadio 1). Entrambi vengono passati dalla Factory.
+  - Il system prompt in formato XML (con direttive anti-compressione,
+    regole di routing e fallback strategy) viene caricato da prompts.py
+    e passato a create_agent come SystemMessage.
+  - I tool con descrizioni XML e fallback espliciti vengono bindati
+    all'agente tramite create_agent(tools=...).
+
 Architettura:
   create_agent(model, tools, system_prompt=system_prompt)
       ↓
   Loop ReAct: LLM → decide tool → esegue tool → LLM → ... → risposta
       ↓
-  Esterno: ConversationMemory gestisce lo storico multi-turno
+  Esterno: SmartConversationMemory gestisce lo storico multi-turno
+           (filtro similarità coseno + summarization con token budget)
            RAGObservabilityHandler traccia ogni fase
            InteractionLogHandler salva 1 file per interazione
 """
@@ -22,6 +34,7 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from config.settings import AppSettings, load_settings
 from agent.callbacks import (
@@ -30,7 +43,10 @@ from agent.callbacks import (
     InteractionLogHandler,
     create_interaction_log_handler,
 )
-from agent.memory import ConversationMemory, create_conversation_memory
+# ── ALLINEAMENTO: import aggiornato a SmartConversationMemory ──
+# La vecchia ConversationMemory è stata sostituita dalla
+# SmartConversationMemory a due stadi (filtro similarità + summarization).
+from agent.memory import SmartConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
 from agent.guardrails import (
     ScopeGuardrail,
@@ -74,11 +90,13 @@ class RAGAgent:
         Flusso:
           1. Pre-processing: guardrails (scope + sanitization)
           2. Memory: costruzione messaggi con storico
-          3. Chat history injection per tool
+             (SmartConversationMemory applica filtro similarità + summarization)
+          3. Chat history injection per tool (query rewriting contestuale)
           4. Agent: invocazione con callback di osservabilità
+             (la query utente viene passata INTEGRA — direttiva anti-compressione)
           5. Post-processing: output validation
           6. Logging: salvataggio interazione su file unico
-          7. Memory: aggiornamento storico
+          7. Memory: aggiornamento storico (con embedding del turno)
         """
         # --- STEP 1: Pre-processing Guardrails ---
 
@@ -115,7 +133,15 @@ class RAGAgent:
                 }
 
         # --- STEP 2: Registra il turno e costruisci i messaggi ---
+        # SmartConversationMemory.add_user_message registra la query e avanza il contatore.
         turn_number = self._memory.add_user_message(sanitized_query)
+
+        # SmartConversationMemory.get_messages_for_agent applica i due stadi:
+        #   Stadio 1: filtraggio per similarità coseno (scarta turni irrilevanti)
+        #   Stadio 2: summarization con token budget (riassume turni vecchi se necessario)
+        # La query utente viene passata INTEGRA (direttiva anti-compressione
+        # rispettata: il RETRIEVAL_REMINDER viene aggiunto IN CODA, senza
+        # modificare la query originale).
         messages = self._memory.get_messages_for_agent(sanitized_query)
 
         print(f"MESSAGGIO DALLA MEMORIA: {messages}")
@@ -199,6 +225,10 @@ class RAGAgent:
 
         # --- STEP 6: Aggiorna handler e memoria ---
         obs_handler.set_final_output(validated_response)
+
+        # SmartConversationMemory.add_assistant_message completa il turno e
+        # calcola l'embedding del turno (user + assistant) per il filtraggio
+        # per similarità coseno dei turni futuri.
         self._memory.add_assistant_message(validated_response)
 
         trace_dict = obs_handler.get_trace_dict()
@@ -270,13 +300,14 @@ class RAGAgent:
         return self._traces
 
     def reset_memory(self) -> None:
-        """Resetta la memoria conversazionale."""
+        """Resetta la memoria conversazionale (SmartConversationMemory)."""
         self._memory.clear()
         self._traces.clear()
         logger.info("Sessione agente resettata")
 
     @property
-    def memory(self) -> ConversationMemory:
+    def memory(self) -> SmartConversationMemory:
+        """Restituisce l'istanza di SmartConversationMemory."""
         return self._memory
 
     # ==============================
@@ -319,6 +350,15 @@ class RAGAgentFactory:
       - Import CORRETTO: create_agent da langchain.agents (LangChain v1)
       - DIVIETO rispettato: NO create_tool_calling_agent, NO AgentExecutor,
         NO langgraph (import diretto), NO create_react_agent (deprecato)
+
+    AGGIORNAMENTO — SmartConversationMemory:
+      La Factory ora istanzia la SmartConversationMemory passandole:
+        - llm_for_summary: il ChatModel usato anche dall'agente (o un modello
+          dedicato), necessario per la summarization dei turni (Stadio 2).
+        - embedding_model: HuggingFaceEmbeddings per il calcolo della
+          similarità coseno tra la query corrente e i turni memorizzati
+          (Stadio 1 — filtraggio per similarità).
+      Questi vengono passati a create_conversation_memory().
     """
 
     @staticmethod
@@ -328,7 +368,8 @@ class RAGAgentFactory:
         enable_scope_guardrail: bool = True,
         max_memory_turns: int = 10,
         log_output_dir: str = "logs/interactions",
-    ) -> RAGAgent:
+        embedding_model: Optional[HuggingFaceEmbeddings] = None,
+    ) -> "RAGAgent":
         settings = settings or load_settings()
 
         logger.info("=" * 60)
@@ -340,13 +381,20 @@ class RAGAgentFactory:
         logger.info(f"   ✅ ChatModel: {settings.llm.model_name}")
 
         # --- 2. Inietta il RetrievalEngine nei tools ---
+        # I tool aggiornati hanno descrizioni XML con direttiva anti-compressione
+        # e segnali di fallback espliciti per guidare l'agente verso tool alternativi.
         set_retrieval_engine(retrieval_engine)
         tools = get_all_tools()
-        logger.info(f"   ✅ Tools registrati: {[t.name for t in tools]}")
+        logger.info(f"   ✅ Tools registrati (con descrizioni XML e fallback): {[t.name for t in tools]}")
 
-        # --- 3. System Prompt ---
+        # --- 3. System Prompt XML ---
+        # Il system prompt è in formato XML con sezioni:
+        #   <query_passthrough> — direttiva anti-compressione
+        #   <tool_usage>        — regole di routing esplicite
+        #   <fallback_strategy> — strategia di fallback obbligatoria
+        #   <lingua>            — enforcement lingua italiana
         system_prompt = get_agent_system_prompt()
-        logger.info("   ✅ System prompt caricato (con enforcement lingua italiana)")
+        logger.info("   ✅ System prompt XML caricato (anti-compressione, routing, fallback)")
 
         # --- 4. Guardrails ---
         scope_guardrail = None
@@ -362,9 +410,29 @@ class RAGAgentFactory:
         )
         logger.info("   ✅ OutputValidator attivato")
 
-        # --- 5. Memory ---
-        memory = create_conversation_memory(max_turns=max_memory_turns)
-        logger.info(f"   ✅ ConversationMemory: max_turns={max_memory_turns}")
+        # --- 5. SmartConversationMemory (ALLINEAMENTO) ---
+        # Inizializzazione della nuova SmartConversationMemory a due stadi:
+        #   Stadio 1 — Filtraggio per similarità coseno:
+        #     Usa l'embedding_model (HuggingFaceEmbeddings) per calcolare
+        #     la similarità tra la query corrente e i turni memorizzati.
+        #     I turni sotto soglia (default 0.3) vengono scartati.
+        #   Stadio 2 — Summarization con token budget:
+        #     Usa il chat_model come LLM per la ConversationSummaryBufferMemory
+        #     di LangChain, che riassume i turni più vecchi quando il totale
+        #     supera max_token_limit.
+        #
+        # Se embedding_model non è fornito esternamente, create_conversation_memory
+        # ne crea uno internamente dalle settings (modello di embedding configurato).
+        memory = create_conversation_memory(
+            max_turns=max_memory_turns,
+            llm_for_summary=chat_model,
+            embedding_model=embedding_model,
+        )
+        logger.info(
+            f"   ✅ SmartConversationMemory: max_turns={max_memory_turns}, "
+            f"llm_for_summary={settings.llm.model_name}, "
+            f"embedding_model={'fornito esternamente' if embedding_model else 'creato da settings'}"
+        )
 
         # --- 6. Interaction Logger ---
         interaction_logger = create_interaction_log_handler(log_output_dir)
@@ -381,8 +449,13 @@ class RAGAgentFactory:
         #   input → LLM → tool call → osservazione → LLM → ... → risposta
         #
         # Accetta {"messages": [...]} e restituisce {"messages": [...]}.
-        # Il system_prompt viene iniettato automaticamente come SystemMessage
+        # Il system_prompt (SystemMessage XML con anti-compressione, routing
+        # e fallback) viene iniettato automaticamente come SystemMessage
         # all'inizio della lista messaggi ad ogni chiamata al modello.
+        #
+        # I tool bindati hanno descrizioni XML con:
+        #   - Direttiva anti-compressione: "Passa la query INTEGRA"
+        #   - Segnali di fallback: indicano quale tool alternativo provare
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
@@ -390,7 +463,7 @@ class RAGAgentFactory:
             tools=tools,
             system_prompt=system_prompt,
         )
-        logger.info("   ✅ create_agent() — grafo agente compilato")
+        logger.info("   ✅ create_agent() — grafo agente compilato con prompt XML e tool aggiornati")
 
         # --- 8. Wrappa nel Facade ---
         agent = RAGAgent(
@@ -405,6 +478,9 @@ class RAGAgentFactory:
 
         logger.info("=" * 60)
         logger.info("🚀 Agente RAG DIEM assemblato e pronto!")
+        logger.info("   📋 Prompt: XML (anti-compressione + routing + fallback)")
+        logger.info("   🧠 Memoria: SmartConversationMemory (similarità + summarization)")
+        logger.info("   🔧 Tools: 4 tool con descrizioni XML e fallback espliciti")
         logger.info("=" * 60)
 
         return agent
@@ -417,11 +493,13 @@ class RAGAgentFactory:
 def bootstrap_agent(
     retrieval_engine: RetrievalEngine,
     settings: Optional[AppSettings] = None,
+    embedding_model: Optional[HuggingFaceEmbeddings] = None,
     **kwargs,
 ) -> RAGAgent:
     """Shortcut per creare un agente RAG completo."""
     return RAGAgentFactory.create(
         retrieval_engine=retrieval_engine,
         settings=settings,
+        embedding_model=embedding_model,
         **kwargs,
     )
