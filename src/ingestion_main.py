@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """
-run_t6_4_ingestion.py — Script di Ingestion Definitiva (Task T6.4)
+ingestion_main.py — Script di Ingestion Definitiva (Task T6.4)
+
+REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md §8):
+  - verify_collections() aggiornato per 3 CollectionTarget:
+    PERSONE, OFFERTA_FORMATIVA, DIPARTIMENTO
+  - Rimosso riferimento a BANDI_AMMINISTRAZIONE (assorbita in DIPARTIMENTO)
 
 Esegue la re-indicizzazione COMPLETA della Knowledge Base DIEM nelle
-4 collection Chroma multi-tematiche.
-
-PREREQUISITI (già completati):
-  ✅ T6.1 — Vector store Chroma svuotato
-  ✅ T6.2 — Parent store svuotato
-  ✅ T6.3 — index_registry.json resettato
-
-QUESTO SCRIPT ESEGUE:
-  1. Caricamento delle impostazioni centralizzate (config/settings.py)
-  2. Inizializzazione del KnowledgeBaseIndexer multi-collection
-  3. Indicizzazione HTML con routing automatico (DocumentRouter)
-  4. Indicizzazione PDF con chunking differenziato
-  5. Report finale con breakdown per collection e statistiche
+3 collection Chroma multi-tematiche.
 
 Uso:
   cd src/
@@ -24,7 +17,6 @@ Uso:
   python ingestion_main.py --crawl
   python ingestion_main.py --log-level DEBUG
   python ingestion_main.py --verify-only
-  python ingestion_main.py --log-dir my_logs
 """
 
 import sys
@@ -51,13 +43,21 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# VERIFICA POST-INGESTION
+# VERIFICA POST-INGESTION — aggiornata per 3 collection
 # ============================================================
 
 def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> Dict[str, Any]:
-    """Verifica lo stato di ogni collection Chroma dopo l'ingestion."""
+    """
+    Verifica lo stato di ogni collection Chroma dopo l'ingestion.
+
+    AGGIORNATO per 3 Vector Store (audit §8):
+      - PERSONE
+      - OFFERTA_FORMATIVA
+      - DIPARTIMENTO
+    """
     verification: Dict[str, Any] = {"collections": {}, "total_chunks": 0, "ok": True}
 
+    # Itera sulle 3 collection (CollectionTarget aggiornato)
     for target in CollectionTarget:
         # pylint: disable=protected-access
         collection = indexer._collections[target]
@@ -73,6 +73,7 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
         verification["total_chunks"] += count
         logger.info(f"  📊 {target.value}: {count} chunks")
 
+    # Verifica Parent-Child (invariato — usato da OFFERTA_FORMATIVA per i PDF)
     pc_collection_name = settings.vectorstore.parent_child_collection_name
     try:
         # pylint: disable=protected-access
@@ -115,11 +116,11 @@ def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int 
             for i in range(sample_size):
                 meta = metadatas[i] if i < len(metadatas) else {}
                 content = documents[i][:120] if i < len(documents) and documents[i] else "(vuoto)"
-                source = meta.get("source_url", "N/D")
-                category = meta.get("doc_category", "N/D")
-                doc_type = meta.get("doc_type", "N/D")
+                source = meta.get("url_originale", meta.get("source_url", "N/D"))
+                sotto_area = meta.get("sotto_area", "N/D")
+                formato = meta.get("formato_sorgente", meta.get("doc_type", "N/D"))
                 logger.info(
-                    f"    [{i+1}] type={doc_type} | cat={category}\n"
+                    f"    [{i+1}] formato={formato} | sotto_area={sotto_area}\n"
                     f"         source: {source}\n"
                     f"         content: {content}..."
                 )
@@ -135,13 +136,13 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     """
     Esegue l'ingestion completa T6.4:
       1. (Opzionale) Crawling dei siti DIEM
-      2. Indicizzazione HTML con routing nelle 4 collection
+      2. Indicizzazione HTML con routing nelle 3 collection
       3. Indicizzazione PDF con chunking differenziato
       4. Verifica post-ingestion
     """
     start_time = time.time()
     report: Dict[str, Any] = {
-        "task": "T6.4 — Re-indicizzazione completa multi-collection",
+        "task": "T6.4 — Re-indicizzazione completa 3 collection (audit §8)",
         "timestamp": datetime.now().isoformat(),
         "skip_crawl": skip_crawl,
         "crawl": None,
@@ -153,7 +154,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     }
 
     logger.info("=" * 70)
-    logger.info("🚀 T6.4 — AVVIO RE-INDICIZZAZIONE COMPLETA MULTI-COLLECTION")
+    logger.info("🚀 T6.4 — AVVIO RE-INDICIZZAZIONE COMPLETA (3 VECTOR STORE)")
     logger.info("=" * 70)
     logger.info(f"   Timestamp: {report['timestamp']}")
     logger.info(f"   HTML dir: {settings.ingestion.html_raw_dir}")
@@ -161,10 +162,11 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     logger.info(f"   Chroma dir: {settings.vectorstore.persist_directory}")
     logger.info(f"   Parent store: {settings.vectorstore.parent_store_directory}")
     logger.info(f"   Skip crawl: {skip_crawl}")
+    logger.info(f"   Collection: {[t.value for t in CollectionTarget]}")
     logger.info("=" * 70)
 
-    # --- STEP 0: Inizializzazione Indexer multi-collection ---
-    logger.info("\n[STEP 0/4] Inizializzazione KnowledgeBaseIndexer multi-collection...")
+    # --- STEP 0: Inizializzazione Indexer ---
+    logger.info("\n[STEP 0/4] Inizializzazione KnowledgeBaseIndexer (3 collection)...")
     indexer = KnowledgeBaseIndexer(settings)
 
     logger.info("\n  Configurazioni chunking HTML per collection:")
@@ -222,7 +224,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         report["crawl"] = "skipped"
 
     # --- STEP 2: Indicizzazione HTML ---
-    logger.info("\n[STEP 2/4] Indicizzazione HTML con routing multi-collection...")
+    logger.info("\n[STEP 2/4] Indicizzazione HTML con routing 3 collection...")
     try:
         html_stats = indexer.index_html_directory()
         report["html_indexing"] = html_stats
@@ -282,7 +284,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     report["success"] = verification.get("ok", False) and _no_critical_errors(report)
 
     logger.info("\n" + "=" * 70)
-    logger.info("📊 REPORT FINALE T6.4 — RE-INDICIZZAZIONE MULTI-COLLECTION")
+    logger.info("📊 REPORT FINALE T6.4 — RE-INDICIZZAZIONE 3 VECTOR STORE")
     logger.info("=" * 70)
     logger.info(f"   Durata totale: {report['duration_seconds']}s")
     logger.info(f"   Chunks totali indicizzati: {verification.get('total_chunks', 0)}")
@@ -311,11 +313,7 @@ def _no_critical_errors(report: Dict[str, Any]) -> bool:
 
 
 def _load_html_cleaning_rules(settings: AppSettings):
-    """
-    Carica le regole di pulizia HTML dal modulo transform.
-
-    NOTA: "obsolete_url" e "didattica" RIMOSSI dallo Sprint Filtri Docenti.
-    """
+    """Carica le regole di pulizia HTML dal modulo transform."""
     try:
         from transform.rules import get_all_html_rules
         rules = get_all_html_rules(
@@ -358,7 +356,7 @@ def save_report(report: Dict[str, Any], output_path: str = "t6_4_report.json") -
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="T6.4 — Re-indicizzazione completa multi-collection DIEM RAG",
+        description="T6.4 — Re-indicizzazione completa 3 collection DIEM RAG",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Esempi:

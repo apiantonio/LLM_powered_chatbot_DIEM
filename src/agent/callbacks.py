@@ -1,11 +1,14 @@
 """
-RAG Observability — Callback system completamente riscritto.
+RAG Observability — Callback system.
 
-REFACTORING APPLICATO:
-  ELIMINATO: PromptDumpHandler (generava decine di file per interazione).
-  ELIMINATO: Output verbose a terminale con STEP numerati (ridondante).
-  NUOVO: InteractionLogHandler — genera UN UNICO FILE per interazione
-         con formato pulito e predefinito.
+REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md §8):
+  - _TOOL_COLLECTION_MAP aggiornato per nuovi nomi tool/collection:
+    search_persone → persone
+    search_offerta_formativa → offerta_formativa
+    search_dipartimento → dipartimento
+    search_all → ALL (cross-collection)
+  - Rimossi: search_docenti, search_bandi, search_strutture_fisiche,
+    get_course_schedule
 
 Formato del file di log per ogni interazione:
   === SYSTEM PROMPT ===
@@ -16,8 +19,6 @@ Formato del file di log per ogni interazione:
   === TOOL CALLED & METADATA ===
   === TOP 5 RETRIEVED LINKS ===
   === FINAL RESPONSE ===
-
-Pattern: Observer (GoF), Builder (GoF).
 """
 
 import logging
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# ENUMS & DATA CLASSES (mantenuti per compatibilità trace dict)
+# ENUMS & DATA CLASSES
 # ============================================================
 
 class PipelinePhase(Enum):
@@ -51,14 +52,15 @@ class PipelinePhase(Enum):
 
 _SEARCH_TOOL_PREFIX = "search_"
 
+# ── AGGIORNATO per 3 Vector Store (audit §8) ──
+# Mappa i nomi dei tool alle collection Chroma corrispondenti.
+# I vecchi tool (search_docenti, search_bandi, search_strutture_fisiche,
+# get_course_schedule) sono stati rimossi.
 _TOOL_COLLECTION_MAP = {
-    "search_docenti": "docenti_e_didattica",
-    "search_offerta_formativa": "offerta_formativa_e_corsi",
-    "search_bandi": "bandi_e_amministrazione",
-    "search_dipartimento": "dipartimento_e_ricerca",
-    "search_strutture_fisiche": "dipartimento_e_ricerca (filtro: strutture fisiche)",
+    "search_persone": "persone",
+    "search_offerta_formativa": "offerta_formativa",
+    "search_dipartimento": "dipartimento",
     "search_all": "ALL (cross-collection)",
-    "get_course_schedule": "easycourse (real-time)",
 }
 
 
@@ -89,16 +91,16 @@ class PipelineTrace:
 
 
 # ============================================================
-# RAGObservabilityHandler (semplificato — solo tracking, no dump)
+# RAGObservabilityHandler
 # ============================================================
 
 class RAGObservabilityHandler(BaseCallbackHandler):
     """
     Callback handler per tracciamento della pipeline.
 
-    Semplificato: traccia i dati internamente per il trace dict
-    e per l'output a terminale leggero. NON genera file.
-    La generazione del file unico è delegata a InteractionLogHandler.
+    Traccia i dati internamente per il trace dict e per l'output a
+    terminale leggero. NON genera file. La generazione del file unico
+    è delegata a InteractionLogHandler.
     """
 
     name = "RAGObservabilityHandler"
@@ -119,7 +121,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         self._llm_call_index: int = 0
         self._react_iteration: int = 0
         self._header_printed: bool = False
-        # Cattura il system prompt dalla prima chiamata LLM
         self._system_prompt: str = ""
 
     # ==============================
@@ -135,7 +136,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         if not messages:
             return
 
-        # Estrai messaggi flat
         flat_messages = []
         for batch in messages:
             if isinstance(batch, list):
@@ -143,14 +143,12 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             else:
                 flat_messages.append(batch)
 
-        # Cattura il system prompt dalla prima chiamata
         if self._llm_call_index == 1:
             for msg in flat_messages:
                 if hasattr(msg, 'type') and msg.type == 'system':
                     self._system_prompt = msg.content
                     break
 
-        # Estrai l'input utente (solo la prima volta)
         if not self._trace.user_input:
             for msg in reversed(flat_messages):
                 if hasattr(msg, 'type') and msg.type == 'human':
@@ -182,10 +180,7 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         tool_params = self._extract_tool_input(input_str)
         clean_query = tool_params.get(
             "query",
-            tool_params.get(
-                "course_or_professor",
-                str(next(iter(tool_params.values()), ""))
-            )
+            str(next(iter(tool_params.values()), ""))
         )
 
         collection_queried = _TOOL_COLLECTION_MAP.get(tool_name, "")
@@ -266,7 +261,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             llm_calls = self._trace.llm_calls_count
             duration = self._trace.total_duration_ms
             tools_count = len(self._trace.tools_invoked)
-            # Mostra solo le prime 200 char della risposta a terminale
             preview = output[:200] + "..." if len(output) > 200 else output
             print(f"  RESP  │ {preview}")
             print(f"{'═' * 70}")
@@ -399,19 +393,12 @@ class RAGObservabilityHandler(BaseCallbackHandler):
 
 
 # ============================================================
-# NUOVO: InteractionLogHandler — 1 unico file per interazione
+# InteractionLogHandler — 1 unico file per interazione
 # ============================================================
 
 class InteractionLogHandler:
     """
     Genera UN UNICO FILE di log per ogni interazione (domanda → risposta).
-
-    Il file contiene ESCLUSIVAMENTE le sezioni richieste, formattate
-    con i separatori === NOME SEZIONE ===.
-
-    NON è un BaseCallbackHandler di LangChain: viene invocato
-    esplicitamente da RAGAgent.chat() a fine turno, quando tutti
-    i dati sono disponibili.
 
     Naming convention: interaction_turn{N}_{timestamp}.txt
     """
@@ -443,27 +430,22 @@ class InteractionLogHandler:
 
         lines = []
 
-        # === SYSTEM PROMPT ===
         lines.append("=== SYSTEM PROMPT ===")
         lines.append(system_prompt if system_prompt else "(non catturato)")
         lines.append("")
 
-        # === HISTORY ===
         lines.append("=== HISTORY ===")
         lines.append(history if history else "(nessuna history)")
         lines.append("")
 
-        # === USER QUERY ===
         lines.append("=== USER QUERY ===")
         lines.append(user_query)
         lines.append("")
 
-        # === REWRITTEN QUERY ===
         lines.append("=== REWRITTEN QUERY ===")
         lines.append(rewritten_query if rewritten_query else user_query)
         lines.append("")
 
-        # === MULTIQUERIES ===
         lines.append("=== MULTIQUERIES ===")
         if multi_queries:
             for i, mq in enumerate(multi_queries, 1):
@@ -472,12 +454,10 @@ class InteractionLogHandler:
             lines.append("(nessuna multiquery generata)")
         lines.append("")
 
-        # === TOOL CALLED & METADATA ===
         lines.append("=== TOOL CALLED & METADATA ===")
         lines.append(f"{tool_name} - {metadata_info}")
         lines.append("")
 
-        # === TOP 5 RETRIEVED LINKS ===
         lines.append("=== TOP 5 RETRIEVED LINKS ===")
         if top_links:
             for i, link in enumerate(top_links[:5], 1):
@@ -486,11 +466,9 @@ class InteractionLogHandler:
             lines.append("(nessun link recuperato)")
         lines.append("")
 
-        # === FINAL RESPONSE ===
         lines.append("=== FINAL RESPONSE ===")
         lines.append(final_response)
 
-        # Scrittura file
         filename = f"interaction_turn{turn_number}_{timestamp}.txt"
         filepath = os.path.join(self._output_dir, filename)
 

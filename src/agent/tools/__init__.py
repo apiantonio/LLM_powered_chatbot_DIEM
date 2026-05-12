@@ -1,19 +1,31 @@
 """
-agent/tools/__init__.py — Tool multi-collection con multiquery integrata.
+agent/tools/__init__.py — Tool RIVISTI per 3 Vector Store.
 
-REFACTORING APPLICATO:
-  1. _search_collection() adattato al nuovo retrieve() che restituisce
-     una tupla a 3 elementi: (documents, rewritten_query, multi_queries).
-  2. I dati di multiquery e rewritten_query vengono esposti tramite
-     variabili globali _last_search_meta per il sistema di logging.
-  3. set_chat_history() invariato per il query rewriting contestuale.
+REFACTORING secondo audit_fattibilita_metadati.md §7-§8:
+  ELIMINATI:
+    - search_docenti → sostituito da search_persone
+    - search_bandi → assorbito in search_dipartimento (sotto_area="bandi")
+    - search_strutture_fisiche → assorbito in search_dipartimento (sotto_area="laboratori")
+    - get_course_schedule → EasyCourse ESCLUSO da questa implementazione
+
+  NUOVI/RINOMINATI:
+    - search_persone: collection PERSONE (ex DOCENTI_DIDATTICA), filtro sotto_area
+    - search_offerta_formativa: collection OFFERTA_FORMATIVA (invariata)
+    - search_dipartimento: collection DIPARTIMENTO (assorbe bandi + strutture),
+                           filtro sotto_area per bandi/laboratori/strutture
+    - search_all: cross-collection su tutte e 3 le collection
+
+  ROUTING AUDIT §7:
+    - Query docente + insegnamento → search_persone
+    - Query corso senza docente → search_offerta_formativa
+    - Query bandi/laboratori/strutture → search_dipartimento
+    - Ponte unidirezionale PERSONE → OFFERTA via nomi_insegnamenti
 """
 
 from __future__ import annotations
 import logging
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from langchain.tools import tool
-from agent.tools.easycourse import get_easycourse_client
 from ingestion.router import CollectionTarget
 
 if TYPE_CHECKING:
@@ -25,9 +37,7 @@ _retrieval_engine: "RetrievalEngine | None" = None
 # Chat history globale per il query rewriting contestuale
 _chat_history: list = []
 
-# ── NUOVO: Metadati dell'ultima ricerca per il sistema di logging ──
-# Aggiornato ad ogni chiamata _search_collection() per essere letto
-# dal callback di logging.
+# Metadati dell'ultima ricerca per il sistema di logging
 _last_search_meta: Dict[str, Any] = {
     "rewritten_query": "",
     "multi_queries": [],
@@ -55,7 +65,16 @@ def get_last_search_meta() -> Dict[str, Any]:
     return _last_search_meta.copy()
 
 
-_VALID_SEZIONI = frozenset({"profilo", "didattica", "ricerca", "international"})
+# ── Valori ammessi per sotto_area di PERSONE (audit §6) ──
+_VALID_SOTTO_AREA_PERSONE = frozenset({
+    "profilo", "didattica", "ricerca", "internazionale", "risorse"
+})
+
+# ── Valori ammessi per sotto_area di DIPARTIMENTO (audit §6) ──
+_VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
+    "bandi", "laboratori", "ricerca", "terza_missione",
+    "internazionale", "organizzazione", "strutture", "generale"
+})
 
 # Contatore errori per tool (anti-loop)
 _tool_error_counts: Dict[str, int] = {}
@@ -69,9 +88,9 @@ def _search_collection(
     metadata_filter: Optional[dict] = None,
 ) -> str:
     """
-    Helper condiviso — AGGIORNATO per multiquery.
+    Helper condiviso per la ricerca in una singola collection.
 
-    retrieve() ora restituisce (documents, rewritten_query, multi_queries).
+    Flusso: retrieve() → (documents, rewritten_query, multi_queries)
     I metadati vengono salvati in _last_search_meta per il logging.
     """
     global _last_search_meta
@@ -99,7 +118,8 @@ def _search_collection(
         # Aggiorna i metadati per il logging
         top_links = []
         for doc in documents[:5]:
-            link = doc.metadata.get("source_url", "N/D")
+            link = doc.metadata.get("url_originale",
+                   doc.metadata.get("source_url", "N/D"))
             if link not in top_links:
                 top_links.append(link)
 
@@ -148,15 +168,20 @@ def _format_results(documents) -> str:
     """Formatta i documenti recuperati per l'output del tool."""
     context_parts = []
     for i, doc in enumerate(documents, 1):
-        source = doc.metadata.get("source_url", "fonte non disponibile")
-        doc_type = doc.metadata.get("doc_type", "sconosciuto")
-        category = doc.metadata.get("doc_category", "")
+        # Usa url_originale (nuovo schema audit §6), fallback a source_url
+        source = doc.metadata.get("url_originale",
+                 doc.metadata.get("source_url", "fonte non disponibile"))
+        formato = doc.metadata.get("formato_sorgente",
+                  doc.metadata.get("doc_type", "sconosciuto"))
+        sotto_area = doc.metadata.get("sotto_area", "")
         score = doc.metadata.get("relevance_score", None)
         score_str = f" — score: {score:.4f}" if score is not None else ""
 
+        # Metadati extra significativi (esclusi quelli standard)
         standard_keys = {
-            "source_url", "doc_type", "doc_category",
-            "relevance_score", "start_index",
+            "source_url", "url_originale", "doc_type", "formato_sorgente",
+            "doc_category", "sotto_area", "relevance_score", "start_index",
+            "source_file", "source_domain",
         }
         extra_meta = {
             k: v for k, v in doc.metadata.items()
@@ -168,52 +193,64 @@ def _format_results(documents) -> str:
             extra_meta_str = f"\n[meta: {pairs}]"
 
         context_parts.append(
-            f"[Documento {i} — {doc_type} — {category} — "
+            f"[Documento {i} — {formato} — {sotto_area} — "
             f"{source}{score_str}]{extra_meta_str}\n{doc.page_content}"
         )
     return "\n\n---\n\n".join(context_parts)
 
 
 # ============================================================
-# TOOL 1: Docenti (con sezione)
+# TOOL 1: PERSONE (ex search_docenti) — audit §7-§8
 # ============================================================
 
-@tool("search_docenti")
-def search_docenti(query: str, sezione: Optional[str] = None) -> str:
-    """Cerca informazioni su un DOCENTE specifico del DIEM.
+@tool("search_persone")
+def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
+    """Cerca informazioni su PERSONE (docenti) del DIEM.
 
     USA QUESTO TOOL per domande su PERSONE: profilo, curriculum, email,
-    ricevimento, corsi insegnati da un docente, aree di ricerca personali.
+    ricevimento, corsi insegnati da un docente, aree di ricerca personali,
+    attività internazionali di un docente specifico.
 
-    NON usare per: corsi di laurea (usa search_offerta_formativa),
-    bandi (usa search_bandi), strutture fisiche (usa search_strutture_fisiche).
+    ROUTING (audit §7):
+    - "Chi è il prof. X?" → search_persone
+    - "Cosa insegna il prof. X?" → search_persone
+    - "Email/ricevimento del prof. X" → search_persone
+    - Ponte verso OFFERTA: se il docente menziona un insegnamento, il
+      campo nomi_insegnamenti consente di rintracciare il corso in
+      search_offerta_formativa.
+
+    NON usare per: corsi di laurea senza riferimento a un docente
+    (usa search_offerta_formativa), bandi (usa search_dipartimento),
+    strutture fisiche (usa search_dipartimento).
 
     Args:
         query: Domanda sul docente. Esempi: "Chi è Mario Vento?",
                "Corsi insegnati dal prof. Capuano", "Email prof. Greco".
-        sezione: Filtro opzionale sulla sottosezione del docente.
-                 Valori ammessi: "profilo", "didattica", "ricerca", "international".
+        sotto_area: Filtro opzionale sulla sottosezione del docente.
+                    Valori ammessi: "profilo", "didattica", "ricerca",
+                    "internazionale", "risorse".
     """
-    if sezione and sezione.lower().strip() not in _VALID_SEZIONI:
+    if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
         logger.warning(
-            f"Parametro sezione non valido: '{sezione}'. Ignoro il filtro."
+            f"Parametro sotto_area non valido per PERSONE: '{sotto_area}'. "
+            f"Ignoro il filtro."
         )
-        sezione = None
-    elif sezione:
-        sezione = sezione.lower().strip()
+        sotto_area = None
+    elif sotto_area:
+        sotto_area = sotto_area.lower().strip()
 
     metadata_filter = None
-    if sezione:
-        metadata_filter = {"docente_sezione": sezione}
+    if sotto_area:
+        metadata_filter = {"sotto_area": sotto_area}
 
     return _search_collection(
-        query, CollectionTarget.DOCENTI_DIDATTICA,
-        "search_docenti", metadata_filter
+        query, CollectionTarget.PERSONE,
+        "search_persone", metadata_filter
     )
 
 
 # ============================================================
-# TOOL 2-3: Offerta Formativa e Bandi
+# TOOL 2: OFFERTA FORMATIVA — audit §7-§8
 # ============================================================
 
 @tool("search_offerta_formativa")
@@ -222,7 +259,14 @@ def search_offerta_formativa(query: str) -> str:
 
     USA QUESTO TOOL per: corsi di laurea del DIEM, piani di studio,
     regolamenti didattici, requisiti di ammissione, crediti, programmi,
-    OFA, tesi, statistiche corsi.
+    OFA, tesi, statistiche corsi, insegnamenti (quando NON si cerca
+    un docente specifico).
+
+    ROUTING (audit §7):
+    - "Piano di studi di Informatica triennale" → search_offerta_formativa
+    - "Regolamento Ingegneria Informatica magistrale" → search_offerta_formativa
+    - "Quali esami ci sono al primo anno?" → search_offerta_formativa
+    - Se serve info su un DOCENTE → usa search_persone
 
     Args:
         query: Domanda su corsi e offerta formativa.
@@ -233,91 +277,84 @@ def search_offerta_formativa(query: str) -> str:
     )
 
 
-@tool("search_bandi")
-def search_bandi(query: str) -> str:
-    """Cerca bandi, borse di studio, assegni di ricerca e avvisi del DIEM.
-
-    USA QUESTO TOOL SOLO per: bandi di concorso, borse di studio,
-    assegni di ricerca, avvisi amministrativi, dottorato.
-
-    Args:
-        query: Domanda su bandi e avvisi.
-    """
-    return _search_collection(
-        query, CollectionTarget.BANDI_AMMINISTRAZIONE,
-        "search_bandi"
-    )
-
-
 # ============================================================
-# TOOL 4: Dipartimento e Ricerca
+# TOOL 3: DIPARTIMENTO (assorbe bandi + strutture) — audit §7-§8
 # ============================================================
 
 @tool("search_dipartimento")
-def search_dipartimento(query: str) -> str:
-    """Cerca informazioni istituzionali sul DIEM: ricerca, progetti,
-    internazionalizzazione, terza missione, organi dipartimentali.
+def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
+    """Cerca informazioni istituzionali, bandi, laboratori e strutture del DIEM.
 
-    USA QUESTO TOOL per: aree di ricerca del dipartimento, progetti
-    finanziati, Erasmus, commissioni, organi. Per aule e laboratori
-    usa search_strutture_fisiche.
+    USA QUESTO TOOL per TUTTO ciò che riguarda il dipartimento DIEM
+    come istituzione: aree di ricerca dipartimentali, progetti finanziati,
+    Erasmus e internazionalizzazione, terza missione, organi, commissioni,
+    bandi, borse di studio, assegni di ricerca, avvisi amministrativi,
+    dottorato, aule, laboratori, sedi, strutture fisiche.
 
-    Args:
-        query: Domanda su ricerca o servizi dipartimentali.
-    """
-    return _search_collection(
-        query, CollectionTarget.DIPARTIMENTO_RICERCA,
-        "search_dipartimento"
-    )
-
-
-# ============================================================
-# TOOL 5: Strutture Fisiche
-# ============================================================
-
-@tool("search_strutture_fisiche")
-def search_strutture_fisiche(query: str, tipo_struttura: Optional[str] = None) -> str:
-    """Cerca informazioni su AULE, LABORATORI e SEDI del DIEM.
-
-    USA QUESTO TOOL per: dove si trova un'aula, quali laboratori sono
-    disponibili, attrezzature, sedi del dipartimento, mappa campus.
+    ROUTING (audit §7 — DIPARTIMENTO assorbe ex bandi e strutture):
+    - "Bandi di dottorato DIEM" → search_dipartimento (sotto_area="bandi")
+    - "Borsa di studio DIEM" → search_dipartimento (sotto_area="bandi")
+    - "Laboratorio ICAR" → search_dipartimento (sotto_area="laboratori")
+    - "Dove si trova l'aula 126?" → search_dipartimento (sotto_area="strutture")
+    - "Progetti di ricerca DIEM" → search_dipartimento (sotto_area="ricerca")
+    - "Erasmus DIEM" → search_dipartimento (sotto_area="internazionale")
 
     Args:
-        query: Domanda su strutture fisiche del DIEM.
-        tipo_struttura: Filtro opzionale. Valori ammessi: "aula", "laboratorio", "sede".
+        query: Domanda su dipartimento, bandi, strutture.
+        sotto_area: Filtro opzionale. Valori ammessi: "bandi",
+                    "laboratori", "ricerca", "terza_missione",
+                    "internazionale", "organizzazione", "strutture", "generale".
     """
-    if tipo_struttura is None:
+    if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
+        logger.warning(
+            f"Parametro sotto_area non valido per DIPARTIMENTO: '{sotto_area}'. "
+            f"Ignoro il filtro."
+        )
+        sotto_area = None
+    elif sotto_area:
+        sotto_area = sotto_area.lower().strip()
+
+    # Inferenza automatica sotto_area dalla query (se non specificata)
+    if sotto_area is None:
         query_lower = query.lower()
-        if "aula" in query_lower:
-            tipo_struttura = "aula"
-        elif any(kw in query_lower for kw in ["laboratorio", "lab "]):
-            tipo_struttura = "laboratorio"
-        elif any(kw in query_lower for kw in ["sede", "edificio", "campus"]):
-            tipo_struttura = "sede"
+        if any(kw in query_lower for kw in [
+            "bando", "bandi", "borsa", "borse", "assegno", "assegni",
+            "concorso", "concorsi", "dottorato", "avviso", "avvisi"
+        ]):
+            sotto_area = "bandi"
+        elif any(kw in query_lower for kw in [
+            "laboratorio", "laboratori", "lab "
+        ]):
+            sotto_area = "laboratori"
+        elif any(kw in query_lower for kw in [
+            "aula", "aule", "sede", "sedi", "edificio", "campus",
+            "struttura", "strutture"
+        ]):
+            sotto_area = "strutture"
 
-    if tipo_struttura and tipo_struttura in ("aula", "laboratorio", "sede"):
-        metadata_filter = {"doc_category": tipo_struttura}
-    else:
-        metadata_filter = {
-            "doc_category": ["aula", "laboratorio", "sede"]
-        }
+    metadata_filter = None
+    if sotto_area:
+        metadata_filter = {"sotto_area": sotto_area}
 
     return _search_collection(
-        query, CollectionTarget.DIPARTIMENTO_RICERCA,
-        "search_strutture_fisiche", metadata_filter
+        query, CollectionTarget.DIPARTIMENTO,
+        "search_dipartimento", metadata_filter
     )
 
 
 # ============================================================
-# TOOL 6: Ricerca Trasversale
+# TOOL 4: Ricerca Trasversale — audit §7
 # ============================================================
 
 @tool("search_all")
 def search_all(query: str) -> str:
     """Ricerca trasversale su TUTTA la knowledge base del DIEM.
 
-    Usa SOLO quando: la domanda è ambigua, copre più aree, o gli
-    altri tool non hanno dato risultati.
+    Usa SOLO quando: la domanda è ambigua, copre più aree (es. docente
+    + corso + struttura), o gli altri tool non hanno dato risultati.
+
+    NON usare come prima scelta: prova prima il tool specifico
+    (search_persone, search_offerta_formativa, search_dipartimento).
 
     Args:
         query: Domanda generica o cross-dominio.
@@ -331,7 +368,8 @@ def search_all(query: str) -> str:
 
         top_links = []
         for doc in documents[:5]:
-            link = doc.metadata.get("source_url", "N/D")
+            link = doc.metadata.get("url_originale",
+                   doc.metadata.get("source_url", "N/D"))
             if link not in top_links:
                 top_links.append(link)
 
@@ -353,35 +391,28 @@ def search_all(query: str) -> str:
 
 
 # ============================================================
-# TOOL 7: EasyCourse
+# REGISTRY: lista di tutti i tool disponibili
 # ============================================================
 
-@tool("get_course_schedule")
-def get_course_schedule(course_or_professor: str) -> str:
-    """Cerca orari delle lezioni e degli esami su EasyCourse UniSA.
-
-    Usa SOLO per orari e calendario lezioni. Per programmi, crediti
-    o prerequisiti usa search_offerta_formativa.
-
-    Args:
-        course_or_professor: Nome del corso o cognome del docente.
-    """
-    client = get_easycourse_client()
-    words = course_or_professor.strip().split()
-    if len(words) == 1 and words[0][0].isupper():
-        return client.search_schedule(professor_name=course_or_professor)
-    else:
-        return client.search_schedule(course_name=course_or_professor)
-
-
 def get_all_tools() -> list:
-    """Restituisce tutti i tool disponibili per l'agente."""
+    """
+    Restituisce tutti i tool disponibili per l'agente.
+
+    AGGIORNATO per 3 Vector Store (audit §8):
+      - search_persone (ex search_docenti)
+      - search_offerta_formativa
+      - search_dipartimento (assorbe ex search_bandi + search_strutture_fisiche)
+      - search_all
+
+    RIMOSSI:
+      - search_docenti → rinominato in search_persone
+      - search_bandi → assorbito in search_dipartimento
+      - search_strutture_fisiche → assorbito in search_dipartimento
+      - get_course_schedule → EasyCourse escluso da questa implementazione
+    """
     return [
-        search_docenti,
+        search_persone,
         search_offerta_formativa,
-        search_bandi,
         search_dipartimento,
-        search_strutture_fisiche,
         search_all,
-        get_course_schedule,
     ]

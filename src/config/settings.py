@@ -1,17 +1,17 @@
 """
 Configurazione centralizzata del sistema RAG DIEM.
 
+REFACTORING audit_fattibilita_metadati.md:
+  - Chunking per-collection aggiornato per 3 Vector Store (PERSONE,
+    OFFERTA_FORMATIVA, DIPARTIMENTO).
+  - Parametro context_prefix_template per il chunking context-aware
+    (iniezione metadati in ogni chunk).
+
 Principi:
 - Single Source of Truth per tutti i parametri del sistema.
 - Nessun valore hardcodato nei moduli applicativi.
 - Type-safe tramite dataclass + factory method.
 - Le API key NON vengono mai hardcodate; si leggono dall'ambiente.
-
-REFACTORING CRAWLER (Sprint Filtri Docenti):
-  CrawlerConfig centralizza:
-  - Calcolo dinamico conservativo dei thread (cpu_count-based).
-  - cutoff_year condiviso per filtraggio pubblicazioni (in IngestionConfig).
-  - Parametri I/O (write_buffer_size).
 """
 
 import os
@@ -55,20 +55,20 @@ class IngestionConfig:
         '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     )
 
-    # --- Chunking HTML LEGACY (fallback per compatibilità) ---
+    # --- Chunking HTML LEGACY (fallback) ---
     html_chunk_size: int = 700
     html_chunk_overlap: int = 50
 
-    # --- Chunking HTML PER-COLLECTION ---
-    docenti_html_chunk_size: int = 800
-    docenti_html_chunk_overlap: int = 100
+    # --- Chunking HTML PER-COLLECTION (3 Vector Store — audit §8) ---
+    # PERSONE: chunk più grandi per preservare contesto docente
+    persone_html_chunk_size: int = 800
+    persone_html_chunk_overlap: int = 100
 
+    # OFFERTA_FORMATIVA: chunk standard
     offerta_html_chunk_size: int = 700
     offerta_html_chunk_overlap: int = 50
 
-    bandi_html_chunk_size: int = 700
-    bandi_html_chunk_overlap: int = 50
-
+    # DIPARTIMENTO: chunk più grandi (include bandi, lab, ricerca)
     dipartimento_html_chunk_size: int = 800
     dipartimento_html_chunk_overlap: int = 100
 
@@ -103,20 +103,21 @@ class IngestionConfig:
         )
 
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
+        """
+        Restituisce (chunk_size, chunk_overlap) per la collection.
+
+        Aggiornato per i 3 Vector Store dell'audit §8.
+        """
         mapping = {
-            "docenti_e_didattica": (
-                self.docenti_html_chunk_size,
-                self.docenti_html_chunk_overlap,
+            "persone": (
+                self.persone_html_chunk_size,
+                self.persone_html_chunk_overlap,
             ),
-            "offerta_formativa_e_corsi": (
+            "offerta_formativa": (
                 self.offerta_html_chunk_size,
                 self.offerta_html_chunk_overlap,
             ),
-            "bandi_e_amministrazione": (
-                self.bandi_html_chunk_size,
-                self.bandi_html_chunk_overlap,
-            ),
-            "dipartimento_e_ricerca": (
+            "dipartimento": (
                 self.dipartimento_html_chunk_size,
                 self.dipartimento_html_chunk_overlap,
             ),
@@ -133,31 +134,13 @@ class IngestionConfig:
 
 @dataclass(frozen=True)
 class CrawlerConfig:
-    """
-    Parametri specifici per il crawler (UnisaCrawler).
-
-    Centralizza:
-    - Calcolo thread dinamico conservativo.
-    - Parametri I/O per scrittura su disco.
-    """
-
-    # --- Thread pool ---
+    """Parametri specifici per il crawler (UnisaCrawler)."""
     thread_cpu_factor: float = 0.75
     thread_min_workers: int = 2
     thread_max_workers: int = 16
-
-    # --- I/O su disco ---
     write_buffer_size: int = 0
 
     def compute_max_workers(self) -> int:
-        """
-        Calcola il numero ottimale di thread per il ThreadPoolExecutor.
-
-        Strategia conservativa:
-          - Usa il 75% dei core CPU disponibili (configurabile).
-          - Mai meno di thread_min_workers (2).
-          - Mai più di thread_max_workers (16).
-        """
         cpu = os.cpu_count() or 4
         computed = max(self.thread_min_workers, int(cpu * self.thread_cpu_factor))
         return min(computed, self.thread_max_workers)
@@ -172,11 +155,15 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class VectorStoreConfig:
+    """
+    Configurazione Vector Store — aggiornata per 3 collection (audit §8).
+    """
     persist_directory: str = "data/vectorstore/chroma"
     collection_name: str = "diem_knowledge_base"
     parent_store_directory: str = "data/vectorstore/parent_docstore"
     search_type: str = "similarity"
     search_k: int = 20
+    # Collection Parent-Child per regolamenti/piani di studio
     parent_child_collection_name: str = "offerta_formativa_pdf_childs"
 
 
@@ -226,7 +213,6 @@ class ObservabilityConfig:
 @dataclass(frozen=True)
 class AppSettings:
     """Aggregatore di tutte le configurazioni."""
-
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     crawler: CrawlerConfig = field(default_factory=CrawlerConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
@@ -254,7 +240,7 @@ def load_settings() -> AppSettings:
         ),
         llm=LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "ollama"),
-            model_name=os.getenv("LLM_MODEL", "qwen2.5"),
+            model_name=os.getenv("LLM_MODEL", "gemma4"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),

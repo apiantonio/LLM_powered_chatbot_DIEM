@@ -1,21 +1,32 @@
 """
-ingestion/indexer.py — Motore di indicizzazione multi-collection.
+ingestion/indexer.py — Motore di indicizzazione RIVISTO per 3 Vector Store.
 
-Architettura:
-  4 Collection Chroma, ciascuna con strategia di chunking dedicata.
-  DocumentRouter assegna ogni documento alla collection corretta.
-  Parent-Child solo per regolamenti/piani di studio (Collection 2).
-  Chunking diretto per bandi (Collection 3) — risolve il problema
-  dei falsi positivi semantici.
+REFACTORING COMPLETO secondo audit_fattibilita_metadati.md:
 
-Coerenza con gli altri moduli:
-  - config/settings.py: usa IngestionConfig.get_collection_html_params() per chunk sizes.
-                         Usa pdf_direct_chunk_size/overlap per bandi.
-                         Usa parent_child_collection_name per la collection PC.
-  - ingestion/router.py: usa DocumentRouter per routing e metadati.
-  - ingestion/registry.py: usa IndexEntry.collection_name per cleanup mirato.
-  - retrieval/engine.py: espone get_collection_retriever(CollectionTarget) e
-                          get_parent_child_retriever() per il wiring.
+  ARCHITETTURA 3 VECTOR STORE (audit §8):
+    1. PERSONE — pagine docente (docenti.unisa.it)
+    2. OFFERTA_FORMATIVA — corsi + PDF regolamenti/piani
+    3. DIPARTIMENTO — diem.unisa.it (inclusi bandi, laboratori, ricerca)
+
+  CHUNKING CONTEXT-AWARE (risoluzione problema chunk orfani):
+    Il problema critico identificato nei report di chunking era che solo
+    il primo chunk conteneva il nome del docente/corso, mentre i chunk
+    successivi erano "orfani" senza contesto identificativo.
+
+    SOLUZIONE IMPLEMENTATA:
+      1. Prima del chunking, si estraggono i metadati dal CONTENUTO HTML
+         (nome_docente, matricola, nome_corso, ecc.) tramite
+         DocumentRouter.extract_content_metadata().
+      2. Questi metadati vengono iniettati in OGNI chunk come metadata
+         Chroma, così ogni chunk è semanticamente autosufficiente.
+      3. Inoltre, un PREFISSO CONTESTUALE viene preposto al page_content
+         di ogni chunk (es. "Docente: Mario Rossi | Sezione: didattica |")
+         così che anche la ricerca semantica per embedding tenga conto
+         del contesto identificativo del documento sorgente.
+
+  SCHEMA METADATI (audit §6):
+    Ogni chunk porta i metadati dello schema definitivo dell'audit.
+    Vedi il modulo router.py per i dettagli di estrazione.
 """
 
 import os
@@ -42,10 +53,15 @@ logger = logging.getLogger(__name__)
 
 class KnowledgeBaseIndexer:
     """
-    Motore di indicizzazione multi-collection con routing semantico.
-    
-    Gestisce 4 collection Chroma con strategie di chunking differenziate
-    e un ParentDocumentRetriever dedicato ai soli PDF che lo necessitano.
+    Motore di indicizzazione multi-collection con chunking context-aware.
+
+    3 collection Chroma + 1 ParentDocumentRetriever dedicato ai PDF
+    di regolamenti/piani di studio.
+
+    La strategia di chunking context-aware garantisce che OGNI chunk
+    contenga nei metadati e nel prefisso testuale le informazioni
+    identificative del documento sorgente, eliminando il problema
+    dei chunk orfani.
     """
 
     def __init__(self, settings: AppSettings):
@@ -59,7 +75,7 @@ class KnowledgeBaseIndexer:
             },
         )
 
-        # --- Istanziazione delle 4 collection Chroma ---
+        # --- Istanziazione delle 3 collection Chroma (audit §8) ---
         persist_dir = settings.vectorstore.persist_directory
         os.makedirs(persist_dir, exist_ok=True)
 
@@ -76,7 +92,6 @@ class KnowledgeBaseIndexer:
         parent_dir = settings.vectorstore.parent_store_directory
         os.makedirs(parent_dir, exist_ok=True)
 
-        # Nome collection PC letto da settings (Single Source of Truth)
         self._pc_child_vectorstore = Chroma(
             collection_name=settings.vectorstore.parent_child_collection_name,
             embedding_function=self._embedding_model,
@@ -103,8 +118,7 @@ class KnowledgeBaseIndexer:
             f"parent={settings.ingestion.pdf_parent_chunk_size}"
         )
 
-        # --- Splitters HTML per-collection ---
-        # LEGGE I PARAMETRI DA SETTINGS (non hardcodati!)
+        # --- HTMLSectionSplitter per split strutturale ---
         self._html_section_splitter = HTMLSectionSplitter(
             headers_to_split_on=[
                 ("h1", "Titolo"),
@@ -112,7 +126,8 @@ class KnowledgeBaseIndexer:
                 ("h3", "Sottosezione"),
             ]
         )
-        
+
+        # --- Splitters HTML per-collection (parametri da settings) ---
         self._html_splitters: Dict[CollectionTarget, RecursiveCharacterTextSplitter] = {}
         for target in CollectionTarget:
             chunk_size, chunk_overlap = settings.ingestion.get_collection_html_params(
@@ -127,8 +142,7 @@ class KnowledgeBaseIndexer:
                 f"  HTML splitter [{target.value}]: {chunk_size}/{chunk_overlap}"
             )
 
-        # --- Splitter diretto per PDF (bandi e PDF generici, NO Parent-Child) ---
-        # Parametri letti da settings (non hardcodati!)
+        # --- Splitter diretto per PDF (bandi e PDF generici) ---
         self._pdf_direct_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.ingestion.pdf_direct_chunk_size,
             chunk_overlap=settings.ingestion.pdf_direct_chunk_overlap,
@@ -148,17 +162,95 @@ class KnowledgeBaseIndexer:
         )
 
     # ==========================================================
-    # PIPELINE HTML (con routing)
+    # CHUNKING CONTEXT-AWARE — Risoluzione problema chunk orfani
+    # ==========================================================
+
+    @staticmethod
+    def _build_context_prefix(content_metadata: dict, collection: CollectionTarget) -> str:
+        """
+        Costruisce il prefisso contestuale da iniettare in ogni chunk.
+
+        QUESTA È LA SOLUZIONE AL PROBLEMA DEI CHUNK ORFANI:
+        Ogni chunk viene prefissato con le informazioni identificative
+        del documento sorgente, così che anche l'embedding vettoriale
+        includa il contesto (docente, corso, laboratorio, ecc.).
+
+        Esempi di prefisso generato:
+          PERSONE: "Docente: Mario ROSSI | Matricola: 026104 | Sezione: didattica | "
+          OFFERTA: "Corso di Laurea: Ingegneria Informatica | "
+          DIPARTIMENTO: "Laboratorio: Embedded Intelligent Systems | "
+        """
+        parts = []
+
+        if collection == CollectionTarget.PERSONE:
+            if "nome_docente" in content_metadata:
+                parts.append(f"Docente: {content_metadata['nome_docente']}")
+            if "matricola" in content_metadata:
+                parts.append(f"Matricola: {content_metadata['matricola']}")
+            if "sotto_area" in content_metadata:
+                parts.append(f"Sezione: {content_metadata['sotto_area']}")
+            if "nomi_insegnamenti" in content_metadata:
+                parts.append(f"Insegnamento: {content_metadata['nomi_insegnamenti']}")
+
+        elif collection == CollectionTarget.OFFERTA_FORMATIVA:
+            if "nome_corso" in content_metadata:
+                parts.append(f"Corso di Laurea: {content_metadata['nome_corso']}")
+            if "sotto_area" in content_metadata:
+                parts.append(f"Sezione: {content_metadata['sotto_area']}")
+
+        elif collection == CollectionTarget.DIPARTIMENTO:
+            if "laboratorio_nome" in content_metadata:
+                parts.append(f"Laboratorio: {content_metadata['laboratorio_nome']}")
+            if "tipo_bando" in content_metadata:
+                parts.append(f"Tipo bando: {content_metadata['tipo_bando']}")
+            if "sotto_area" in content_metadata:
+                parts.append(f"Area: {content_metadata['sotto_area']}")
+
+        if not parts:
+            return ""
+
+        return " | ".join(parts) + "\n\n"
+
+    @staticmethod
+    def _inject_context_in_chunks(
+        chunks: List[Document],
+        context_prefix: str,
+        all_metadata: dict,
+    ) -> List[Document]:
+        """
+        Inietta il contesto in ogni chunk — SOLUZIONE CHUNK ORFANI.
+
+        Due livelli di iniezione:
+          1. METADATA: ogni chunk riceve i metadati completi (matricola,
+             nome_docente, sotto_area, ecc.) come campi metadata Chroma.
+             Questo abilita il pre-filtering per metadati nel retrieval.
+          2. PREFISSO TESTUALE: il prefisso contestuale viene preposto
+             al page_content, così che l'embedding vettoriale del chunk
+             contenga le informazioni identificative e il retrieval
+             semantico funzioni anche per query che menzionano il docente
+             o il corso.
+        """
+        for chunk in chunks:
+            # Livello 1: metadati Chroma
+            chunk.metadata.update(all_metadata)
+
+            # Livello 2: prefisso nel contenuto testuale
+            if context_prefix:
+                chunk.page_content = context_prefix + chunk.page_content
+
+        return chunks
+
+    # ==========================================================
+    # PIPELINE HTML (con routing + chunking context-aware)
     # ==========================================================
 
     def index_html_directory(self, directory: Optional[str] = None) -> dict:
         """
-        Indicizza tutti i file HTML dalla directory, instradando ciascuno
-        nella collection corretta tramite DocumentRouter.
-        
+        Indicizza tutti i file HTML, instradando ciascuno nella collection
+        corretta e applicando il chunking context-aware.
+
         Returns:
-            Dict con statistiche: indexed, skipped, updated, orphans_removed,
-            errors, routing (breakdown per collection).
+            Dict con statistiche di indicizzazione.
         """
         directory = directory or self._settings.ingestion.html_raw_dir
         html_files = list(Path(directory).glob("*.html"))
@@ -193,7 +285,7 @@ class KnowledgeBaseIndexer:
                     stats["skipped"] += 1
                     continue
 
-                # --- ROUTING: determina la collection target ---
+                # --- ROUTING: determina la collection target (audit §8) ---
                 source_url = self._extract_source_url(content) or filepath.name
                 collection_target = DocumentRouter.route_html(source_url)
                 vectorstore = self._collections[collection_target]
@@ -206,15 +298,24 @@ class KnowledgeBaseIndexer:
                 else:
                     stats["indexed"] += 1
 
-                # Metadati arricchiti
-                extra_meta = DocumentRouter.extract_metadata(
+                # --- ESTRAZIONE METADATI (audit §6) ---
+                # Metadati dall'URL (matricola, sotto_area, corso_slug, ecc.)
+                url_metadata = DocumentRouter.extract_metadata(
                     source_url, collection_target
                 )
+                # Metadati dal CONTENUTO HTML (nome_docente, nome_corso, ecc.)
+                # CHIAVE PER IL CHUNKING CONTEXT-AWARE
+                content_metadata = DocumentRouter.extract_content_metadata(
+                    content, source_url, collection_target
+                )
 
-                # Chunking e indicizzazione
+                # Unione metadati: URL + contenuto
+                all_metadata = {**url_metadata, **content_metadata}
+
+                # --- CHUNKING CONTEXT-AWARE ---
                 chroma_ids = self._chunk_and_index_html(
                     content, source_url, filepath.name,
-                    vectorstore, collection_target, extra_meta
+                    vectorstore, collection_target, all_metadata
                 )
 
                 self._registry.upsert(source_id, IndexEntry(
@@ -228,7 +329,7 @@ class KnowledgeBaseIndexer:
                 logger.error(f"Errore HTML {filepath.name}: {e}", exc_info=True)
                 stats["errors"] += 1
 
-        # Pulizia orfani: documenti nel registro ma non più presenti su disco
+        # Pulizia orfani
         html_orphans = {
             sid for sid in self._registry.all_source_ids()
             if sid.startswith("html:") and sid not in current_sources
@@ -254,36 +355,59 @@ class KnowledgeBaseIndexer:
         filename: str,
         vectorstore: Chroma,
         collection: CollectionTarget,
-        extra_metadata: dict,
+        all_metadata: dict,
     ) -> List[str]:
-        """Chunk e indicizza un documento HTML nella collection target."""
+        """
+        Chunking context-aware e indicizzazione di un documento HTML.
+
+        FLUSSO:
+          1. HTMLSectionSplitter: split strutturale per headers
+          2. RecursiveCharacterTextSplitter: split per dimensione
+          3. Iniezione contesto: prefisso testuale + metadati in ogni chunk
+          4. Indicizzazione in Chroma
+
+        Il prefisso contestuale (es. "Docente: Mario ROSSI | Sezione: didattica |")
+        viene preposto al page_content di ogni chunk, risolvendo il problema
+        dei chunk orfani: anche i chunk lontani dal <h1> conterranno
+        l'informazione di chi è il docente o quale corso è.
+        """
+        # Step 1: split strutturale
         section_docs = self._html_section_splitter.split_text(content)
 
         normalized = []
         for doc in section_docs:
             if isinstance(doc, str):
                 doc = Document(page_content=doc, metadata={})
+            # Metadati base (sovrascrivibili da all_metadata)
             doc.metadata.update({
                 "source_url": source_url,
                 "source_file": filename,
                 "doc_type": "html",
-                **extra_metadata,
             })
             normalized.append(doc)
 
+        # Step 2: split per dimensione (parametri per-collection)
         splitter = self._html_splitters[collection]
         chunks = splitter.split_documents(normalized)
         if not chunks:
             return []
 
+        # Step 3: INIEZIONE CONTESTO (soluzione chunk orfani)
+        # Costruisce il prefisso dal contesto estratto
+        context_prefix = self._build_context_prefix(all_metadata, collection)
+        # Inietta metadati e prefisso in OGNI chunk
+        chunks = self._inject_context_in_chunks(chunks, context_prefix, all_metadata)
+
+        # Step 4: indicizzazione in Chroma
         chroma_ids = [
             f"{collection.value}_html_{filename}_{i}"
             for i in range(len(chunks))
         ]
         vectorstore.add_documents(chunks, ids=chroma_ids)
-        
+
         logger.debug(
-            f"HTML '{filename}': {len(chunks)} chunks → {collection.value}"
+            f"HTML '{filename}': {len(chunks)} chunks → {collection.value} "
+            f"(context prefix: {bool(context_prefix)})"
         )
         return chroma_ids
 
@@ -294,12 +418,10 @@ class KnowledgeBaseIndexer:
     def index_pdf_list(self, pdf_links_file: Optional[str] = None) -> dict:
         """
         Indicizza tutti i PDF dalla lista di link, instradando ciascuno
-        nella collection corretta e applicando la strategia di chunking
-        appropriata (Parent-Child vs diretto).
-        
+        nella collection corretta con chunking appropriato.
+
         Returns:
-            Dict con statistiche: indexed, skipped, updated, errors,
-            parent_child_count, direct_count, routing (breakdown per collection).
+            Dict con statistiche di indicizzazione.
         """
         pdf_links_file = pdf_links_file or self._settings.ingestion.pdf_links_file
         download_dir = self._settings.ingestion.pdf_download_dir
@@ -339,7 +461,7 @@ class KnowledgeBaseIndexer:
                     stats["skipped"] += 1
                     continue
 
-                # --- ROUTING ---
+                # --- ROUTING (audit §8) ---
                 collection_target = DocumentRouter.route_pdf(url)
                 use_pc = DocumentRouter.use_parent_child(collection_target, url)
 
@@ -356,8 +478,8 @@ class KnowledgeBaseIndexer:
                 else:
                     stats["indexed"] += 1
 
-                # Metadati arricchiti
-                extra_meta = DocumentRouter.extract_metadata(url, collection_target)
+                # Metadati PDF — audit §6 + §5.5 (anno ricalcolato)
+                extra_meta = DocumentRouter.extract_pdf_metadata(url, collection_target)
 
                 # --- CHUNKING DIFFERENZIATO ---
                 if use_pc:
@@ -405,7 +527,6 @@ class KnowledgeBaseIndexer:
                 **extra_meta,
             })
 
-        # Cattura ID prima dell'inserimento per il registro incrementale
         existing_data = self._pc_child_vectorstore.get()
         ids_before = set(existing_data["ids"]) if existing_data and existing_data.get("ids") else set()
 
@@ -427,7 +548,7 @@ class KnowledgeBaseIndexer:
         collection: CollectionTarget,
         extra_meta: dict,
     ) -> List[str]:
-        """Chunking diretto per bandi e PDF che NON necessitano di Parent-Child."""
+        """Chunking diretto per bandi e PDF generici."""
         loader = PyPDFLoader(local_path)
         pages = loader.load()
 
@@ -441,6 +562,10 @@ class KnowledgeBaseIndexer:
         chunks = self._pdf_direct_splitter.split_documents(pages)
         if not chunks:
             return []
+
+        # Iniezione contesto per PDF (metadati in ogni chunk)
+        for chunk in chunks:
+            chunk.metadata.update(extra_meta)
 
         vectorstore = self._collections[collection]
         filename = os.path.basename(local_path)
@@ -492,20 +617,26 @@ class KnowledgeBaseIndexer:
     # ==========================================================
 
     def _resolve_collection_for_cleanup(self, entry: IndexEntry) -> Chroma:
-        """
-        Risolve il vectorstore Chroma corretto per eliminare i chunk
-        di un'entry del registro, basandosi su entry.collection_name.
-        """
+        """Risolve il vectorstore Chroma per eliminare chunk di un'entry."""
         if entry.collection_name:
             try:
                 target = CollectionTarget(entry.collection_name)
                 return self._collections[target]
             except ValueError:
+                # Supporto retrocompatibilità nomi vecchi
+                legacy_mapping = {
+                    "docenti_e_didattica": CollectionTarget.PERSONE,
+                    "bandi_e_amministrazione": CollectionTarget.DIPARTIMENTO,
+                    "dipartimento_e_ricerca": CollectionTarget.DIPARTIMENTO,
+                }
+                mapped = legacy_mapping.get(entry.collection_name)
+                if mapped:
+                    return self._collections[mapped]
                 logger.warning(
                     f"collection_name non riconosciuto: '{entry.collection_name}', "
-                    f"fallback a DIPARTIMENTO_RICERCA"
+                    f"fallback a DIPARTIMENTO"
                 )
-        return self._collections[CollectionTarget.DIPARTIMENTO_RICERCA]
+        return self._collections[CollectionTarget.DIPARTIMENTO]
 
     @staticmethod
     def _delete_from_vectorstore(vectorstore: Chroma, ids: List[str]) -> None:

@@ -4,13 +4,7 @@ Registro incrementale per l'indicizzazione.
 Mantiene una mappa persistente:
   source_identifier → (content_hash, [chroma_ids], [parent_ids], collection_name)
 
-REFACTORING MULTI-COLLECTION:
-  Aggiunto campo collection_name a IndexEntry per sapere da quale collection
-  eliminare i chunk durante update/cleanup orfani.
-
 Pattern: Repository (DDD) — incapsula l'accesso al registro persistente.
-
-KPI Impact: Knowledge Freshness (aggiornamento continuo senza downtime).
 """
 
 import json
@@ -27,15 +21,13 @@ logger = logging.getLogger(__name__)
 class IndexEntry:
     """
     Record di un singolo documento indicizzato.
-    
+
     Campi:
       content_hash: SHA-256 del contenuto (per deduplication incrementale).
       chroma_ids: Lista degli ID dei chunk in Chroma (per cleanup).
       parent_ids: Lista degli ID dei parent nel docstore (per cleanup Parent-Child).
       collection_name: Nome della collection Chroma in cui il documento è indicizzato.
-                       Corrisponde a CollectionTarget.value (es. "docenti_e_didattica").
-                       Necessario per sapere da quale collection eliminare i chunk
-                       durante update o rimozione orfani.
+                       Corrisponde a CollectionTarget.value (es. "persone").
     """
     content_hash: str
     chroma_ids: List[str] = field(default_factory=list)
@@ -47,12 +39,12 @@ class IndexRegistry:
     """
     Registro persistente su file JSON per tracciare lo stato di indicizzazione.
     """
-    
+
     def __init__(self, registry_path: str):
         self._path = registry_path
         self._entries: Dict[str, IndexEntry] = {}
         self._load()
-    
+
     def _load(self) -> None:
         """Carica il registro da disco."""
         if os.path.exists(self._path):
@@ -68,7 +60,7 @@ class IndexRegistry:
                 self._entries = {}
         else:
             logger.info("Nessun registro esistente, inizializzazione vuota")
-    
+
     def save(self) -> None:
         """Persiste il registro su disco."""
         parent_dir = os.path.dirname(self._path)
@@ -79,36 +71,29 @@ class IndexRegistry:
                 {key: asdict(entry) for key, entry in self._entries.items()},
                 f, indent=2, ensure_ascii=False,
             )
-    
+
     def get(self, source_id: str) -> Optional[IndexEntry]:
-        """Recupera l'entry per un dato source identifier."""
         return self._entries.get(source_id)
-    
+
     def upsert(self, source_id: str, entry: IndexEntry) -> None:
-        """Inserisce o aggiorna un'entry."""
         self._entries[source_id] = entry
-    
+
     def remove(self, source_id: str) -> Optional[IndexEntry]:
-        """Rimuove un'entry e la restituisce (per cleanup dei chunk)."""
         return self._entries.pop(source_id, None)
-    
+
     def all_source_ids(self) -> set:
-        """Restituisce tutti i source_id attualmente tracciati."""
         return set(self._entries.keys())
-    
+
     def clear_all(self) -> None:
-        """Svuota completamente il registro (per reindicizzazione totale)."""
         self._entries.clear()
         logger.info("Registro svuotato completamente")
-    
+
     @staticmethod
     def compute_hash(content: str) -> str:
-        """Calcola SHA-256 del contenuto testuale."""
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
-    
+
     @staticmethod
     def compute_file_hash(filepath: str) -> str:
-        """Calcola SHA-256 di un file binario (per i PDF)."""
         h = hashlib.sha256()
         with open(filepath, "rb") as f:
             for block in iter(lambda: f.read(8192), b""):

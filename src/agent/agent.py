@@ -1,15 +1,15 @@
 """
 Agente RAG DIEM — Orchestratore principale.
 
-REFACTORING APPLICATO:
-  1. ELIMINATO PromptDumpHandler (generava decine di file).
-  2. NUOVO InteractionLogHandler: genera 1 unico file per interazione.
-  3. Raccolta dati da _last_search_meta (tool) per popolare il log:
-     rewritten_query, multi_queries, tool_name, metadata, top_links.
-  4. Il system prompt viene catturato dall'obs_handler per il log.
+REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md):
+  - Import corretto: create_agent da langchain.agents (LangChain v1)
+    (DIVIETO: create_tool_calling_agent, AgentExecutor, langgraph diretto)
+  - Tool aggiornati: search_persone, search_offerta_formativa,
+    search_dipartimento, search_all
+  - EasyCourse ESCLUSO
 
 Architettura:
-  create_agent(model, tools, system_prompt)
+  create_agent(model, tools, system_prompt=system_prompt)
       ↓
   Loop ReAct: LLM → decide tool → esegue tool → LLM → ... → risposta
       ↓
@@ -224,13 +224,8 @@ class RAGAgent:
         Raccoglie i dati e salva un unico file di log per l'interazione.
         """
         try:
-            # System prompt catturato dall'obs_handler
             system_prompt = obs_handler.get_system_prompt()
-
-            # History formattata
             history_str = self._memory.get_history_summary()
-
-            # Dati dal tool (rewritten_query, multiqueries, tool, links)
             search_meta = get_last_search_meta()
 
             rewritten_query = search_meta.get("rewritten_query", "")
@@ -240,7 +235,6 @@ class RAGAgent:
             metadata_filter = search_meta.get("metadata_filter", None)
             top_links = search_meta.get("top_links", [])
 
-            # Formatta metadata info
             if metadata_filter:
                 meta_str = f"{collection} (filtro: {metadata_filter})"
             else:
@@ -310,7 +304,11 @@ class RAGAgent:
 class RAGAgentFactory:
     """
     Factory per la costruzione dell'agente RAG completo.
-    Ora include anche InteractionLogHandler.
+
+    REFACTORING:
+      - Import CORRETTO: create_agent da langchain.agents (LangChain v1)
+      - DIVIETO rispettato: NO create_tool_calling_agent, NO AgentExecutor,
+        NO langgraph (import diretto), NO create_react_agent (deprecato)
     """
 
     @staticmethod
@@ -358,18 +356,29 @@ class RAGAgentFactory:
         memory = create_conversation_memory(max_turns=max_memory_turns)
         logger.info(f"   ✅ ConversationMemory: max_turns={max_memory_turns}")
 
-        # --- 6. Interaction Logger (NUOVO) ---
+        # --- 6. Interaction Logger ---
         interaction_logger = create_interaction_log_handler(log_output_dir)
         logger.info(f"   ✅ InteractionLogHandler: {log_output_dir}")
 
-        # --- 7. Assembla l'agente ---
+        # --- 7. Assembla l'agente con create_agent (LangChain v1) ---
+        # VINCOLO ASSOLUTO: usare ESCLUSIVAMENTE create_agent
+        # da langchain.agents (LangChain v1).
+        # DIVIETO: create_tool_calling_agent, AgentExecutor, langgraph
+        # diretto, create_react_agent (deprecato in LangChain v1).
+        #
+        # create_agent restituisce un CompiledStateGraph che gestisce
+        # il loop ReAct internamente:
+        #   input → LLM → tool call → osservazione → LLM → ... → risposta
+        #
+        # Accetta {"messages": [...]} e restituisce {"messages": [...]}.
+        # Il system_prompt viene iniettato automaticamente come SystemMessage
+        # all'inizio della lista messaggi ad ogni chiamata al modello.
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=system_prompt,
-            name="diem_rag_agent",
         )
         logger.info("   ✅ create_agent() — grafo agente compilato")
 
