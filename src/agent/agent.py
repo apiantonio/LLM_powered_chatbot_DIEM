@@ -84,7 +84,13 @@ class RAGAgent:
 
         # 1a. Input Sanitization
         sanitizer_ctx: Dict[str, Any] = {}
+
+        print(f"USER QUERY: {user_query}")
+
         passed, sanitized_query = self._input_sanitizer.check(user_query, sanitizer_ctx)
+
+        print(f"QUERY SANITIZZATA: {sanitized_query}")
+
         if not passed:
             logger.warning(f"Input bloccato da InputSanitizer: {user_query[:80]}")
             return {
@@ -112,6 +118,8 @@ class RAGAgent:
         turn_number = self._memory.add_user_message(sanitized_query)
         messages = self._memory.get_messages_for_agent(sanitized_query)
 
+        print(f"MESSAGGIO DALLA MEMORIA: {messages}")
+
         # Inietta la chat history nei tool per il query rewriting
         set_chat_history(self._memory.get_langchain_history())
 
@@ -129,6 +137,8 @@ class RAGAgent:
                 },
             )
             response_text = self._extract_final_response(result)
+
+            print(f"TESTO DI RISPOSTA AGENTE AL TURNO {turn_number}: {response_text}")
 
             # Retry se nessun tool invocato (invariato)
             trace = obs_handler.get_trace()

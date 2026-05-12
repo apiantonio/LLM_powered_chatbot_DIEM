@@ -100,6 +100,8 @@ def _search_collection(
 
     tool_key = f"{collection.value}:{query[:50]}"
 
+    print(f"SEARCH COLLECTION: {query}")
+
     try:
         result = _retrieval_engine.retrieve(
             query,
@@ -242,6 +244,8 @@ def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
     metadata_filter = None
     if sotto_area:
         metadata_filter = {"sotto_area": sotto_area}
+    
+    print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
 
     return _search_collection(
         query, CollectionTarget.PERSONE,

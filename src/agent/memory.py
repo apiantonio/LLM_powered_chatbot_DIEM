@@ -29,10 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Reminder iniettato alla fine di ogni messaggio utente
 _RETRIEVAL_REMINDER = (
-    "\n\n[SISTEMA: Se questa domanda riguarda il DIEM, usa un tool di ricerca "
+    "\n\n[SISTEMA: usa SEMPRE!!! un tool di ricerca "
     "per trovare le informazioni necessarie. Se il tool restituisce un errore, "
     "NON riprovare lo stesso tool — usa un tool alternativo oppure comunica "
-    "all'utente che l'informazione non è al momento disponibile.]"
+    "all'utente che l'informazione non è al momento disponibile."
+    "NON ABBREVIARE MAI LE QUERY DEL ROLE 'user' ORIGINALE PRIMA RISCRIVERLA!!!]"
 )
 
 # Query che NON necessitano di retrieval
