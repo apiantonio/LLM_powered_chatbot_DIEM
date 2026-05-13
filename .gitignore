@@ -13,5 +13,8 @@ ingestion_log/*
 data/raw/pdfs
 data/log/
 logs/prompts/
+data/*
+/ingestion_log_qwen
+/da_non_pushare
 *.zip
 __pycache__
