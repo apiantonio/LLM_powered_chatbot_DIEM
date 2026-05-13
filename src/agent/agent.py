@@ -1,12 +1,36 @@
 """
 Agente RAG DIEM — Orchestratore principale.
 
-REFACTORING v2:
-  - Middleware iniezione temporale: inietta data/ora SOLO se la query
-    contiene riferimenti temporali impliciti o relativi.
-  - System prompt snellito (vedi prompts.py v2)
-  - Memory invariata (SmartConversationMemory)
-  - Rimossa data/ora statica dal system prompt
+REFACTORING v3 — GUARDRAILS VIA MIDDLEWARE:
+  I vecchi guardrails (ScopeGuardrail, InputSanitizer, OutputValidator)
+  sono stati COMPLETAMENTE ELIMINATI e sostituiti con middleware LangChain
+  inseriti direttamente nel grafo dell'agente tramite create_agent(middleware=[...]).
+
+  Middleware attivi (in ordine):
+    Prebuilt:
+      - PIIMiddleware (codice fiscale, NO email/telefoni)
+      - ModelCallLimitMiddleware (anti-loop)
+      - ToolCallLimitMiddleware (limiti tool)
+    Custom (before_model):
+      - InjectionGuardMiddleware (prompt injection)
+      - ToxicityFilterMiddleware (profanità/minacce)
+      - TopicalGuardrailMiddleware (fuori contesto)
+    Custom (after_model):
+      - HallucinationGuardMiddleware (confabulazione)
+      - CodeGenerationGuardMiddleware (blocco generazione codice)
+      - OutputPIIGuardMiddleware (PII nell'output)
+
+  Il flusso dell'agente è ora:
+    User Query → Temporal Middleware (pre-agent)
+               → Memory → Agent Graph (con middleware integrati)
+               → Response
+
+  I middleware gestiscono internamente:
+    - Blocco injection PRIMA del model call
+    - Blocco tossicità PRIMA del model call
+    - Blocco off-topic PRIMA del model call
+    - Validazione output DOPO il model call
+    - Limiti su model/tool calls
 """
 
 import re
@@ -26,13 +50,7 @@ from agent.callbacks import (
 )
 from agent.memory import SmartConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
-from agent.guardrails import (
-    ScopeGuardrail,
-    InputSanitizer,
-    OutputValidator,
-    ScopeViolationError,
-    InputInjectionError,
-)
+from agent.guardrails import build_guardrail_middleware
 from agent.tools import set_retrieval_engine, set_chat_history, get_all_tools, get_last_search_meta
 from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine
@@ -41,10 +59,9 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# MIDDLEWARE: Iniezione Temporale Dinamica (Punto 5)
+# MIDDLEWARE: Iniezione Temporale Dinamica
 # ============================================================
 
-# Pattern che indicano riferimenti temporali nella query
 _TEMPORAL_PATTERNS = [
     r"\b(oggi|domani|ieri|dopodomani)\b",
     r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)\s+(prossim[oa]|scors[oa])\b",
@@ -95,17 +112,23 @@ def inject_temporal_context(query: str) -> str:
 # ============================================================
 
 class RAGAgent:
+    """
+    Facade principale per l'interazione con l'agente RAG DIEM.
+
+    NOTA: I guardrails sono ora gestiti internamente dal grafo dell'agente
+    tramite middleware LangChain. Questo Facade si occupa solo di:
+      1. Pre-processing temporale
+      2. Gestione memoria conversazionale
+      3. Invocazione dell'agente
+      4. Logging e osservabilità
+    """
 
     _MAX_RETRY_NO_TOOL = 1
 
-    def __init__(self, agent_graph, memory, scope_guardrail,
-                 input_sanitizer, output_validator, settings,
+    def __init__(self, agent_graph, memory, settings,
                  interaction_logger: InteractionLogHandler):
         self._agent = agent_graph
         self._memory = memory
-        self._scope_guardrail = scope_guardrail
-        self._input_sanitizer = input_sanitizer
-        self._output_validator = output_validator
         self._settings = settings
         self._interaction_logger = interaction_logger
         self._traces = []
@@ -115,56 +138,20 @@ class RAGAgent:
         """
         Punto di ingresso principale per l'interazione con l'agente.
 
-        Flusso:
-          1. Pre-processing: guardrails (scope + sanitization)
-          2. Middleware temporale: inietta data/ora se necessario
-          3. Memory: costruzione messaggi con storico
-          4. Chat history injection per tool (query rewriting contestuale)
-          5. Agent: invocazione con callback di osservabilità
-          6. Post-processing: output validation
-          7. Logging + Memory update
+        Flusso semplificato (i guardrails sono nei middleware):
+          1. Middleware temporale: inietta data/ora se necessario
+          2. Memory: costruzione messaggi con storico
+          3. Chat history injection per tool
+          4. Agent: invocazione (i middleware gestiscono guardrails)
+          5. Logging + Memory update
         """
-        # --- STEP 1: Pre-processing Guardrails ---
-
-        # 1a. Input Sanitization
-        sanitizer_ctx: Dict[str, Any] = {}
-
         print(f"USER QUERY: {user_query}")
 
-        passed, sanitized_query = self._input_sanitizer.check(user_query, sanitizer_ctx)
+        # --- STEP 1: Middleware Iniezione Temporale ---
+        query_for_agent = inject_temporal_context(user_query)
 
-        print(f"QUERY SANITIZZATA: {sanitized_query}")
-
-        if not passed:
-            logger.warning(f"Input bloccato da InputSanitizer: {user_query[:80]}")
-            return {
-                "response": sanitized_query,
-                "blocked": True,
-                "block_reason": "prompt_injection",
-                "trace": {},
-                "turn": self._memory.turn_count + 1,
-            }
-
-        # 1b. Scope Check
-        if self._scope_guardrail:
-            passed, scope_result = self._scope_guardrail.check(sanitized_query)
-            if not passed:
-                logger.info(f"Query OOD bloccata: {user_query[:80]}")
-                return {
-                    "response": scope_result,
-                    "blocked": True,
-                    "block_reason": "out_of_scope",
-                    "trace": {},
-                    "turn": self._memory.turn_count + 1,
-                }
-
-        # --- STEP 2: Middleware Iniezione Temporale (Punto 5) ---
-        # Inietta data/ora SOLO se la query ha riferimenti temporali
-        query_for_agent = inject_temporal_context(sanitized_query)
-
-        # --- STEP 3: Registra il turno e costruisci i messaggi ---
-        turn_number = self._memory.add_user_message(sanitized_query)
-
+        # --- STEP 2: Registra il turno e costruisci i messaggi ---
+        turn_number = self._memory.add_user_message(user_query)
         messages = self._memory.get_messages_for_agent(query_for_agent)
 
         print(f"MESSAGGIO DALLA MEMORIA: {messages}")
@@ -189,17 +176,17 @@ class RAGAgent:
 
             print(f"TESTO DI RISPOSTA AGENTE AL TURNO {turn_number}: {response_text}")
 
-            # Retry se nessun tool invocato
+            # Retry se nessun tool invocato (e non è una meta-query)
             trace = obs_handler.get_trace()
             if (len(trace.tools_invoked) == 0
-                    and not self._is_meta_query(sanitized_query)
+                    and not self._is_meta_query(user_query)
                     and self._retry_count < self._MAX_RETRY_NO_TOOL):
 
                 self._retry_count += 1
                 forced_messages = messages.copy()
                 forced_messages[-1]["content"] = (
                     f"[Invoca un tool di ricerca per rispondere.] "
-                    f"{sanitized_query}"
+                    f"{user_query}"
                 )
                 obs_handler_retry = create_observability_handler(
                     self._settings.observability,
@@ -225,7 +212,7 @@ class RAGAgent:
                     or "iteration" in error_str):
                 logger.error(
                     f"🔄 LOOP RILEVATO — Agente terminato forzatamente. "
-                    f"Query: '{sanitized_query[:80]}'"
+                    f"Query: '{user_query[:80]}'"
                 )
                 response_text = (
                     "Mi scuso, ho riscontrato difficoltà nell'elaborare la tua "
@@ -238,37 +225,26 @@ class RAGAgent:
                     "Riprova tra qualche istante."
                 )
 
-        # --- STEP 5: Post-processing (Output Validation) ---
-        passed, validated_response = self._output_validator.check(response_text)
-        if not passed:
-            validated_response = (
-                "Mi dispiace, non sono riuscito a generare una risposta valida. "
-                "Riprova con una domanda più specifica."
-            )
-
-        # --- STEP 6: Aggiorna handler e memoria ---
-        obs_handler.set_final_output(validated_response)
-
-        # La memoria salva la query ORIGINALE (senza contesto temporale)
-        # per non inquinare lo storico con metadati di sistema
-        self._memory.add_assistant_message(validated_response)
+        # --- STEP 3: Aggiorna handler e memoria ---
+        obs_handler.set_final_output(response_text)
+        self._memory.add_assistant_message(response_text)
 
         trace_dict = obs_handler.get_trace_dict()
         self._traces.append(trace_dict)
 
-        # --- STEP 7: Salva il log dell'interazione ---
+        # --- STEP 4: Salva il log dell'interazione ---
         self._save_interaction_log(
             turn_number=turn_number,
-            user_query=sanitized_query,
+            user_query=user_query,
             obs_handler=obs_handler,
-            final_response=validated_response,
+            final_response=response_text,
         )
 
         if self._settings.observability.enable_verbose_callbacks:
             obs_handler.print_summary()
 
         return {
-            "response": validated_response,
+            "response": response_text,
             "blocked": False,
             "block_reason": None,
             "trace": trace_dict,
@@ -363,7 +339,14 @@ class RAGAgent:
 # ============================================================
 
 class RAGAgentFactory:
-    """Factory per la costruzione dell'agente RAG completo."""
+    """
+    Factory per la costruzione dell'agente RAG completo.
+
+    REFACTORING v3:
+      I guardrails sono ora middleware LangChain passati a create_agent().
+      Non esistono più oggetti ScopeGuardrail, InputSanitizer, OutputValidator
+      separati — tutto è integrato nel grafo dell'agente.
+    """
 
     @staticmethod
     def create(
@@ -389,25 +372,11 @@ class RAGAgentFactory:
         tools = get_all_tools()
         logger.info(f"   ✅ Tools registrati: {[t.name for t in tools]}")
 
-        # --- 3. System Prompt (snellito per 7B, senza data/ora) ---
+        # --- 3. System Prompt ---
         system_prompt = get_agent_system_prompt()
         logger.info("   ✅ System prompt caricato (v2, ottimizzato 7B)")
 
-        # --- 4. Guardrails ---
-        scope_guardrail = None
-        if enable_scope_guardrail:
-            scope_guardrail = ScopeGuardrail(chat_model)
-            logger.info("   ✅ ScopeGuardrail attivato")
-
-        input_sanitizer = InputSanitizer()
-        logger.info("   ✅ InputSanitizer attivato")
-
-        output_validator = OutputValidator(
-            enable_pii_filter=settings.guardrails.enable_pii_filter
-        )
-        logger.info("   ✅ OutputValidator attivato")
-
-        # --- 5. SmartConversationMemory ---
+        # --- 4. SmartConversationMemory ---
         memory = create_conversation_memory(
             max_turns=max_memory_turns,
             llm_for_summary=chat_model,
@@ -415,27 +384,39 @@ class RAGAgentFactory:
         )
         logger.info(f"   ✅ SmartConversationMemory: max_turns={max_memory_turns}")
 
-        # --- 6. Interaction Logger ---
+        # --- 5. Interaction Logger ---
         interaction_logger = create_interaction_log_handler(log_output_dir)
         logger.info(f"   ✅ InteractionLogHandler: {log_output_dir}")
 
-        # --- 7. Assembla l'agente ---
+        # --- 6. GUARDRAILS VIA MIDDLEWARE ---
+        logger.info("   📋 Assemblaggio middleware guardrails...")
+        guardrail_middleware = build_guardrail_middleware(
+            classifier_llm=chat_model if enable_scope_guardrail else None,
+            enable_pii=settings.guardrails.enable_pii_filter,
+            enable_topical=enable_scope_guardrail,
+            enable_injection=True,
+            enable_toxicity=True,
+            enable_hallucination=True,
+            enable_code_guard=True,
+            max_model_calls_per_run=settings.guardrails.max_agent_iterations,
+            max_tool_calls_per_run=12,
+        )
+
+        # --- 7. Assembla l'agente CON middleware ---
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=system_prompt,
+            middleware=guardrail_middleware,
         )
-        logger.info("   ✅ create_agent() — grafo agente compilato")
+        logger.info("   ✅ create_agent() — grafo agente compilato CON middleware")
 
         # --- 8. Wrappa nel Facade ---
         agent = RAGAgent(
             agent_graph=agent_graph,
             memory=memory,
-            scope_guardrail=scope_guardrail,
-            input_sanitizer=input_sanitizer,
-            output_validator=output_validator,
             settings=settings,
             interaction_logger=interaction_logger,
         )
@@ -446,6 +427,16 @@ class RAGAgentFactory:
         logger.info("   ⏰ Temporale: middleware dinamico")
         logger.info("   🧠 Memoria: SmartConversationMemory")
         logger.info("   🔧 Tools: 4 tool con routing syllabus fix")
+        logger.info("   🛡️ Guardrails: MIDDLEWARE-BASED")
+        logger.info(f"      - {len(guardrail_middleware)} middleware attivi")
+        logger.info("      - Injection Guard (before_model)")
+        logger.info("      - Toxicity Filter (before_model)")
+        logger.info("      - Topical Guard (before_model, dual-layer)")
+        logger.info("      - Hallucination Guard (after_model)")
+        logger.info("      - Code Generation Guard (after_model)")
+        logger.info("      - PII Guard (codice fiscale, NO email/tel)")
+        logger.info("      - Model Call Limit (anti-loop)")
+        logger.info("      - Tool Call Limit")
         logger.info("=" * 60)
 
         return agent

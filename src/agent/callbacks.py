@@ -52,10 +52,6 @@ class PipelinePhase(Enum):
 
 _SEARCH_TOOL_PREFIX = "search_"
 
-# ── AGGIORNATO per 3 Vector Store (audit §8) ──
-# Mappa i nomi dei tool alle collection Chroma corrispondenti.
-# I vecchi tool (search_docenti, search_bandi, search_strutture_fisiche,
-# get_course_schedule) sono stati rimossi.
 _TOOL_COLLECTION_MAP = {
     "search_persone": "persone",
     "search_offerta_formativa": "offerta_formativa",

@@ -3,17 +3,16 @@ Entry point per l'esecuzione interattiva dell'Agente RAG DIEM.
 
 Bootstrapping completo: Settings → Indexer → RetrievalEngine → Agent → REPL.
 
-AGGIORNAMENTO — Supporto SmartConversationMemory:
-  Il bootstrap ora crea un HuggingFaceEmbeddings condiviso e lo passa
-  alla Factory dell'agente, che lo inoltra alla SmartConversationMemory
-  per il filtraggio per similarità coseno (Stadio 1).
-  Il ChatModel viene usato sia dall'agente sia dalla memoria come LLM
-  per la summarization (Stadio 2).
+AGGIORNAMENTO v3 — Middleware-based Guardrails:
+  I guardrails non sono più oggetti standalone ma middleware LangChain
+  integrati nel grafo dell'agente. Il bootstrap passa il chat_model
+  alla factory che lo usa sia per l'agente sia per il classificatore
+  topicale (Layer 2).
 
 Uso:
   cd src/
   python -m agent.agent_main                    # avvio standard
-  python -m agent.agent_main --no-scope-guard   # senza scope guardrail
+  python -m agent.agent_main --no-scope-guard   # senza scope guardrail LLM
   python -m agent.agent_main --skip-crawl       # senza re-indicizzazione
 
 Il REPL interattivo supporta:
@@ -54,9 +53,6 @@ logger = logging.getLogger(__name__)
 def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
     """
     Costruisce il RetrievalEngine assemblando Indexer, Reranker e QueryOptimizer.
-
-    Rispecchia il pattern già usato in scheduler.py:
-      Settings → Indexer → Retriever accessors → Engine
     """
     logger.info("[BOOT] Inizializzazione Indexer (Vector Store + Parent Store)...")
     indexer = KnowledgeBaseIndexer(settings)
@@ -82,17 +78,6 @@ def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
 def build_embedding_model(settings: AppSettings) -> HuggingFaceEmbeddings:
     """
     Costruisce il modello di embedding condiviso per la SmartConversationMemory.
-
-    Il modello viene creato qui nel main e passato alla Factory dell'agente
-    per garantire coerenza: lo stesso modello di embedding usato per
-    l'indicizzazione viene usato per il filtraggio per similarità coseno
-    della memoria conversazionale (Stadio 1 della SmartConversationMemory).
-
-    Args:
-        settings: Configurazione applicativa con i parametri di embedding.
-
-    Returns:
-        HuggingFaceEmbeddings configurato secondo le settings.
     """
     logger.info(
         f"[BOOT] Inizializzazione HuggingFaceEmbeddings per SmartMemory: "
@@ -118,12 +103,8 @@ def build_agent(
     """
     Costruisce l'agente RAG completo tramite la Factory.
 
-    AGGIORNAMENTO — Passaggio embedding_model:
-      L'embedding_model viene passato alla Factory che lo inoltra a
-      create_conversation_memory per la SmartConversationMemory.
-      Se non fornito, la Factory (tramite create_conversation_memory)
-      ne crea uno internamente dalle settings — ma è preferibile
-      passarlo esplicitamente per garantire coerenza con l'indicizzazione.
+    I guardrails sono ora middleware LangChain integrati nel grafo
+    dell'agente — non servono più oggetti separati.
     """
     return RAGAgentFactory.create(
         retrieval_engine=engine,
@@ -148,6 +129,12 @@ WELCOME_BANNER = """
 ║  Memoria: SmartConversationMemory                            ║
 ║    • Stadio 1: Filtro similarità coseno                      ║
 ║    • Stadio 2: Summarization con token budget                ║
+║                                                              ║
+║  Guardrails: Middleware-based (v3)                            ║
+║    • Injection Guard    • Toxicity Filter                    ║
+║    • Topical Guard      • Hallucination Guard                ║
+║    • Code Gen Guard     • PII Guard (CF only)                ║
+║    • Model Call Limit   • Tool Call Limit                    ║
 ║                                                              ║
 ║  Comandi:                                                    ║
 ║    /reset   — nuova sessione (cancella memoria)              ║
@@ -209,7 +196,7 @@ def run_repl(agent: RAGAgent) -> None:
         # --- Invocazione agente ---
         result = agent.chat(user_input)
 
-        if result["blocked"]:
+        if result.get("blocked"):
             print(f"\n🚫 [{result['block_reason']}] {result['response']}")
         else:
             print(f"\n🤖 Agente (turno #{result['turn']}):\n{result['response']}")
@@ -227,7 +214,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-scope-guard",
         action="store_true",
-        help="Disabilita il ScopeGuardrail (classificatore OOD basato su LLM).",
+        help="Disabilita il TopicalGuardrail Layer 2 (classificatore LLM). "
+             "Il Layer 1 (regex) rimane sempre attivo.",
     )
     parser.add_argument(
         "--max-turns",
@@ -269,16 +257,11 @@ def main() -> None:
 
     # --- Bootstrap pipeline ---
     logger.info("=" * 60)
-    logger.info("🚀 AVVIO AGENTE RAG DIEM")
+    logger.info("🚀 AVVIO AGENTE RAG DIEM (v3 — Middleware Guardrails)")
     logger.info("=" * 60)
 
     engine = build_retrieval_engine(settings)
 
-    # ── ALLINEAMENTO: creazione embedding model per SmartConversationMemory ──
-    # Il modello di embedding viene creato qui e passato alla Factory
-    # dell'agente per garantire coerenza con il modello usato nell'indicizzazione.
-    # La SmartConversationMemory lo usa per il filtraggio per similarità
-    # coseno dei turni (Stadio 1).
     embedding_model = build_embedding_model(settings)
 
     agent = build_agent(
