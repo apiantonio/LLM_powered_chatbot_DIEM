@@ -226,6 +226,12 @@ class AppSettings:
 
 def load_settings() -> AppSettings:
     """Factory method che costruisce le impostazioni leggendo le variabili d'ambiente."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass # Se la libreria non è installata, prosegue con le variabili di sistema standard
+
     return AppSettings(
         ingestion=IngestionConfig(
             html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),
