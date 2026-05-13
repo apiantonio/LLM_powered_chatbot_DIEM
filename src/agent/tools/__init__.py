@@ -402,6 +402,7 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     - "Progetti di ricerca DIEM" → search_dipartimento (sotto_area="ricerca_dipartimentale")
     - "Erasmus DIEM" → search_dipartimento (sotto_area="internazionale")
     - "Terza missione DIEM" → search_dipartimento (sotto_area="terza_missione")
+    - "Commissione paritetica" → search_dipartimento (sotto_area="generale")
 
     ## ATTENZIONE — VALORI sotto_area:
     NON usare "strutture" come sotto_area — questo valore NON ESISTE
