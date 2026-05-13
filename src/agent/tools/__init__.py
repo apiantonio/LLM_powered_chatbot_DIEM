@@ -21,6 +21,15 @@ REFACTORING secondo audit_fattibilita_metadati.md §7-§8:
     - Segnale di FALLBACK esplicito nell'output quando non si trovano
       risultati pertinenti, per guidare l'Agente verso il tool alternativo.
     - Routing migliorato per "Chi insegna X?" → search_persone
+
+  FIX MISMATCH sotto_area (BUG AULE):
+    Il router (router.py) indicizza i chunk con sotto_area granulari:
+      "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale",
+      "terza_missione", "internazionale", "organizzazione", "generale",
+      "alternanza", "eccellenza", "monitoraggio", "personale"
+    I valori ammessi e l'inferenza automatica nel tool DEVONO usare
+    gli STESSI valori. Il vecchio valore "strutture" NON esiste in Chroma
+    ed è stato eliminato.
 """
 
 from __future__ import annotations
@@ -72,9 +81,24 @@ _VALID_SOTTO_AREA_PERSONE = frozenset({
 })
 
 # ── Valori ammessi per sotto_area di DIPARTIMENTO (audit §6) ──
+# FIX MISMATCH AULE: allineati ai valori REALI prodotti dal router
+# (router.py → _classify_dipartimento_sottoarea).
+# Il vecchio valore "strutture" NON esiste nei metadati Chroma.
+# I valori reali per le strutture fisiche sono: "aule", "laboratori", "sedi".
 _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
-    "bandi", "laboratori", "ricerca", "terza_missione",
-    "internazionale", "organizzazione", "strutture", "generale"
+    "aule",                     # ← strutture-didattiche, aula, aule
+    "laboratori",               # ← laboratorio, laboratori, lab
+    "sedi",                     # ← sede, sedi, edificio, campus
+    "bandi",                    # ← bando, bandi, borsa, assegno, dottorato
+    "ricerca_dipartimentale",   # ← /ricerca/
+    "terza_missione",           # ← /terza-missione/
+    "internazionale",           # ← /international/
+    "organizzazione",           # ← organi, commissioni
+    "alternanza",               # ← /didattica/alternanza
+    "eccellenza",               # ← /dipartimento/eccellenza
+    "monitoraggio",             # ← /dati-di-monitoraggio
+    "personale",                # ← /dipartimento/personale
+    "generale",                 # ← fallback generico
 })
 
 # Contatore errori per tool (anti-loop)
@@ -367,13 +391,24 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     borse di studio, assegni di ricerca, avvisi amministrativi, dottorato,
     aule, laboratori, sedi, strutture fisiche.
 
-    ## Routing (audit §7 — DIPARTIMENTO assorbe ex bandi e strutture):
+    ## Routing — VALORI sotto_area CORRETTI:
+    - "Dove si trova l'aula 126?" → search_dipartimento (sotto_area="aule")
+    - "Dove si trova l'aula 152?" → search_dipartimento (sotto_area="aule")
+    - "Quali aule ci sono?" → search_dipartimento (sotto_area="aule")
+    - "Laboratorio ICAR" → search_dipartimento (sotto_area="laboratori")
+    - "Dove si trova la sede?" → search_dipartimento (sotto_area="sedi")
     - "Bandi di dottorato DIEM" → search_dipartimento (sotto_area="bandi")
     - "Borsa di studio DIEM" → search_dipartimento (sotto_area="bandi")
-    - "Laboratorio ICAR" → search_dipartimento (sotto_area="laboratori")
-    - "Dove si trova l'aula 126?" → search_dipartimento (sotto_area="strutture")
-    - "Progetti di ricerca DIEM" → search_dipartimento (sotto_area="ricerca")
+    - "Progetti di ricerca DIEM" → search_dipartimento (sotto_area="ricerca_dipartimentale")
     - "Erasmus DIEM" → search_dipartimento (sotto_area="internazionale")
+    - "Terza missione DIEM" → search_dipartimento (sotto_area="terza_missione")
+
+    ## ATTENZIONE — VALORI sotto_area:
+    NON usare "strutture" come sotto_area — questo valore NON ESISTE
+    nella knowledge base. Usare invece i valori specifici:
+    - "aule" per aule e strutture didattiche
+    - "laboratori" per laboratori
+    - "sedi" per sedi, edifici, campus
 
     ## DIRETTIVA ANTI-COMPRESSIONE:
     Passa la query dell'utente INTEGRA e COMPLETA nel campo `query`.
@@ -383,9 +418,11 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     Args:
         query: La domanda COMPLETA dell'utente su dipartimento, bandi, strutture,
                passata INTEGRA senza compressione.
-        sotto_area: Filtro opzionale. Valori ammessi: "bandi",
-                    "laboratori", "ricerca", "terza_missione",
-                    "internazionale", "organizzazione", "strutture", "generale".
+        sotto_area: Filtro opzionale. Valori ammessi: "aule", "laboratori",
+                    "sedi", "bandi", "ricerca_dipartimentale", "terza_missione",
+                    "internazionale", "organizzazione", "generale".
+                    ATTENZIONE: NON usare "strutture" — usare "aule",
+                    "laboratori" o "sedi" a seconda del contesto.
     """
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
         logger.warning(
@@ -396,7 +433,13 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    # Inferenza automatica sotto_area dalla query (se non specificata)
+    # ── FIX MISMATCH sotto_area: inferenza allineata ai valori reali in Chroma ──
+    # Il router (router.py → _classify_dipartimento_sottoarea) assegna:
+    #   "aule" per strutture-didattiche, aula, aule
+    #   "laboratori" per laboratorio, laboratori, lab
+    #   "sedi" per sede, sedi, edificio, campus
+    #   "bandi" per bando, bandi, borsa, assegno, dottorato
+    # L'inferenza qui DEVE usare gli STESSI valori.
     if sotto_area is None:
         query_lower = query.lower()
         if any(kw in query_lower for kw in [
@@ -409,10 +452,23 @@ def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
         ]):
             sotto_area = "laboratori"
         elif any(kw in query_lower for kw in [
-            "aula", "aule", "sede", "sedi", "edificio", "campus",
-            "struttura", "strutture"
+            "aula", "aule", "strutture didattiche", "strutture-didattiche"
         ]):
-            sotto_area = "strutture"
+            # FIX: era "strutture" → ora "aule" (allineato a Chroma)
+            sotto_area = "aule"
+        elif any(kw in query_lower for kw in [
+            "sede", "sedi", "edificio", "campus"
+        ]):
+            # FIX: era raggruppato in "strutture" → ora "sedi" (allineato a Chroma)
+            sotto_area = "sedi"
+        elif any(kw in query_lower for kw in [
+            "terza missione", "terza-missione"
+        ]):
+            sotto_area = "terza_missione"
+        elif any(kw in query_lower for kw in [
+            "erasmus", "internazionale", "international", "mobilità"
+        ]):
+            sotto_area = "internazionale"
 
     metadata_filter = None
     if sotto_area:
