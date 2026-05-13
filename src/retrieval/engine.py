@@ -211,13 +211,11 @@ Output: 3 varianti, una per riga, senza numerazione."""),
 class CrossEncoderReranker:
     """Post-Retrieval: ri-ordina i documenti candidati con Cross-Encoder."""
 
-    DEFAULT_SCORE_THRESHOLD = -5.0
-
     def __init__(self, config: RerankerConfig):
         from sentence_transformers import CrossEncoder
         self._model = CrossEncoder(config.model_name)
         self._top_n = config.top_n
-        self._score_threshold = self.DEFAULT_SCORE_THRESHOLD
+        self._score_threshold = config.score_treshold
         logger.info(f"Cross-Encoder Reranker: {config.model_name}")
 
     def rerank(

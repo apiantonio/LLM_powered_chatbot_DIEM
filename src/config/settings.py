@@ -169,6 +169,7 @@ class VectorStoreConfig:
 
 @dataclass(frozen=True)
 class RerankerConfig:
+    score_treshold: float = 0.0
     model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     top_n: int = 5
 
@@ -268,6 +269,7 @@ def load_settings() -> AppSettings:
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
         ),
         reranker=RerankerConfig(
-            model_name = os.getenv("RERANKER_MOIDEL", "Qwen/Qwen3-Reranker-0.6B")
+            model_name = os.getenv("RERANKER_MOIDEL", "Qwen/Qwen3-Reranker-0.6B"),
+            score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0"))
         )
     )
