@@ -1,7 +1,7 @@
 WBS.md
 .vscode/
-data/raw/**/*.html
-data/raw/**/*.txt
+/data/raw/**/*.html
+/data/raw/**/*.txt
 data/vectorstore
 data/evaluation
 data/vectorstore_qwen
