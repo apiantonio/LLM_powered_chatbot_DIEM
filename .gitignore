@@ -1,8 +1,15 @@
 WBS.md
 .vscode/
 data/raw/**/*.html
+data/raw/**/*.txt
 data/vectorstore
 data/evaluation
+data/vectorstore_qwen
+t6_4_report.json
+src/pdf_chunk.py
+src/script_chunk.py
+logs/*
+ingestion_log/*
 data/raw/pdfs
 data/log/
 logs/prompts/
