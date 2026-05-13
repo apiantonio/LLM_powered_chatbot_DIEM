@@ -1,36 +1,17 @@
 """
 Agente RAG DIEM — Orchestratore principale.
 
-REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md):
-  - Import corretto: create_agent da langchain.agents (LangChain v1)
-    (DIVIETO: create_tool_calling_agent, AgentExecutor, langgraph diretto)
-  - Tool aggiornati: search_persone, search_offerta_formativa,
-    search_dipartimento, search_all
-  - EasyCourse ESCLUSO
-
-AGGIORNAMENTO — Integrazione SmartConversationMemory e Prompt XML:
-  - SmartConversationMemory sostituisce ConversationMemory.
-    La nuova memoria richiede un LLM per la summarization (Stadio 2)
-    e un HuggingFaceEmbeddings per il filtraggio per similarità coseno
-    (Stadio 1). Entrambi vengono passati dalla Factory.
-  - Il system prompt in formato XML (con direttive anti-compressione,
-    regole di routing e fallback strategy) viene caricato da prompts.py
-    e passato a create_agent come SystemMessage.
-  - I tool con descrizioni XML e fallback espliciti vengono bindati
-    all'agente tramite create_agent(tools=...).
-
-Architettura:
-  create_agent(model, tools, system_prompt=system_prompt)
-      ↓
-  Loop ReAct: LLM → decide tool → esegue tool → LLM → ... → risposta
-      ↓
-  Esterno: SmartConversationMemory gestisce lo storico multi-turno
-           (filtro similarità coseno + summarization con token budget)
-           RAGObservabilityHandler traccia ogni fase
-           InteractionLogHandler salva 1 file per interazione
+REFACTORING v2:
+  - Middleware iniezione temporale: inietta data/ora SOLO se la query
+    contiene riferimenti temporali impliciti o relativi.
+  - System prompt snellito (vedi prompts.py v2)
+  - Memory invariata (SmartConversationMemory)
+  - Rimossa data/ora statica dal system prompt
 """
 
+import re
 import logging
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from langchain_core.messages import AIMessage, BaseMessage
@@ -43,9 +24,6 @@ from agent.callbacks import (
     InteractionLogHandler,
     create_interaction_log_handler,
 )
-# ── ALLINEAMENTO: import aggiornato a SmartConversationMemory ──
-# La vecchia ConversationMemory è stata sostituita dalla
-# SmartConversationMemory a due stadi (filtro similarità + summarization).
 from agent.memory import SmartConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
 from agent.guardrails import (
@@ -60,6 +38,56 @@ from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# MIDDLEWARE: Iniezione Temporale Dinamica (Punto 5)
+# ============================================================
+
+# Pattern che indicano riferimenti temporali nella query
+_TEMPORAL_PATTERNS = [
+    r"\b(oggi|domani|ieri|dopodomani)\b",
+    r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)\s+(prossim[oa]|scors[oa])\b",
+    r"\b(questa|prossima|scorsa)\s+(settimana|lezione)\b",
+    r"\b(questo|prossimo|scorso)\s+(mese|semestre|anno|trimestre)\b",
+    r"\b(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica)\b",
+    r"\b(ora|adesso|attualmente|corrente|in corso)\b",
+    r"\b(quando|a che ora|orario)\b",
+    r"\b(prossim[oa]|scors[oa])\b",
+]
+
+_TEMPORAL_REGEX = [re.compile(p, re.IGNORECASE) for p in _TEMPORAL_PATTERNS]
+
+
+def _has_temporal_reference(query: str) -> bool:
+    """Controlla se la query contiene riferimenti temporali impliciti."""
+    return any(p.search(query) for p in _TEMPORAL_REGEX)
+
+
+def _get_temporal_context() -> str:
+    """Genera la stringa di contesto temporale corrente."""
+    now = datetime.now()
+    giorni = ["lunedì", "martedì", "mercoledì", "giovedì",
+              "venerdì", "sabato", "domenica"]
+    mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+            "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+    return (
+        f"[Contesto temporale: {giorni[now.weekday()]} "
+        f"{now.day} {mesi[now.month - 1]} {now.year}, "
+        f"ore {now.strftime('%H:%M')}]"
+    )
+
+
+def inject_temporal_context(query: str) -> str:
+    """
+    Middleware pre-agente: inietta data/ora SOLO se la query
+    contiene riferimenti temporali impliciti o relativi.
+    """
+    if _has_temporal_reference(query):
+        temporal = _get_temporal_context()
+        logger.info(f"Iniezione temporale: {temporal}")
+        return f"{query}\n{temporal}"
+    return query
 
 
 # ============================================================
@@ -89,14 +117,12 @@ class RAGAgent:
 
         Flusso:
           1. Pre-processing: guardrails (scope + sanitization)
-          2. Memory: costruzione messaggi con storico
-             (SmartConversationMemory applica filtro similarità + summarization)
-          3. Chat history injection per tool (query rewriting contestuale)
-          4. Agent: invocazione con callback di osservabilità
-             (la query utente viene passata INTEGRA — direttiva anti-compressione)
-          5. Post-processing: output validation
-          6. Logging: salvataggio interazione su file unico
-          7. Memory: aggiornamento storico (con embedding del turno)
+          2. Middleware temporale: inietta data/ora se necessario
+          3. Memory: costruzione messaggi con storico
+          4. Chat history injection per tool (query rewriting contestuale)
+          5. Agent: invocazione con callback di osservabilità
+          6. Post-processing: output validation
+          7. Logging + Memory update
         """
         # --- STEP 1: Pre-processing Guardrails ---
 
@@ -132,17 +158,14 @@ class RAGAgent:
                     "turn": self._memory.turn_count + 1,
                 }
 
-        # --- STEP 2: Registra il turno e costruisci i messaggi ---
-        # SmartConversationMemory.add_user_message registra la query e avanza il contatore.
+        # --- STEP 2: Middleware Iniezione Temporale (Punto 5) ---
+        # Inietta data/ora SOLO se la query ha riferimenti temporali
+        query_for_agent = inject_temporal_context(sanitized_query)
+
+        # --- STEP 3: Registra il turno e costruisci i messaggi ---
         turn_number = self._memory.add_user_message(sanitized_query)
 
-        # SmartConversationMemory.get_messages_for_agent applica i due stadi:
-        #   Stadio 1: filtraggio per similarità coseno (scarta turni irrilevanti)
-        #   Stadio 2: summarization con token budget (riassume turni vecchi se necessario)
-        # La query utente viene passata INTEGRA (direttiva anti-compressione
-        # rispettata: il RETRIEVAL_REMINDER viene aggiunto IN CODA, senza
-        # modificare la query originale).
-        messages = self._memory.get_messages_for_agent(sanitized_query)
+        messages = self._memory.get_messages_for_agent(query_for_agent)
 
         print(f"MESSAGGIO DALLA MEMORIA: {messages}")
 
@@ -166,7 +189,7 @@ class RAGAgent:
 
             print(f"TESTO DI RISPOSTA AGENTE AL TURNO {turn_number}: {response_text}")
 
-            # Retry se nessun tool invocato (invariato)
+            # Retry se nessun tool invocato
             trace = obs_handler.get_trace()
             if (len(trace.tools_invoked) == 0
                     and not self._is_meta_query(sanitized_query)
@@ -226,15 +249,14 @@ class RAGAgent:
         # --- STEP 6: Aggiorna handler e memoria ---
         obs_handler.set_final_output(validated_response)
 
-        # SmartConversationMemory.add_assistant_message completa il turno e
-        # calcola l'embedding del turno (user + assistant) per il filtraggio
-        # per similarità coseno dei turni futuri.
+        # La memoria salva la query ORIGINALE (senza contesto temporale)
+        # per non inquinare lo storico con metadati di sistema
         self._memory.add_assistant_message(validated_response)
 
         trace_dict = obs_handler.get_trace_dict()
         self._traces.append(trace_dict)
 
-        # --- STEP 7: Salva il log dell'interazione (1 file unico) ---
+        # --- STEP 7: Salva il log dell'interazione ---
         self._save_interaction_log(
             turn_number=turn_number,
             user_query=sanitized_query,
@@ -260,9 +282,7 @@ class RAGAgent:
         obs_handler: RAGObservabilityHandler,
         final_response: str,
     ) -> None:
-        """
-        Raccoglie i dati e salva un unico file di log per l'interazione.
-        """
+        """Raccoglie i dati e salva un unico file di log per l'interazione."""
         try:
             system_prompt = obs_handler.get_system_prompt()
             history_str = self._memory.get_history_summary()
@@ -300,7 +320,7 @@ class RAGAgent:
         return self._traces
 
     def reset_memory(self) -> None:
-        """Resetta la memoria conversazionale (SmartConversationMemory)."""
+        """Resetta la memoria conversazionale."""
         self._memory.clear()
         self._traces.clear()
         logger.info("Sessione agente resettata")
@@ -343,23 +363,7 @@ class RAGAgent:
 # ============================================================
 
 class RAGAgentFactory:
-    """
-    Factory per la costruzione dell'agente RAG completo.
-
-    REFACTORING:
-      - Import CORRETTO: create_agent da langchain.agents (LangChain v1)
-      - DIVIETO rispettato: NO create_tool_calling_agent, NO AgentExecutor,
-        NO langgraph (import diretto), NO create_react_agent (deprecato)
-
-    AGGIORNAMENTO — SmartConversationMemory:
-      La Factory ora istanzia la SmartConversationMemory passandole:
-        - llm_for_summary: il ChatModel usato anche dall'agente (o un modello
-          dedicato), necessario per la summarization dei turni (Stadio 2).
-        - embedding_model: HuggingFaceEmbeddings per il calcolo della
-          similarità coseno tra la query corrente e i turni memorizzati
-          (Stadio 1 — filtraggio per similarità).
-      Questi vengono passati a create_conversation_memory().
-    """
+    """Factory per la costruzione dell'agente RAG completo."""
 
     @staticmethod
     def create(
@@ -381,20 +385,13 @@ class RAGAgentFactory:
         logger.info(f"   ✅ ChatModel: {settings.llm.model_name}")
 
         # --- 2. Inietta il RetrievalEngine nei tools ---
-        # I tool aggiornati hanno descrizioni XML con direttiva anti-compressione
-        # e segnali di fallback espliciti per guidare l'agente verso tool alternativi.
         set_retrieval_engine(retrieval_engine)
         tools = get_all_tools()
-        logger.info(f"   ✅ Tools registrati (con descrizioni XML e fallback): {[t.name for t in tools]}")
+        logger.info(f"   ✅ Tools registrati: {[t.name for t in tools]}")
 
-        # --- 3. System Prompt XML ---
-        # Il system prompt è in formato XML con sezioni:
-        #   <query_passthrough> — direttiva anti-compressione
-        #   <tool_usage>        — regole di routing esplicite
-        #   <fallback_strategy> — strategia di fallback obbligatoria
-        #   <lingua>            — enforcement lingua italiana
+        # --- 3. System Prompt (snellito per 7B, senza data/ora) ---
         system_prompt = get_agent_system_prompt()
-        logger.info("   ✅ System prompt XML caricato (anti-compressione, routing, fallback)")
+        logger.info("   ✅ System prompt caricato (v2, ottimizzato 7B)")
 
         # --- 4. Guardrails ---
         scope_guardrail = None
@@ -410,52 +407,19 @@ class RAGAgentFactory:
         )
         logger.info("   ✅ OutputValidator attivato")
 
-        # --- 5. SmartConversationMemory (ALLINEAMENTO) ---
-        # Inizializzazione della nuova SmartConversationMemory a due stadi:
-        #   Stadio 1 — Filtraggio per similarità coseno:
-        #     Usa l'embedding_model (HuggingFaceEmbeddings) per calcolare
-        #     la similarità tra la query corrente e i turni memorizzati.
-        #     I turni sotto soglia (default 0.3) vengono scartati.
-        #   Stadio 2 — Summarization con token budget:
-        #     Usa il chat_model come LLM per la ConversationSummaryBufferMemory
-        #     di LangChain, che riassume i turni più vecchi quando il totale
-        #     supera max_token_limit.
-        #
-        # Se embedding_model non è fornito esternamente, create_conversation_memory
-        # ne crea uno internamente dalle settings (modello di embedding configurato).
+        # --- 5. SmartConversationMemory ---
         memory = create_conversation_memory(
             max_turns=max_memory_turns,
             llm_for_summary=chat_model,
             embedding_model=embedding_model,
         )
-        logger.info(
-            f"   ✅ SmartConversationMemory: max_turns={max_memory_turns}, "
-            f"llm_for_summary={settings.llm.model_name}, "
-            f"embedding_model={'fornito esternamente' if embedding_model else 'creato da settings'}"
-        )
+        logger.info(f"   ✅ SmartConversationMemory: max_turns={max_memory_turns}")
 
         # --- 6. Interaction Logger ---
         interaction_logger = create_interaction_log_handler(log_output_dir)
         logger.info(f"   ✅ InteractionLogHandler: {log_output_dir}")
 
-        # --- 7. Assembla l'agente con create_agent (LangChain v1) ---
-        # VINCOLO ASSOLUTO: usare ESCLUSIVAMENTE create_agent
-        # da langchain.agents (LangChain v1).
-        # DIVIETO: create_tool_calling_agent, AgentExecutor, langgraph
-        # diretto, create_react_agent (deprecato in LangChain v1).
-        #
-        # create_agent restituisce un CompiledStateGraph che gestisce
-        # il loop ReAct internamente:
-        #   input → LLM → tool call → osservazione → LLM → ... → risposta
-        #
-        # Accetta {"messages": [...]} e restituisce {"messages": [...]}.
-        # Il system_prompt (SystemMessage XML con anti-compressione, routing
-        # e fallback) viene iniettato automaticamente come SystemMessage
-        # all'inizio della lista messaggi ad ogni chiamata al modello.
-        #
-        # I tool bindati hanno descrizioni XML con:
-        #   - Direttiva anti-compressione: "Passa la query INTEGRA"
-        #   - Segnali di fallback: indicano quale tool alternativo provare
+        # --- 7. Assembla l'agente ---
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
@@ -463,7 +427,7 @@ class RAGAgentFactory:
             tools=tools,
             system_prompt=system_prompt,
         )
-        logger.info("   ✅ create_agent() — grafo agente compilato con prompt XML e tool aggiornati")
+        logger.info("   ✅ create_agent() — grafo agente compilato")
 
         # --- 8. Wrappa nel Facade ---
         agent = RAGAgent(
@@ -478,9 +442,10 @@ class RAGAgentFactory:
 
         logger.info("=" * 60)
         logger.info("🚀 Agente RAG DIEM assemblato e pronto!")
-        logger.info("   📋 Prompt: XML (anti-compressione + routing + fallback)")
-        logger.info("   🧠 Memoria: SmartConversationMemory (similarità + summarization)")
-        logger.info("   🔧 Tools: 4 tool con descrizioni XML e fallback espliciti")
+        logger.info("   📋 Prompt: v2 (ottimizzato 7B, no data statica)")
+        logger.info("   ⏰ Temporale: middleware dinamico")
+        logger.info("   🧠 Memoria: SmartConversationMemory")
+        logger.info("   🔧 Tools: 4 tool con routing syllabus fix")
         logger.info("=" * 60)
 
         return agent

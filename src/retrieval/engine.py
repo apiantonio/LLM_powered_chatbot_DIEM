@@ -1,22 +1,22 @@
 """
 retrieval/engine.py — RetrievalEngine RIVISTO per 3 Vector Store.
 
-REFACTORING secondo audit_fattibilita_metadati.md:
-  - Aggiornato per 3 collection: PERSONE, OFFERTA_FORMATIVA, DIPARTIMENTO
-  - QueryOptimizer: REWRITE PROMPT completamente riscritto per:
-    * Conservazione entità (nomi docenti, insegnamenti, corsi di laurea)
-    * Anti-generalizzazione (NON sostituire concetti specifici con generici)
-    * Anti-compressione (la query riscritta deve essere >= l'originale)
-  - MULTI_QUERY PROMPT: riscritto con regole ferree di conservazione entità
-  - CrossEncoderReranker invariato
-  - RetrievalEngine aggiornato per i nuovi nomi collection
+REFACTORING v2:
+  - QueryOptimizer.rewrite(): prompt RISCRITTO DA ZERO.
+    * Unico compito: risolvere coreferenze (pronomi → nomi propri dalla history)
+    * ZERO logiche hardcoded (if/else per pronomi ELIMINATI)
+    * NON risponde alla domanda, NON aggiunge info dalla risposta precedente
+    * Se non ci sono riferimenti da svelare, mantiene la query identica
+  - MULTI_QUERY_PROMPT: semplificato, stesse regole di conservazione entità
+  - Iniezione temporale dinamica: middleware pre-agente (vedi agent.py)
+  - CrossEncoderReranker: invariato
+  - RetrievalEngine: invariato
 
 FLUSSO:
   rewrite → expand (multiquery) → retrieval parallelo → merge → rerank
 """
 
 import logging
-from datetime import datetime
 from typing import List, Optional, Set
 
 from langchain_core.documents import Document
@@ -31,188 +31,60 @@ logger = logging.getLogger(__name__)
 
 class QueryOptimizer:
     """
-    Pre-Retrieval: Domain-Aware Query Rewriting + Multiquery Expansion.
+    Pre-Retrieval: Query Rewriting minimale + Multiquery Expansion.
 
-    Due fasi:
-      1. rewrite(): Riscrive la query con espansione di dominio e,
-         SOLO se la domanda è correlata alla history, integra il contesto
-         conversazionale per risolvere coreferenze anaforiche.
-      2. expand(): Genera 3 varianti semantiche della query riscritta.
+    REWRITE (v2 — riscritto da zero):
+      Unico compito: prendere la query dell'utente e sostituire pronomi
+      o riferimenti impliciti con i nomi propri estratti dalla history.
+      NON rispondere alla domanda.
+      NON aggiungere informazioni dalla risposta precedente.
+      Se non ci sono riferimenti da svelare, restituire la query IDENTICA.
 
-    FIX CRITICO APPLICATO:
-      - REWRITE PROMPT riscritto con regole ferree:
-        * Regola 1: NON generalizzare (se chiedi "orario di ricevimento",
-          la query riscritta DEVE contenere "orario di ricevimento")
-        * Regola 2: Conservazione entità (nomi docenti, insegnamenti,
-          corsi di laurea INTEGRI nella query riscritta)
-        * Anti-compressione: la query riscritta DEVE essere >= originale
-      - MULTI_QUERY PROMPT riscritto con le stesse regole
+    EXPAND:
+      Genera 3 varianti semantiche preservando entità e intento.
     """
 
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         """<role>
-## Identità
-Sei un ottimizzatore di query per un sistema di ricerca semantica 
-del Dipartimento DIEM dell'Università degli Studi di Salerno.
-</role>
+         """Sei un risolutore di coreferenze. Il tuo UNICO compito:
 
-<temporal_context>
-Data e ora correnti: {current_datetime}
-</temporal_context>
+REGOLE:
+1. Se la query contiene pronomi o riferimenti impliciti (lui, lei, questo corso, quali corsi insegna, ecc.) che si riferiscono a entità nominate nella history, SOSTITUISCI quei pronomi con i nomi propri corrispondenti.
+2. Se la query è autosufficiente (non ha pronomi da risolvere), restituiscila IDENTICA.
+3. NON rispondere MAI alla domanda.
+4. NON aggiungere MAI informazioni prese dalle risposte precedenti.
+5. NON espandere, arricchire o riformulare la query oltre la sostituzione dei pronomi.
+6. Output: SOLO la query risultante, nient'altro.
 
-<task>
-## Compito
-Il tuo compito è RISCRIVERE la domanda dell'utente in una query ottimizzata 
-per la ricerca in un database vettoriale.
-</task>
+ESEMPI:
+- History: "Chi è X?" / Query: "Quali corsi insegna?"
+  → "Quali corsi insegna X?"
 
-<step_a>
-## STEP A — VALUTAZIONE DELLA RILEVANZA DELLA HISTORY
+- History: "Parlami di Ingegneria Informatica" / Query: "Quali sono i requisiti?"
+  → "Quali sono i requisiti di Ingegneria Informatica?"
 
-Prima di tutto, analizza la CRONOLOGIA della conversazione (se presente) 
-e la DOMANDA CORRENTE dell'utente. Determina se la domanda corrente è 
-semanticamente correlata alla cronologia:
+- History: "Chi è X?" / Query: "Dove si trova l'aula Y?"
+  → "Dove si trova l'aula Y?"
+  (Nessun pronome da risolvere, query restituita identica)
 
-### CORRELATA:
-La domanda corrente fa riferimento (anche implicito) a entità, persone, 
-corsi, aule, argomenti menzionati nella cronologia.
-Esempi: "e dove insegna?" (dopo aver parlato di un docente), 
-"quali sono i prerequisiti?" (dopo aver parlato di un corso).
-
-### NON CORRELATA:
-La domanda corrente introduce un argomento completamente nuovo, senza 
-alcun legame con la cronologia.
-Esempi: si parlava di "Angelo Marcelli" e ora si chiede "Dove si trova 
-l'aula 126?". L'aula 126 NON ha relazione con Marcelli.
-
-### Azione:
-- SE CORRELATA → Integra le informazioni dalla history per risolvere 
-  pronomi, riferimenti impliciti e coreferenze anaforiche.
-- SE NON CORRELATA → IGNORA COMPLETAMENTE la history.
-</step_a>
-
-<step_b>
-## STEP B — RISCRITTURA DELLA QUERY
-
-### REGOLA 1 — NON GENERALIZZARE MAI:
-Se l'utente chiede un concetto SPECIFICO, la query riscritta DEVE 
-contenere quello STESSO concetto specifico. 
-- "orari di ricevimento" NON deve diventare "informazioni su" o "Chi è?"
-- "programma di Analisi Matematica 1" NON deve diventare "insegnamenti di"
-- "tesi di laurea" NON deve diventare "informazioni accademiche"
-
-### REGOLA 2 — CONSERVAZIONE ENTITÀ (INVIOLABILE):
-Le seguenti entità DEVONO essere mantenute INTEGRE e LETTERALI nella 
-query riscritta:
-- **Nomi di docenti**: "Nicola Capuano" deve restare "Nicola Capuano"
-- **Nomi di insegnamenti**: "Analisi Matematica 1" deve restare "Analisi Matematica 1"
-- **Nomi di corsi di laurea**: "Ingegneria Informatica" deve restare "Ingegneria Informatica"
-- **Nomi di strutture**: "aula 126", "Laboratorio ICAR"
-
-### REGOLA 3 — ESPANSIONE, MAI COMPRESSIONE:
-La query riscritta DEVE essere una frase completa e discorsiva, 
-PIÙ specifica e dettagliata dell'originale.
-NON ridurre MAI a semplici keyword o frammenti.
-Se la query originale è già specifica, mantienila e aggiungi SOLO 
-contesto di dominio.
-
-### REGOLA 4 — CONTESTO DI DOMINIO:
-Aggiungi "dipartimento DIEM" o "Università di Salerno" se non già presenti.
-
-### REGOLA 5 — QUERY SU PERSONE:
-Quando si chiede CHI È una persona:
-→ Espandi verso: curriculum, qualifica accademica, ruolo, contatti, ricevimento.
-Ma MANTIENI il concetto originale della domanda.
-
-### REGOLA 6 — QUERY SU STRUTTURE FISICHE:
-Quando si chiede DOVE SI TROVA un'aula, laboratorio o sede:
-→ Espandi verso: ubicazione, edificio, piano, campus di Fisciano.
-
-### REGOLA 7 — RISOLUZIONE TEMPORALE:
-Se la domanda contiene riferimenti temporali relativi, risolvili con 
-la data corrente.
-</step_b>
-
-<examples>
-## ESEMPI DI RISCRITTURA CORRETTA E SBAGLIATA:
-
-### Esempio 1:
-- Originale: "Quali sono gli orari di ricevimento di Nicola Capuano?"
-- CORRETTA: "Orari di ricevimento del docente Nicola Capuano al dipartimento DIEM dell'Università di Salerno"
-- SBAGLIATA: "Chi è Nicola Capuano?" ← VIETATO! Concetto "orari di ricevimento" perso!
-
-### Esempio 2:
-- Originale: "Parlami della didattica di Analisi Matematica 1 di Vittorio Zampoli"
-- CORRETTA: "Informazioni sulla didattica dell'insegnamento Analisi Matematica 1 tenuto dal docente Vittorio Zampoli al DIEM UniSA"
-- SBAGLIATA: "Insegnamenti di Vittorio Zampoli" ← VIETATO! Nome insegnamento perso!
-
-### Esempio 3:
-- Originale: "Chi insegna Machine Learning a Ingegneria Informatica?"
-- CORRETTA: "Docente che insegna l'insegnamento Machine Learning nel corso di Ingegneria Informatica al DIEM UniSA"
-- SBAGLIATA: "Machine Learning Ingegneria Informatica" ← VIETATO! Ridotto a keyword!
-</examples>
-
-<output>
-## Output
-Rispondi con SOLO la query riscritta. Una frase completa e discorsiva. 
-Nient'altro.
-</output>"""),
+- Query senza history: "Quali laboratori ha il DIEM?"
+  → "Quali laboratori ha il DIEM?"
+  (Nessuna history, query restituita identica)"""),
         ("placeholder", "{history}"),
         ("human", "{question}"),
     ])
 
     MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         """<role>
-## Identità
-Sei un esperto di ricerca semantica specializzato nel dominio 
-dell'Università degli Studi di Salerno (DIEM).
-</role>
+         """Genera ESATTAMENTE 3 varianti della domanda fornita per la ricerca semantica.
 
-<task>
-## Compito
-Genera ESATTAMENTE 3 varianti semantiche della domanda fornita.
-</task>
+REGOLE:
+1. Ogni variante DEVE contenere TUTTI i nomi propri della domanda originale.
+2. Ogni variante DEVE mantenere lo STESSO intento (se chiede "ricevimento", tutte chiedono "ricevimento").
+3. Varia vocabolario e struttura, ma conserva entità e intento.
+4. Frasi complete, MAI keyword isolate.
 
-<rules>
-## Regole INVIOLABILI per le varianti:
-
-### Regola 1 — CONSERVAZIONE ENTITÀ:
-Ogni variante DEVE contenere TUTTI i nomi propri presenti nella 
-domanda originale (nomi di docenti, insegnamenti, corsi di laurea, 
-strutture). NESSUNA entità può essere omessa o sostituita.
-
-### Regola 2 — CONSERVAZIONE INTENTO:
-Se la domanda chiede "orari di ricevimento", TUTTE le varianti devono 
-riguardare "orari di ricevimento" (o sinonimi diretti come "disponibilità 
-in ufficio", "quando riceve"). NON generalizzare a "informazioni su" o 
-"Chi è?".
-
-### Regola 3 — VARIAZIONE CONTROLLATA:
-Varia il vocabolario e la struttura, ma PRESERVA intento e entità.
-Alterna tra domande dirette e formulazioni descrittive.
-
-### Regola 4 — FRASI COMPLETE:
-Ogni variante deve essere una frase completa. MAI ridurre a keyword.
-
-### Regola 5 — CONTESTO UNIVERSITARIO:
-Mantieni riferimento a DIEM/UniSA in almeno 2 varianti su 3.
-</rules>
-
-<examples>
-## Esempio:
-- Domanda: "Quali sono gli orari di ricevimento di Nicola Capuano?"
-- Variante 1: "Quando riceve il docente Nicola Capuano del DIEM?"
-- Variante 2: "Disponibilità e orari di ricevimento del prof. Nicola Capuano all'Università di Salerno"
-- Variante 3: "Orario di ricevimento studenti del professore Capuano al dipartimento DIEM UniSA"
-- SBAGLIATA: "Chi è Nicola Capuano?" ← VIETATO! Intento completamente diverso!
-</examples>
-
-<output>
-## Formato Output
-Restituisci SOLO le 3 varianti, una per riga, senza numerazione.
-</output>"""),
+Output: 3 varianti, una per riga, senza numerazione."""),
         ("human", "{question}"),
     ])
 
@@ -225,73 +97,60 @@ Restituisci SOLO le 3 varianti, una per riga, senza numerazione.
             lambda msg: [q.strip() for q in msg.content.strip().split("\n") if q.strip()]
         )
 
-    @staticmethod
-    def _get_current_datetime_str() -> str:
-        now = datetime.now()
-        giorni = ["lunedì", "martedì", "mercoledì", "giovedì",
-                  "venerdì", "sabato", "domenica"]
-        mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-                "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
-        return (
-            f"{giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {now.year}, "
-            f"ore {now.strftime('%H:%M')}"
-        )
-
     def rewrite(self, question: str, history: Optional[list] = None) -> str:
         """
-        Riscrivi la query con valutazione della rilevanza della history.
+        Riscrivi la query risolvendo SOLO coreferenze.
 
-        FIX: Validazione post-rewriting per garantire che le entità
-        principali (nomi propri) siano preservate nella query riscritta.
+        Se non c'è history o non ci sono pronomi da risolvere,
+        restituisce la query originale.
         """
+        # Se non c'è history, non c'è nulla da risolvere
+        if not history or len(history) == 0:
+            logger.info(f"Nessuna history, query invariata: '{question}'")
+            return question
+
         try:
             result = self._rewrite_chain.invoke({
                 "question": question,
-                "history": history or [],
-                "current_datetime": self._get_current_datetime_str(),
+                "history": history,
             })
 
-            # FIX: Validazione anti-compressione
-            if len(result) < len(question) * 0.5:
+            # Sanity check: il modello potrebbe aver generato una risposta
+            # invece di una query. Segnali di allucinazione:
+            if any(marker in result for marker in [
+                "**", "1.", "2.", "3.", "Ecco", "In base", "Basandomi",
+                "La risposta", "Il docente", "Il corso",
+            ]):
                 logger.warning(
-                    f"Query rewriting sospetto (compressione): "
-                    f"'{question}' → '{result}'. Uso l'originale."
+                    f"Rewriting ha prodotto una risposta invece di una query. "
+                    f"Originale: '{question}' → Riscritta: '{result[:100]}...'. "
+                    f"Uso l'originale."
                 )
                 return question
 
-            if not result.strip():
-                logger.warning("Query rewriting ha prodotto stringa vuota.")
+            # Se il risultato è troppo lungo rispetto all'originale (>3x),
+            # probabilmente il modello ha risposto alla domanda
+            if len(result) > len(question) * 3:
+                logger.warning(
+                    f"Rewriting troppo lungo ({len(result)} vs {len(question)} chars). "
+                    f"Uso l'originale."
+                )
                 return question
 
-            # FIX: Validazione conservazione entità
-            # Estrae nomi propri dalla query originale (parole con maiuscola
-            # che non sono a inizio frase) e verifica che siano nella riscritta
-            original_words = set(question.split())
-            # Cerca parole con lettera maiuscola (potenziali nomi propri)
-            capitalized_words = {
-                w.strip("?.,!;:'\"()[]") for w in original_words
-                if w and w[0].isupper() and len(w) > 2
-                # Escludi parole a inizio frase (posizione 0) e articoli
-                and w.lower() not in {
-                    "chi", "cosa", "come", "dove", "quando", "quale", "quali",
-                    "parlami", "dimmi", "spiegami", "cercami", "trovami",
-                    "il", "la", "lo", "le", "gli", "un", "una", "del", "della",
-                    "dei", "delle", "nel", "nella", "sul", "sulla",
-                    "per", "con", "tra", "fra",
-                }
-            }
+            # Se il risultato è vuoto
+            if not result.strip():
+                logger.warning("Rewriting ha prodotto stringa vuota.")
+                return question
 
-            if capitalized_words:
+            # Validazione conservazione entità: i nomi propri della query
+            # originale devono essere presenti nella riscritta
+            original_entities = self._extract_proper_nouns(question)
+            if original_entities:
                 result_lower = result.lower()
-                missing_entities = [
-                    w for w in capitalized_words
-                    if w.lower() not in result_lower
-                ]
-                if missing_entities:
+                missing = [e for e in original_entities if e.lower() not in result_lower]
+                if missing:
                     logger.warning(
-                        f"Query rewriting ha perso entità: {missing_entities}. "
-                        f"Originale: '{question}' → Riscritta: '{result}'. "
-                        f"Uso l'originale."
+                        f"Rewriting ha perso entità: {missing}. Uso l'originale."
                     )
                     return question
 
@@ -321,6 +180,29 @@ Restituisci SOLO le 3 varianti, una per riga, senza numerazione.
             logger.warning(f"Errore multi-query expansion: {e}")
             return [question]
 
+    @staticmethod
+    def _extract_proper_nouns(text: str) -> list:
+        """
+        Estrae probabili nomi propri da un testo.
+        Cerca parole con maiuscola iniziale che non siano a inizio frase
+        o parole funzionali italiane.
+        """
+        skip_words = {
+            "chi", "cosa", "come", "dove", "quando", "quale", "quali",
+            "parlami", "dimmi", "spiegami", "cercami", "trovami",
+            "il", "la", "lo", "le", "gli", "un", "una", "del", "della",
+            "dei", "delle", "nel", "nella", "sul", "sulla",
+            "per", "con", "tra", "fra", "che", "non", "sono",
+            "qual", "quanto", "quanti", "quante",
+        }
+        words = text.split()
+        entities = []
+        for w in words:
+            clean = w.strip("?.,!;:'\"()[]")
+            if clean and clean[0].isupper() and len(clean) > 2 and clean.lower() not in skip_words:
+                entities.append(clean)
+        return entities
+
 
 # ============================================================
 # CROSS-ENCODER RERANKER
@@ -349,15 +231,12 @@ class CrossEncoderReranker:
         scores = self._model.predict(pairs)
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
 
-        # ------------------------------------------------------------------
-        # STAMPA DI TUTTI I CANDIDATI PRIMA DEI TAGLI (TOP_N/THRESHOLD)
-        # ------------------------------------------------------------------
-        print(f"\n--- CLASSIFICA COMPLETA ({len(ranked)} CANDIDATI) PRIMA DEL FILTRAGGIO ---")
+        # Stampa classifica per debug
+        print(f"\n--- CLASSIFICA COMPLETA ({len(ranked)} CANDIDATI) ---")
         for i, (doc, score) in enumerate(ranked):
             print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
             print(f"    Testo: {doc.page_content[:150]}...")
         print("-" * 65)
-        # ------------------------------------------------------------------
 
         result = []
         for doc, score in ranked[:top_n]:
