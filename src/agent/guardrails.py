@@ -435,11 +435,6 @@ class TopicalGuardrailMiddleware(AgentMiddleware):
             if re.match(pattern, query_clean):
                 return None
 
-        # Fast-path: keyword DIEM/universitarie presenti → IN_SCOPE
-        for pattern in self._in_scope_regex:
-            if pattern.search(last_msg):
-                return None
-
         # Layer 1: Pattern off-topic deterministico
         for pattern in self._off_topic_regex:
             if pattern.search(last_msg):
@@ -448,6 +443,11 @@ class TopicalGuardrailMiddleware(AgentMiddleware):
                     "messages": [AIMessage(content=SCOPE_REJECTION_MSG)],
                     "jump_to": "end",
                 }
+
+        # Fast-path: keyword DIEM/universitarie presenti → IN_SCOPE
+        for pattern in self._in_scope_regex:
+            if pattern.search(last_msg):
+                return None
 
         # Layer 2: Classificazione LLM (se configurata)
         if self._classifier_llm:

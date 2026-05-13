@@ -199,7 +199,7 @@ class GuardrailsConfig:
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
         "laboratori, servizi dipartimentali, dottorato di ricerca."
     )
-    max_agent_iterations: int = 10
+    max_agent_iterations: int = 50
     enable_pii_filter: bool = True
 
 
@@ -271,5 +271,8 @@ def load_settings() -> AppSettings:
         reranker=RerankerConfig(
             model_name = os.getenv("RERANKER_MOIDEL", "Qwen/Qwen3-Reranker-0.6B"),
             score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0"))
+        ),
+        guardrails=GuardrailsConfig(
+            max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", 50))
         )
     )
