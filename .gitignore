@@ -18,3 +18,4 @@ data/*
 /da_non_pushare
 *.zip
 __pycache__
+.env
