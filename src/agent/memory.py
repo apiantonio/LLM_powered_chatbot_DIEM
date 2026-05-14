@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 # Reminder compatto per 7B (meno token = meno confusione)
 _RETRIEVAL_REMINDER = (
-    "\n\n[SISTEMA: invoca un tool di ricerca. "
-    "Passa la query dell'utente INTEGRA al tool, senza abbreviarla.]"
+    "\n\n[SISTEMA: invoke a search tool. "
+    "Pass the user's query INTACT to the tool, without abbreviating it.]"
 )
 
 # Query che NON necessitano di retrieval
