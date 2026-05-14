@@ -210,7 +210,7 @@ def _format_results(documents) -> str:
 # ============================================================
 
 @tool("search_persone")
-def search_persone(query: str, sotto_area: Optional[str] = None) -> str:
+def search_persone(query: str, sotto_area: Optional[str] = None, nome_insegnamenti: Optional[str] = None, anno: Optional[str] = None) -> str:
     """Cerca informazioni su DOCENTI del DIEM: profilo, email, ricevimento, corsi insegnati, syllabus/insegnamenti, ricerca, attività internazionali.
 
 USA QUESTO TOOL per:
@@ -225,7 +225,10 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
 Args:
     query: Domanda COMPLETA dell'utente.
     sotto_area: Filtro opzionale: "profilo", "didattica", "ricerca", "internazionale", "risorse".
+    nome_insegnamenti: Parametro opzionale. Valorizza esplicitamente estraendo il nome dell'insegnamento/corso dalla query (es. "Machine Learning", "Algoritmi").
+    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
     """
+
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
         logger.warning(f"sotto_area non valido per PERSONE: '{sotto_area}'. Ignoro.")
         sotto_area = None
@@ -235,6 +238,12 @@ Args:
     metadata_filter = None
     if sotto_area:
         metadata_filter = {"sotto_area": sotto_area}
+    if nome_insegnamenti:
+        metadata_filter = {"nome_insegnamenti": nome_insegnamenti}
+    if anno:
+        metadata_filter = {"anno": anno}
+
+    metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
 
@@ -249,7 +258,7 @@ Args:
 # ============================================================
 
 @tool("search_offerta_formativa")
-def search_offerta_formativa(query: str) -> str:
+def search_offerta_formativa(query: str, anno: Optional[str] = None) -> str:
     """Cerca informazioni su CORSI DI LAUREA del DIEM: piani di studio, regolamenti, requisiti ammissione, CFU, OFA, tesi, statistiche.
 
 USA QUESTO TOOL per:
@@ -263,7 +272,15 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
 
 Args:
     query: Domanda COMPLETA dell'utente su corsi e offerta formativa.
+    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
     """
+
+    metadata_filter = {}
+    if anno:
+        metadata_filter = {"anno": anno}
+
+    metadata_filter = metadata_filter if metadata_filter else None
+
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
         "search_offerta_formativa"
@@ -275,7 +292,7 @@ Args:
 # ============================================================
 
 @tool("search_dipartimento")
-def search_dipartimento(query: str, sotto_area: Optional[str] = None) -> str:
+def search_dipartimento(query: str, sotto_area: Optional[str] = None, anno: Optional[str] = None) -> str:
     """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione.
 
 sotto_area ammessi: "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale", "terza_missione", "internazionale", "organizzazione", "generale".
@@ -285,7 +302,8 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
 
 Args:
     query: Domanda COMPLETA dell'utente.
-    sotto_area: Filtro opzionale (vedi sopra).
+    sotto_area: Filtro opzionale: "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale", "terza_missione", "internazionale", "organizzazione", "generale".
+    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
     """
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
         logger.warning(f"sotto_area non valido per DIPARTIMENTO: '{sotto_area}'. Ignoro.")
@@ -325,6 +343,10 @@ Args:
     metadata_filter = None
     if sotto_area:
         metadata_filter = {"sotto_area": sotto_area}
+    if anno:
+        metadata_filter = {"anno": anno}
+
+    metadata_filter = metadata_filter if metadata_filter else None
 
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO,

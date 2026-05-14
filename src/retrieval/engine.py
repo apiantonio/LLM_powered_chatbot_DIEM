@@ -354,8 +354,8 @@ class RetrievalEngine:
         final_docs = self._reranker.rerank(effective_query, all_candidates)
         return final_docs, effective_query, multi_queries
 
-    def retrieve_from_all(self, query: str) -> tuple:
-        """Retrieval cross-collection con multiquery."""
+    def retrieve_from_all(self, query: str, metadata_filter: Optional[dict] = None) -> tuple:
+        """Retrieval cross-collection con multiquery e filtro opzionale."""
         multi_queries = [query]
         if self._optimizer:
             multi_queries = self._optimizer.expand(query)
@@ -364,8 +364,14 @@ class RetrievalEngine:
         seen_hashes: Set[int] = set()
 
         for mq in multi_queries:
-            for collection_name, retriever in self._collection_retrievers.items():
+            for collection_name, default_retriever in self._collection_retrievers.items():
                 try:
+                    retriever = default_retriever
+                    if metadata_filter:
+                        filtered = self._get_filtered_retriever(collection_name, metadata_filter)
+                        if filtered:
+                            retriever = filtered
+                            
                     docs = retriever.invoke(mq)
                     for doc in docs:
                         h = hash(doc.page_content[:200])
@@ -376,14 +382,18 @@ class RetrievalEngine:
                     logger.warning(f"Errore retrieval da {collection_name}: {e}")
 
             try:
-                pc_docs = self._pc_retriever.invoke(mq)
-                for doc in pc_docs:
-                    h = hash(doc.page_content[:200])
-                    if h not in seen_hashes:
-                        seen_hashes.add(h)
-                        all_candidates.append(doc)
+                if not metadata_filter:
+                    pc_docs = self._pc_retriever.invoke(mq)
+                    for doc in pc_docs:
+                        h = hash(doc.page_content[:200])
+                        if h not in seen_hashes:
+                            seen_hashes.add(h)
+                            all_candidates.append(doc)
             except Exception as e:
                 logger.warning(f"Errore retrieval Parent-Child: {e}")
+
+        final_docs = self._reranker.rerank(query, all_candidates)
+        return final_docs, query
 
         final_docs = self._reranker.rerank(query, all_candidates)
         return final_docs, query
