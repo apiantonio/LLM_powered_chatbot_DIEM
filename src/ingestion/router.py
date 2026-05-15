@@ -17,12 +17,12 @@ BUG FIX APPLICATO:
   NON l'offerta formativa del corso.
 
 METADATI ESTRATTI (audit §6 — Schema Definitivo):
-  PERSONE: matricola, nome_docente, sotto_area, nomi_insegnamenti,
+  PERSONE: matricola, nome_docente, sotto_area, nomi_insegnamenti, laboratorio_nome,
            formato_sorgente, url_originale, anno
   OFFERTA_FORMATIVA: nome_corso, corso_slug, sotto_area,
                      formato_sorgente, url_originale, anno
   DIPARTIMENTO: sotto_area, tipo_bando, anno_bando, laboratorio_nome,
-                laboratorio_id, docenti_associati, formato_sorgente, url_originale
+                laboratorio_id, formato_sorgente, url_originale
 
 CHUNKING CONTEXT-AWARE (audit §5, risoluzione problema chunk orfani):
   Ogni chunk DEVE contenere nei metadati le informazioni identificative
@@ -233,18 +233,21 @@ def _extract_nome_docente_from_html(html_content: str) -> Optional[str]:
     return None
 
 
-def _extract_nome_corso_from_html(html_content: str) -> Optional[str]:
+def _extract_nome_corso_from_url(source_url: str) -> Optional[str]:
     """
-    Estrae il nome del corso dal tag <h1> dell'HTML — audit §6 OFFERTA.
-
-    Pattern: <h1>...<span>Nome Corso | </span>...
+    Estrae il nome del corso direttamente dall'URL.
+    Pattern: corsi.unisa.it/{nome_corso}/...
     """
     match = re.search(
-        r"<h1[^>]*>.*?<span[^>]*>([^<]+?)\s*\|\s*</span>",
-        html_content, re.DOTALL | re.IGNORECASE
+        r"corsi\.unisa\.it/([^/]+)", 
+        source_url, 
+        re.IGNORECASE
     )
     if match:
-        return match.group(1).strip()
+        nome_grezzo = match.group(1).strip()
+        if nome_grezzo.lower() != "uploads":
+            nome_pulito = nome_grezzo.replace("-", " ").title()
+            return nome_pulito
     return None
 
 
@@ -263,7 +266,7 @@ def _extract_nome_insegnamento_from_html(html_content: str) -> Optional[str]:
         nome = match.group(1).strip()
         # Filtra valori che sono sezioni, non insegnamenti
         sezioni_note = {"Home", "Curriculum", "Didattica", "Ricerca",
-                        "International", "Risorse"}
+                        "International", "Risorse", "Laboratori"}
         if nome not in sezioni_note:
             return nome
     return None
@@ -304,7 +307,6 @@ def _extract_laboratorio_info(html_content: str, source_url: str) -> dict:
 
     laboratorio_nome: dal secondo <span> dell'<h1>
     laboratorio_id: dal parametro ?id= nell'URL
-    docenti_associati: dalla tabella <h3>Membri</h3>
     """
     info = {}
 
@@ -320,21 +322,6 @@ def _extract_laboratorio_info(html_content: str, source_url: str) -> dict:
     )
     if nome_match:
         info["laboratorio_nome"] = nome_match.group(1).strip()
-
-    # docenti_associati dalla tabella Membri
-    membri_section = re.search(
-        r"<h3[^>]*>Membri</h3>(.*?)</table>",
-        html_content, re.DOTALL | re.IGNORECASE
-    )
-    if membri_section:
-        nomi = re.findall(
-            r"<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>",
-            membri_section.group(1)
-        )
-        if nomi:
-            info["docenti_associati"] = ", ".join(
-                f"{n.strip()} {c.strip()}" for n, c in nomi
-            )
 
     return info
 
@@ -563,27 +550,52 @@ class DocumentRouter:
         dei chunk orfani descritto nei report di chunking.
 
         Metadati estratti per collection:
-          PERSONE: nome_docente, nomi_insegnamenti
+          PERSONE: nome_docente, nomi_insegnamenti, laboratorio_nome
           OFFERTA: nome_corso
-          DIPARTIMENTO: tipo_bando, laboratorio_nome, laboratorio_id,
-                        docenti_associati
+          DIPARTIMENTO: tipo_bando, laboratorio_nome, laboratorio_id
         """
         content_meta = {}
 
         if collection == CollectionTarget.PERSONE:
-            # nome_docente: dal primo <span> dell'<h1> — audit §6
+            # nome_docente: dal primo <span> dell'<h1>
             nome = _extract_nome_docente_from_html(html_content)
             if nome:
                 content_meta["nome_docente"] = nome
 
-            # nomi_insegnamenti: dal secondo <span> nelle pagine didattica
-            insegnamento = _extract_nome_insegnamento_from_html(html_content)
-            if insegnamento:
-                content_meta["nomi_insegnamenti"] = insegnamento
+            # Estraiamo in modo neutro il valore presente nel secondo span
+            valore_estratto = _extract_nome_insegnamento_from_html(html_content)
+            
+            if valore_estratto:
+                url_lower = source_url.lower()
+                
+                # Caso 1: Laboratori (richiedono la presenza dell'ID)
+                if "/laboratori" in url_lower:
+                    if re.search(r"[?&]id=\d+", url_lower):
+                        content_meta["laboratorio_nome"] = valore_estratto
+                
+                # Caso 2: Altre sezioni di ricerca (NON richiedono l'ID)
+                elif "/spin-off" in url_lower:
+                    content_meta["spin_off"] = valore_estratto
+                
+                elif "/premi-ricerca" in url_lower:
+                    content_meta["premi_ricerca"] = valore_estratto
+                
+                elif "/brevetti" in url_lower:
+                    content_meta["brevetti"] = valore_estratto
+                
+                elif "/pubblicazioni" in url_lower:
+                    content_meta["pubblicazioni"] = valore_estratto
+                
+                elif "/progetti" in url_lower:
+                    content_meta["progetti"] = valore_estratto
+                
+                # Caso 3: Qualsiasi altra pagina (es. didattica)
+                else:
+                    content_meta["nomi_insegnamenti"] = valore_estratto
 
         elif collection == CollectionTarget.OFFERTA_FORMATIVA:
             # nome_corso: dal primo <span> dell'<h1> — audit §6
-            nome = _extract_nome_corso_from_html(html_content)
+            nome = _extract_nome_corso_from_url(source_url)
             if nome:
                 content_meta["nome_corso"] = nome
 

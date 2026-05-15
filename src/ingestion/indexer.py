@@ -182,29 +182,54 @@ class KnowledgeBaseIndexer:
         """
         parts = []
 
+        clean_metadata = {
+        k: v.lower() if isinstance(v, str) else v 
+        for k, v in content_metadata.items()
+        }
+
+        parts = []
+
         if collection == CollectionTarget.PERSONE:
-            if "nome_docente" in content_metadata:
-                parts.append(f"Docente: {content_metadata['nome_docente']}")
-            if "matricola" in content_metadata:
-                parts.append(f"Matricola: {content_metadata['matricola']}")
-            if "sotto_area" in content_metadata:
-                parts.append(f"Sezione: {content_metadata['sotto_area']}")
-            if "nomi_insegnamenti" in content_metadata:
-                parts.append(f"Insegnamento: {content_metadata['nomi_insegnamenti']}")
+            if "nome_docente" in clean_metadata:
+                parts.append(f"Docente: {clean_metadata['nome_docente']}")
+            if "matricola" in clean_metadata:
+                parts.append(f"Matricola: {clean_metadata['matricola']}")
+            if "sotto_area" in clean_metadata:
+                parts.append(f"Sezione: {clean_metadata['sotto_area']}")
+            if "laboratorio_nome" in clean_metadata:
+                parts.append(f"Laboratorio: {clean_metadata['laboratorio_nome']}")
+            if "spin_off" in clean_metadata:
+                parts.append(f"Spin-off: {clean_metadata['spin_off']}")
+            if "premi_ricerca" in clean_metadata:
+                parts.append(f"Premio: {clean_metadata['premi_ricerca']}")
+            if "brevetti" in clean_metadata:
+                parts.append(f"Brevetto: {clean_metadata['brevetti']}")
+            if "pubblicazioni" in clean_metadata:
+                parts.append(f"Pubblicazione: {clean_metadata['pubblicazioni']}")
+            if "progetti" in clean_metadata:
+                parts.append(f"Progetto: {clean_metadata['progetti']}")
+            if "nomi_insegnamenti" in clean_metadata:
+                parts.append(f"Insegnamento: {clean_metadata['nomi_insegnamenti']}") 
+            if "anno" in clean_metadata:
+                parts.append(f"Anno: {clean_metadata['anno']}")
 
         elif collection == CollectionTarget.OFFERTA_FORMATIVA:
-            if "nome_corso" in content_metadata:
-                parts.append(f"Corso di Laurea: {content_metadata['nome_corso']}")
-            if "sotto_area" in content_metadata:
-                parts.append(f"Sezione: {content_metadata['sotto_area']}")
+            if "nome_corso" in clean_metadata:
+                parts.append(f"Corso di Laurea: {clean_metadata['nome_corso']}")
+            if "sotto_area" in clean_metadata:
+                parts.append(f"Sezione: {clean_metadata['sotto_area']}")
+            if "anno" in clean_metadata:
+                parts.append(f"Anno: {clean_metadata['anno']}")
 
         elif collection == CollectionTarget.DIPARTIMENTO:
-            if "laboratorio_nome" in content_metadata:
-                parts.append(f"Laboratorio: {content_metadata['laboratorio_nome']}")
-            if "tipo_bando" in content_metadata:
-                parts.append(f"Tipo bando: {content_metadata['tipo_bando']}")
-            if "sotto_area" in content_metadata:
-                parts.append(f"Area: {content_metadata['sotto_area']}")
+            if "laboratorio_nome" in clean_metadata:
+                parts.append(f"Laboratorio: {clean_metadata['laboratorio_nome']}")
+            if "tipo_bando" in clean_metadata:
+                parts.append(f"Tipo bando: {clean_metadata['tipo_bando']}")
+            if "sotto_area" in clean_metadata:
+                parts.append(f"Sezione: {clean_metadata['sotto_area']}")
+            if "anno_bando" in clean_metadata:
+                parts.append(f"Anno: {clean_metadata["anno_bando"]}")
 
         if not parts:
             return ""
