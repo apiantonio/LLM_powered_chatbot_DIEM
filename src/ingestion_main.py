@@ -188,7 +188,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     if not skip_crawl:
         logger.info("\n[STEP 1/4] Avvio crawling siti DIEM...")
         try:
-            from ingestion.scrapers import UnisaCrawler
+            from src.transform.scrapers import UnisaCrawler
 
             html_rules = _load_html_cleaning_rules(settings)
             pdf_rules = _load_pdf_filter_rules(settings)

@@ -7,7 +7,7 @@ Uso:
 """
 
 from pathlib import Path
-from ingestion.scrapers import UnisaCrawler
+from src.transform.scrapers import UnisaCrawler
 from transform.factory.cleaner_factory import RuleFactory
 from transform.factory.pdf_factory import PdfRuleFactory
 from config.settings import load_settings
