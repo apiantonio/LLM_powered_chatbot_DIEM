@@ -67,18 +67,16 @@ class ProgettiUrlClassifier:
         # Copre: ruolo=tutti&tip=9, ruolo=componente, stato=..., progetto=..., ecc.
         return "discard"
 
-
 class PubblicazioniUrlClassifier:
     """
     Classificatore URL per la sezione ricerca/pubblicazioni (Req 2).
 
     Logica:
-      - "save":    URL con anno=0 → salvare (con filtraggio DOM successivo)
-      - "discard": URL con qualsiasi altro anno=YYYY → scartare completamente
-      - "pass":    URL non appartenente a ricerca/pubblicazioni
+      - "save":     URL con anno=0 → salvare.
+      - "navigate": pagina base senza parametri anno → esplorare per i link, NON salvare.
+      - "discard":  URL con qualsiasi altro anno=YYYY → scartare completamente.
+      - "pass":     URL non appartenente a ricerca/pubblicazioni.
     """
-
-    _anno_pattern = re.compile(r'anno=(\d+)', re.IGNORECASE)
 
     def classify(self, url: str) -> str:
         url_lower = url.lower()
@@ -86,15 +84,27 @@ class PubblicazioniUrlClassifier:
         if "docenti.unisa.it/" not in url_lower or "/ricerca/pubblicazioni" not in url_lower:
             return "pass"
 
-        # anno=0 → SALVARE (il filtraggio DOM avviene separatamente)
-        if "anno=0" in url_lower:
+        parsed = urlparse(url)
+        path = parsed.path.rstrip("/")
+
+        # Verifica che il path termini esattamente con /pubblicazioni
+        if not path.lower().endswith("/ricerca/pubblicazioni"):
+            return "pass"
+
+        query_params = parse_qs(parsed.query, keep_blank_values=True)
+
+        # 1. Nessun parametro -> Pagina base -> NAVIGATE (necessario per trovare anno=0)
+        if not query_params:
+            return "navigate"
+
+        # 2. anno=0 -> SALVARE
+        if query_params.get("anno") == ["0"]:
             return "save"
 
-        # Qualsiasi altro anno=YYYY → SCARTARE
-        if self._anno_pattern.search(url):
+        # 3. Qualsiasi altro parametro anno (es. anno=2019) -> SCARTARE
+        if "anno" in query_params:
             return "discard"
 
-        # Pagina base senza parametro anno → pass (gestita da altre regole)
         return "pass"
 
 

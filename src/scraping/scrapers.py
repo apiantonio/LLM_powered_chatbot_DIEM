@@ -44,7 +44,6 @@ from scraping.rules.docenti_url_rules import (
     InternationalUrlClassifier,
     InternationalSubpagesUrlClassifier,
 )
-from scraping.rules.html_content_rules import PublicationsHtmlFilter
 from config.settings import CrawlerConfig, IngestionConfig
 from scraping.rules.corsi_url_rules import CorsiUrlClassifier
 
@@ -83,16 +82,17 @@ class UnisaCrawler:
         "corsi.unisa.it"
     }
 
-    ALLOWED_PREFIXES = (
-        "https://www.diem.unisa.it",
-        "https://corsi.unisa.it/ingegneria-informatica",
-        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
-        "https://corsi.unisa.it/ingegneria-informatica-magistrale",
-        "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
-        "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
-        "https://corsi.unisa.it/ingegneria-dell-informazione",
-        "https://corsi.unisa.it/photovoltaics"
-    )
+    ALLOWED_PREFIXES = [
+        "https://docenti.unisa.it/001366/didattica"
+        # "https://www.diem.unisa.it",
+        # "https://corsi.unisa.it/ingegneria-informatica",
+        # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
+        # "https://corsi.unisa.it/ingegneria-informatica-magistrale",
+        # "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
+        # "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
+        # "https://corsi.unisa.it/ingegneria-dell-informazione",
+        # "https://corsi.unisa.it/photovoltaics"
+    ]
 
     IGNORED_EXTENSIONS = (
         '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
@@ -143,10 +143,6 @@ class UnisaCrawler:
 
         self._corsi_classifier = CorsiUrlClassifier()
 
-        # --- Filtro contenuto HTML pubblicazioni (da transform/rules/) ---
-        self._publications_filter = PublicationsHtmlFilter(
-            cutoff_year=self._ingestion_cfg.cutoff_year
-        )
 
         # --- Stato ---
         self.visited_urls: Set[str] = set()
@@ -289,7 +285,7 @@ class UnisaCrawler:
         
         if self._international_subpages_classifier.classify(url) == "discard":
             return False
-
+        
         return True
 
     # ==========================================
@@ -407,9 +403,10 @@ class UnisaCrawler:
     # ==========================================
     def _postprocess_didattica_cleanup(self) -> int:
         """
-        Eliminazione gerarchica della didattica:
-        1. Elimina il Padre (id+cId) se esiste almeno un Figlio (id+cId+pId).
-        2. Elimina il Nonno (solo id) se esiste almeno un Padre/Figlio (id+cId).
+        Eliminazione gerarchica della didattica (Versione Corretta):
+        1. Se esiste almeno un cId -> Elimina il Nonno (solo id).
+        2. A parità di id -> Mantieni SOLO i file del cId più alto (elimina versioni vecchie).
+        3. Se per il cId più alto esiste almeno un Figlio (con pId) -> Elimina TUTTI i padri (senza pId).
         """
         deleted_count = 0
         output_path = Path(self.output_dir)
@@ -417,54 +414,64 @@ class UnisaCrawler:
         # Regex per estrarre id e cId in modo sicuro
         pattern_extract = re.compile(r'id=(\d+)(?:.*?cid=([a-zA-Z0-9\-]+))?', re.IGNORECASE)
         
-        # Mappe per tracciare le parentele presenti su disco
-        ids_con_almeno_un_cid = set()      # IDs che hanno almeno un file con cId
-        id_cid_con_almeno_un_pid = set()   # Coppie (id, cId) che hanno almeno un file con pId
+        # Mappe per tracciare la struttura su disco
+        ids_con_almeno_un_cid = set()
+        id_cid_con_almeno_un_pid = set()
+        max_cid_per_id = {}
 
-        # --- FASE 1: Scansione del disco per mappare la gerarchia ---
+        def cid_score(cid_str: str):
+            """Confronto numerico per cId (es. '10001-2025' -> [10001, 2025])"""
+            if not cid_str: return []
+            return [int(n) for n in re.findall(r'\d+', cid_str)]
+
+        # --- FASE 1: Mappatura completa del disco ---
         for saved_file in output_path.glob("*.html"):
             filename_lower = saved_file.name.lower()
-            
             if "-didattica-" in filename_lower and "id=" in filename_lower:
                 match = pattern_extract.search(filename_lower)
                 if match:
-                    current_id = match.group(1)
-                    current_cid = match.group(2)
+                    curr_id, curr_cid = match.group(1), match.group(2)
                     ha_pid = "pid=" in filename_lower
 
-                    # Se ha un cId, lo segnamo come figlio del "Nonno" (id)
-                    if current_cid:
-                        ids_con_almeno_un_cid.add(current_id)
+                    if curr_cid:
+                        ids_con_almeno_un_cid.add(curr_id)
+                        # Aggiorniamo il cId massimo per questo id
+                        best_cid = max_cid_per_id.get(curr_id)
+                        if not best_cid or cid_score(curr_cid) > cid_score(best_cid):
+                            max_cid_per_id[curr_id] = curr_cid
                         
-                        # Se ha anche un pId, lo segnamo come figlio del "Padre" (id+cId)
                         if ha_pid:
-                            id_cid_con_almeno_un_pid.add((current_id, current_cid))
+                            id_cid_con_almeno_un_pid.add((curr_id, curr_cid))
 
-        # --- FASE 2: Eliminazione mirata ---
+        # --- FASE 2: Eliminazione basata sulle tre regole ---
         for saved_file in output_path.glob("*.html"):
             filename_lower = saved_file.name.lower()
-            
             if "-didattica-" in filename_lower and "id=" in filename_lower:
                 match = pattern_extract.search(filename_lower)
                 if match:
-                    current_id = match.group(1)
-                    current_cid = match.group(2)
+                    curr_id, curr_cid = match.group(1), match.group(2)
                     ha_pid = "pid=" in filename_lower
-
+                    
                     should_delete = False
                     reason = ""
 
-                    # CASO A: Il file è un "Padre" (ha id e cId, ma NO pId)
-                    if current_cid and not ha_pid:
-                        if (current_id, current_cid) in id_cid_con_almeno_un_pid:
+                    # REGOLA 1: Eliminazione del Nonno (Solo id)
+                    if not curr_cid and not ha_pid:
+                        if curr_id in ids_con_almeno_un_cid:
                             should_delete = True
-                            reason = f"esistono figli con pId per id={current_id}, cId={current_cid}"
+                            reason = f"Esiste almeno un cId per id={curr_id}"
 
-                    # CASO B: Il file è un "Nonno" (ha solo id, NO cId, NO pId)
-                    elif not current_cid and not ha_pid:
-                        if current_id in ids_con_almeno_un_cid:
+                    # REGOLA 2: Eliminazione versioni cId obsolete
+                    elif curr_cid and curr_cid != max_cid_per_id.get(curr_id):
+                        should_delete = True
+                        reason = f"Esiste un cId maggiore ({max_cid_per_id[curr_id]})"
+
+                    # REGOLA 3: Eliminazione Padri se esistono Figli (per la versione max)
+                    elif curr_cid and not ha_pid:
+                        # Se questa versione ha dei figli, eliminiamo il padre
+                        if (curr_id, curr_cid) in id_cid_con_almeno_un_pid:
                             should_delete = True
-                            reason = f"esiste almeno un figlio con cId per id={current_id}"
+                            reason = f"Esistono figli con pId per questa versione (id={curr_id}, cId={curr_cid})"
 
                     if should_delete:
                         try:
@@ -472,12 +479,9 @@ class UnisaCrawler:
                             deleted_count += 1
                             logger.debug(f"  Cleanup Didattica: rimosso {saved_file.name} -> {reason}")
                         except OSError as e:
-                            logger.warning(f"  Errore eliminazione {saved_file.name}: {e}")
+                            logger.warning(f"  Impossibile eliminare {saved_file.name}: {e}")
 
-        logger.info(
-            f"Post-processing didattica completato: {deleted_count} file (padri/nonni) rimossi. "
-            f"Preservati solo i rami senza ulteriori sottopagine."
-        )
+        logger.info(f"Post-processing didattica: {deleted_count} file rimossi.")
         return deleted_count
     
     # ============================================================
@@ -551,39 +555,33 @@ class UnisaCrawler:
 
 
     def _decide_save(self, source_url: str, clean_html: str, doc, current_depth: int) -> str:
-        """
-        Determina l'azione da compiere: 'save', 'navigate' (estrai link/pdf ma non salvare) o 'discard'.
-        """
         if not clean_html:
             return "discard"
 
-        # --- NUOVA REGOLA: Piano di Studi (corsi.unisa.it) ---
-        if self._corsi_classifier.classify(source_url) == "navigate":
-            return "navigate"
-
-        # --- Regole esistenti (Progetti, Ricerca, International) ---
-        if self._progetti_classifier.classify(source_url) == "navigate": return "navigate"
+        # --- STEP 1: Filtri di Navigazione (Esplora link/PDF ma non salvare HTML) ---
+        # Aggiungiamo qui il controllo sulle pubblicazioni
+        if self._pubblicazioni_classifier.classify(source_url) == "navigate": return "navigate"
         if self._ricerca_base_classifier.classify(source_url) == "navigate": return "navigate"
         if self._international_classifier.classify(source_url) == "navigate": return "navigate"
         
-        # Check per sottopagine International (se implementato)
         if hasattr(self, '_international_subpages_classifier'):
-            if self._international_subpages_classifier.classify(source_url) == "navigate":
-                return "navigate"
+            if self._international_subpages_classifier.classify(source_url) == "navigate": return "navigate"
+        if hasattr(self, '_corsi_classifier'):
+            if self._corsi_classifier.classify(source_url) == "navigate": return "navigate"
 
-        # --- Regole di scarto (Discard) ---
-        if self._progetti_classifier.classify(source_url) == "discard": return "discard"
+        # --- STEP 2: Filtri di Scarto (Discard) ---
+        if self._pubblicazioni_classifier.classify(source_url) == "discard": return "discard"
         
+        # Filtro inline (404, pagine vuote, ecc.)
         should_discard, reason = self._should_discard_html(source_url, clean_html)
         if should_discard:
             return "discard"
 
-        # --- Se arriviamo qui, la pagina va salvata ---
-        pubblicazioni_class = self._pubblicazioni_classifier.classify(source_url)
-        if pubblicazioni_class == "save":
-            clean_html = self._publications_filter.filter_html(clean_html)
+        # Didattica (Req 5)
+        didattica_class = self._didattica_id_classifier.classify(source_url)
+        if didattica_class == "discard": return "discard"
 
-        # Salvataggio fisico su disco
+        # Salvataggio fisico
         doc.page_content = clean_html
         doc_index = self._increment_counter()
         self._save_single_doc(doc, current_depth, doc_index)
@@ -607,7 +605,9 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        self.initialize_diem_docenti_whitelist()
+        # self.initialize_diem_docenti_whitelist()
+
+        self.diem_docenti_whitelist.add("https://docenti.unisa.it/001366/didattica")
 
         while self.queue:
             batch = []
@@ -667,7 +667,7 @@ class UnisaCrawler:
                                         self.visited_urls.add(new_link)
                         
                         elif decision == "discard":
-                            pass
+                            self.filtered_count+=1
 
                     except Exception as e:
                         logger.error(f"Errore elaborazione {source_url}: {e}")
