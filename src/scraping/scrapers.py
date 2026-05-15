@@ -83,15 +83,14 @@ class UnisaCrawler:
     }
 
     ALLOWED_PREFIXES = [
-        "https://docenti.unisa.it/001366/didattica"
-        # "https://www.diem.unisa.it",
-        # "https://corsi.unisa.it/ingegneria-informatica",
-        # "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
-        # "https://corsi.unisa.it/ingegneria-informatica-magistrale",
-        # "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
-        # "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
-        # "https://corsi.unisa.it/ingegneria-dell-informazione",
-        # "https://corsi.unisa.it/photovoltaics"
+        "https://www.diem.unisa.it",
+        "https://corsi.unisa.it/ingegneria-informatica",
+        "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
+        "https://corsi.unisa.it/ingegneria-informatica-magistrale",
+        "https://corsi.unisa.it/electrical-engineering-for-digital-energy",
+        "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
+        "https://corsi.unisa.it/ingegneria-dell-informazione",
+        "https://corsi.unisa.it/photovoltaics"
     ]
 
     IGNORED_EXTENSIONS = (
@@ -605,9 +604,7 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        # self.initialize_diem_docenti_whitelist()
-
-        self.diem_docenti_whitelist.add("https://docenti.unisa.it/001366/didattica")
+        self.initialize_diem_docenti_whitelist()
 
         while self.queue:
             batch = []
