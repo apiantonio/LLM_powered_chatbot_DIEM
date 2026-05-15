@@ -82,7 +82,7 @@ class UnisaCrawler:
         "corsi.unisa.it"
     }
 
-    ALLOWED_PREFIXES = [
+    ALLOWED_PREFIXES = (
         "https://www.diem.unisa.it",
         "https://corsi.unisa.it/ingegneria-informatica",
         "https://corsi.unisa.it/ingegneria-dell-informazione-per-la-medicina-digitale",
@@ -91,7 +91,7 @@ class UnisaCrawler:
         "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
         "https://corsi.unisa.it/ingegneria-dell-informazione",
         "https://corsi.unisa.it/photovoltaics"
-    ]
+    )
 
     IGNORED_EXTENSIONS = (
         '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
