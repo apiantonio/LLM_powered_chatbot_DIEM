@@ -11,7 +11,7 @@ CODICE RIMOSSO (Sprint Filtri Docenti):
 import re
 from pathlib import Path
 from typing import Optional
-from transform.core.base_rule import CleaningRule
+from scraping.core.base_rule import CleaningRule
 
 
 class FilenameRule(CleaningRule):

@@ -14,7 +14,7 @@ import logging
 from typing import Set
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-from transform.core.base_rule import PdfFilterRule
+from scraping.core.base_rule import PdfFilterRule
 
 logger = logging.getLogger(__name__)
 

@@ -34,17 +34,19 @@ from langchain_community.document_loaders import AsyncHtmlLoader
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Set, Tuple
 
-from transform.core.base_rule import CleaningRule, PdfFilterRule
-from transform.rules.docenti_url_rules import (
+from scraping.core.base_rule import CleaningRule, PdfFilterRule
+from scraping.rules.docenti_url_rules import (
     ProgettiUrlClassifier,
     PubblicazioniUrlClassifier,
     DidatticaOrariUrlClassifier,
     DidatticaIdUrlClassifier,
     RicercaBaseUrlClassifier,
     InternationalUrlClassifier,
+    InternationalSubpagesUrlClassifier,
 )
-from transform.rules.html_content_rules import PublicationsHtmlFilter
+from scraping.rules.html_content_rules import PublicationsHtmlFilter
 from config.settings import CrawlerConfig, IngestionConfig
+from scraping.rules.corsi_url_rules import CorsiUrlClassifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,6 +139,9 @@ class UnisaCrawler:
         # --- NUOVI classificatori (Sprint Filtri v2) ---
         self._ricerca_base_classifier = RicercaBaseUrlClassifier()
         self._international_classifier = InternationalUrlClassifier()
+        self._international_subpages_classifier = InternationalSubpagesUrlClassifier()
+
+        self._corsi_classifier = CorsiUrlClassifier()
 
         # --- Filtro contenuto HTML pubblicazioni (da transform/rules/) ---
         self._publications_filter = PublicationsHtmlFilter(
@@ -150,9 +155,6 @@ class UnisaCrawler:
         self.queue = deque()
         self.processed_count = 0
         self.filtered_count = 0
-
-        # --- (Req 5) Coda post-processing: file didattica da eliminare ---
-        self._didattica_pending_deletions: Set[str] = set()
 
         # --- Lock I/O per scrittura thread-safe ---
         self._write_lock = threading.Lock()
@@ -284,6 +286,9 @@ class UnisaCrawler:
         # Req 5: Didattica id/cId/pId — discard versioni incomplete
         if self._didattica_id_classifier.classify(url) == "discard":
             return False
+        
+        if self._international_subpages_classifier.classify(url) == "discard":
+            return False
 
         return True
 
@@ -396,47 +401,85 @@ class UnisaCrawler:
             self.processed_count += 1
             return self.processed_count
 
+
     # ==========================================
     # REQ 5: POST-PROCESSING DIDATTICA
     # ==========================================
-
     def _postprocess_didattica_cleanup(self) -> int:
         """
-        Elimina i file "padre" della didattica (solo id=, senza cId/pId)
-        DOPO che tutti i thread hanno terminato la scrittura.
-
-        Risolve la race condition: tutti i file sono su disco quando
-        questa funzione viene invocata (dopo join() dei thread).
+        Eliminazione gerarchica della didattica:
+        1. Elimina il Padre (id+cId) se esiste almeno un Figlio (id+cId+pId).
+        2. Elimina il Nonno (solo id) se esiste almeno un Padre/Figlio (id+cId).
         """
-        if not self._didattica_pending_deletions:
-            return 0
-
         deleted_count = 0
         output_path = Path(self.output_dir)
 
-        for file_id in self._didattica_pending_deletions:
-            for saved_file in output_path.glob(f"*-didattica-*id={file_id}*.html"):
-                saved_name = saved_file.name.lower()
+        # Regex per estrarre id e cId in modo sicuro
+        pattern_extract = re.compile(r'id=(\d+)(?:.*?cid=([a-zA-Z0-9\-]+))?', re.IGNORECASE)
+        
+        # Mappe per tracciare le parentele presenti su disco
+        ids_con_almeno_un_cid = set()      # IDs che hanno almeno un file con cId
+        id_cid_con_almeno_un_pid = set()   # Coppie (id, cId) che hanno almeno un file con pId
 
-                if "cid=" not in saved_name and "pid=" not in saved_name:
-                    try:
-                        saved_file.unlink()
-                        deleted_count += 1
-                        logger.debug(
-                            f"  Post-processing didattica: eliminato {saved_file.name}"
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            f"  Impossibile eliminare {saved_file.name}: {e}"
-                        )
+        # --- FASE 1: Scansione del disco per mappare la gerarchia ---
+        for saved_file in output_path.glob("*.html"):
+            filename_lower = saved_file.name.lower()
+            
+            if "-didattica-" in filename_lower and "id=" in filename_lower:
+                match = pattern_extract.search(filename_lower)
+                if match:
+                    current_id = match.group(1)
+                    current_cid = match.group(2)
+                    ha_pid = "pid=" in filename_lower
+
+                    # Se ha un cId, lo segnamo come figlio del "Nonno" (id)
+                    if current_cid:
+                        ids_con_almeno_un_cid.add(current_id)
+                        
+                        # Se ha anche un pId, lo segnamo come figlio del "Padre" (id+cId)
+                        if ha_pid:
+                            id_cid_con_almeno_un_pid.add((current_id, current_cid))
+
+        # --- FASE 2: Eliminazione mirata ---
+        for saved_file in output_path.glob("*.html"):
+            filename_lower = saved_file.name.lower()
+            
+            if "-didattica-" in filename_lower and "id=" in filename_lower:
+                match = pattern_extract.search(filename_lower)
+                if match:
+                    current_id = match.group(1)
+                    current_cid = match.group(2)
+                    ha_pid = "pid=" in filename_lower
+
+                    should_delete = False
+                    reason = ""
+
+                    # CASO A: Il file è un "Padre" (ha id e cId, ma NO pId)
+                    if current_cid and not ha_pid:
+                        if (current_id, current_cid) in id_cid_con_almeno_un_pid:
+                            should_delete = True
+                            reason = f"esistono figli con pId per id={current_id}, cId={current_cid}"
+
+                    # CASO B: Il file è un "Nonno" (ha solo id, NO cId, NO pId)
+                    elif not current_cid and not ha_pid:
+                        if current_id in ids_con_almeno_un_cid:
+                            should_delete = True
+                            reason = f"esiste almeno un figlio con cId per id={current_id}"
+
+                    if should_delete:
+                        try:
+                            saved_file.unlink()
+                            deleted_count += 1
+                            logger.debug(f"  Cleanup Didattica: rimosso {saved_file.name} -> {reason}")
+                        except OSError as e:
+                            logger.warning(f"  Errore eliminazione {saved_file.name}: {e}")
 
         logger.info(
-            f"Post-processing didattica: {deleted_count} file padre eliminati "
-            f"({len(self._didattica_pending_deletions)} ID processati)"
+            f"Post-processing didattica completato: {deleted_count} file (padri/nonni) rimossi. "
+            f"Preservati solo i rami senza ulteriori sottopagine."
         )
-        self._didattica_pending_deletions.clear()
         return deleted_count
-
+    
     # ============================================================
     # POST-INGESTION: CLEANUP FILE CON -anno=YYYY (Feature 3)
     # ============================================================
@@ -506,76 +549,45 @@ class UnisaCrawler:
     # DECISIONE SALVATAGGIO
     # ==========================================
 
-    def _decide_save(
-        self, source_url: str, clean_html: str, doc, current_depth: int
-    ) -> bool:
-        """
-        Punto centrale di decisione: salvare o scartare un documento.
 
-        Integra i filtri inline con i classificatori docenti.
+    def _decide_save(self, source_url: str, clean_html: str, doc, current_depth: int) -> str:
         """
-        # --- STEP 1: Contenuto vuoto ---
+        Determina l'azione da compiere: 'save', 'navigate' (estrai link/pdf ma non salvare) o 'discard'.
+        """
         if not clean_html:
-            self.filtered_count += 1
-            logger.debug(f"Scartato (contenuto vuoto): {source_url}")
-            return False
+            return "discard"
 
-        # --- STEP 2: Filtro progetti (Req 1) ---
-        progetti_class = self._progetti_classifier.classify(source_url)
-        if progetti_class == "navigate":
-            self.filtered_count += 1
-            logger.debug(f"Progetti padre (navigate-only): {source_url}")
-            return False
+        # --- NUOVA REGOLA: Piano di Studi (corsi.unisa.it) ---
+        if self._corsi_classifier.classify(source_url) == "navigate":
+            return "navigate"
 
-        # --- STEP 3: Classificazione pubblicazioni URL (Req 2) ---
-        pubblicazioni_class = self._pubblicazioni_classifier.classify(source_url)
+        # --- Regole esistenti (Progetti, Ricerca, International) ---
+        if self._progetti_classifier.classify(source_url) == "navigate": return "navigate"
+        if self._ricerca_base_classifier.classify(source_url) == "navigate": return "navigate"
+        if self._international_classifier.classify(source_url) == "navigate": return "navigate"
+        
+        # Check per sottopagine International (se implementato)
+        if hasattr(self, '_international_subpages_classifier'):
+            if self._international_subpages_classifier.classify(source_url) == "navigate":
+                return "navigate"
 
-        # ============================================================
-        # STEP 3b (NUOVO — Req 6): Ricerca base → navigate-only
-        # La pagina /ricerca (senza sotto-path) viene visitata per
-        # estrarre link figli ma NON salvata su disco.
-        # ============================================================
-        ricerca_class = self._ricerca_base_classifier.classify(source_url)
-        if ricerca_class == "navigate":
-            self.filtered_count += 1
-            logger.debug(f"Ricerca base (navigate-only, non salvato): {source_url}")
-            return False
-
-        # ============================================================
-        # STEP 3c (NUOVO — Req 7): International → navigate-only
-        # Le pagine /international vengono visitate per estrarre link
-        # figli ma NON salvate su disco.
-        # ============================================================
-        international_class = self._international_classifier.classify(source_url)
-        if international_class == "navigate":
-            self.filtered_count += 1
-            logger.debug(f"International (navigate-only, non salvato): {source_url}")
-            return False
-
-        # --- STEP 4: Regole di pulizia inline (invariate) ---
+        # --- Regole di scarto (Discard) ---
+        if self._progetti_classifier.classify(source_url) == "discard": return "discard"
+        
         should_discard, reason = self._should_discard_html(source_url, clean_html)
         if should_discard:
-            self.filtered_count += 1
-            logger.info(f"Scartato ({reason}): {source_url}")
-            return False
+            return "discard"
 
-        # --- STEP 5: Filtraggio DOM pubblicazioni anno=0 (Req 4) ---
+        # --- Se arriviamo qui, la pagina va salvata ---
+        pubblicazioni_class = self._pubblicazioni_classifier.classify(source_url)
         if pubblicazioni_class == "save":
             clean_html = self._publications_filter.filter_html(clean_html)
-            doc.page_content = clean_html
 
-        # --- STEP 6: Classificazione didattica id (Req 5) ---
-        didattica_class = self._didattica_id_classifier.classify(source_url)
-        if didattica_class == "save_and_mark":
-            file_id = self._didattica_id_classifier.extract_id(source_url)
-            if file_id:
-                self._didattica_pending_deletions.add(file_id)
-
-        # --- STEP 7: Salvataggio ---
+        # Salvataggio fisico su disco
         doc.page_content = clean_html
         doc_index = self._increment_counter()
         self._save_single_doc(doc, current_depth, doc_index)
-        return True
+        return "save"
 
     # ==========================================
     # MOTORE ORCHESTRATORE
@@ -595,7 +607,7 @@ class UnisaCrawler:
         for url in base_seeds:
             self.queue.append((url, 0))
             self.visited_urls.add(url)
-        # self.initialize_diem_docenti_whitelist()
+        self.initialize_diem_docenti_whitelist()
 
         while self.queue:
             batch = []
@@ -637,20 +649,25 @@ class UnisaCrawler:
                     try:
                         clean_html, local_new_links, local_pdfs = future.result()
 
-                        saved = self._decide_save(
-                            source_url, clean_html, doc, current_depth
-                        )
+                        # Ottieni la decisione (save, navigate o discard)
+                        decision = self._decide_save(source_url, clean_html, doc, current_depth)
 
-                        if saved:
+                        # GARANZIA PDF: Se la decisione Ã¨ di salvare O di navigare (es. piano-di-studi)
+                        if decision in ["save", "navigate"]:
+                            # Raccogliamo i PDF
                             for pdf_url in local_pdfs:
                                 if not self._should_discard_pdf(pdf_url):
                                     self.found_pdf_links.add(pdf_url)
 
-                        if current_depth < self.max_depth:
-                            for new_link in local_new_links:
-                                if new_link not in self.visited_urls:
-                                    self.queue.append((new_link, current_depth + 1))
-                                    self.visited_urls.add(new_link)
+                            # Continuiamo la navigazione BFS per trovare i link figli
+                            if current_depth < self.max_depth:
+                                for new_link in local_new_links:
+                                    if new_link not in self.visited_urls:
+                                        self.queue.append((new_link, current_depth + 1))
+                                        self.visited_urls.add(new_link)
+                        
+                        elif decision == "discard":
+                            pass
 
                     except Exception as e:
                         logger.error(f"Errore elaborazione {source_url}: {e}")

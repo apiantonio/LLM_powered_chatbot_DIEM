@@ -20,7 +20,6 @@ NON a livello di contenuto HTML. Il filtraggio DOM è in html_content_rules.py.
 import re
 import logging
 from urllib.parse import urlparse, parse_qs
-
 logger = logging.getLogger(__name__)
 
 
@@ -125,18 +124,17 @@ class DidatticaOrariUrlClassifier:
         return "pass"
 
 
+
 class DidatticaIdUrlClassifier:
     """
-    Classificatore URL per le pagine didattica con parametri id/cId/pId (Req 5).
+    Classificatore URL per le pagine didattica (Nuova Regola).
 
     Logica:
-      - "save_and_mark": solo id= (senza cId/pId) → salvare ora, eliminare in post-processing
-      - "save":          id + cId + pId → versione completa → salvare
-      - "discard":       id + cId senza pId → versione incompleta → scartare
-      - "pass":          non è un URL didattica con id=
+      - "save": accetta e salva qualsiasi URL della didattica contenente un parametro id=.
+                L'eventuale eliminazione del file padre a favore dei figli (pId) 
+                avverrà in modo sicuro durante il post-processing controllando il disco.
+      - "pass": non è un URL della didattica con id=
     """
-
-    _id_pattern = re.compile(r'id=(\d+)', re.IGNORECASE)
 
     def classify(self, url: str) -> str:
         url_lower = url.lower()
@@ -144,25 +142,10 @@ class DidatticaIdUrlClassifier:
         if "docenti.unisa.it/" not in url_lower or "/didattica" not in url_lower:
             return "pass"
 
-        has_id = "id=" in url_lower
-        has_cid = "cid=" in url_lower
-        has_pid = "pid=" in url_lower
-
-        if has_id and has_cid and not has_pid:
-            return "discard"
-
-        if has_id and has_cid and has_pid:
+        if "id=" in url_lower:
             return "save"
 
-        if has_id and not has_cid and not has_pid:
-            return "save_and_mark"
-
         return "pass"
-
-    def extract_id(self, url: str) -> str | None:
-        """Estrae il valore numerico di id= dall'URL."""
-        match = self._id_pattern.search(url)
-        return match.group(1) if match else None
 
 
 # ============================================================
@@ -233,3 +216,56 @@ class InternationalUrlClassifier:
         if self._international_pattern.match(clean_url):
             return "navigate"
         return "pass"
+    
+
+  
+
+class InternationalSubpagesUrlClassifier:
+    """
+    Classificatore URL per le sottopagine specifiche di /international.
+
+    Logica per (dottorato-con-tesi-in-cotutela, doppio-titolo, traineeship):
+      - "navigate": pagina base senza parametri -> esplorare per estrarre i link, ma NON SALVARE.
+      - "save": SOLO con query string ESATTA `anno=` (vuoto) e `stato=tutti`.
+      - "discard": qualsiasi altra combinazione di parametri -> scartare completamente.
+      - "pass": URL non corrispondente a questi 3 path.
+    """
+
+    _target_paths = (
+        "/international/dottorato-con-tesi-in-cotutela",
+        "/international/doppio-titolo",
+        "/international/traineeship",
+        "/international/cooperazione-internazionale"
+    )
+
+    def classify(self, url: str) -> str:
+        url_lower = url.lower()
+
+        if "docenti.unisa.it/" not in url_lower:
+            return "pass"
+
+        parsed = urlparse(url)
+        # Rimuove lo slash finale per sicurezza
+        path = parsed.path.rstrip("/")
+
+        # Controlla se il path termina con uno dei tre target richiesti
+        if not any(path.lower().endswith(target) for target in self._target_paths):
+            return "pass"
+
+        # Estrae i parametri (keep_blank_values=True cattura "anno=" come stringa vuota)
+        query_params = parse_qs(parsed.query, keep_blank_values=True)
+
+        # 1. Se non ci sono parametri (pagina base) -> naviga per trovare i link, NON salvare
+        if not query_params:
+            return "navigate"
+
+        # 2. Condizione RIGOROSA: ci devono essere ESATTAMENTE 2 parametri: anno="" e stato="tutti"
+        if (
+            len(query_params) == 2 and
+            "anno" in query_params and query_params["anno"] == [""] and
+            "stato" in query_params and query_params["stato"] == ["tutti"]
+        ):
+            return "save"
+
+        # 3. Qualsiasi altra combinazione (es. anno=2023, stato=aperto, ecc.) -> scarta
+        return "discard"

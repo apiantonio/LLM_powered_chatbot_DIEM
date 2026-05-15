@@ -6,8 +6,10 @@ utilizzate dal crawler e dalla pipeline di ingestion.
 """
 
 from typing import List
-from transform.core.base_rule import CleaningRule, PdfFilterRule
-
+from scraping.core.base_rule import CleaningRule, PdfFilterRule
+from scraping.factory.pdf_factory import PdfRuleFactory
+from pathlib import Path
+from scraping.factory.cleaner_factory import RuleFactory
 
 def get_all_html_rules(**kwargs) -> List[CleaningRule]:
     """
@@ -16,8 +18,7 @@ def get_all_html_rules(**kwargs) -> List[CleaningRule]:
     Delega alla RuleFactory per la creazione delle istanze.
     Chiamata da ingestion_main.py quando il modulo transform è disponibile.
     """
-    from pathlib import Path
-    from transform.factory.cleaner_factory import RuleFactory
+    
 
     directory = Path(kwargs.get("directory", "data/raw/html_samples"))
     cutoff_year = kwargs.get("cutoff_year", 2020)
@@ -39,7 +40,6 @@ def get_all_pdf_rules(**kwargs) -> List[PdfFilterRule]:
     """
     Costruisce e restituisce tutte le regole di filtro PDF attive.
     """
-    from transform.factory.pdf_factory import PdfRuleFactory
 
     cutoff_year = kwargs.get("cutoff_year", 2020)
     factory = PdfRuleFactory(cutoff_year=cutoff_year)

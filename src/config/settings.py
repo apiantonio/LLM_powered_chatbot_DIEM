@@ -39,7 +39,6 @@ class IngestionConfig:
         "https://corsi.unisa.it/information-Engineering-for-digital-medicine",
         "https://corsi.unisa.it/ingegneria-dell-informazione",
         "https://corsi.unisa.it/photovoltaics",
-        "https://easycourse.unisa.it/",
     )
 
     # --- Crawler ---

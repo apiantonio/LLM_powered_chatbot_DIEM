@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Optional
-from transform.core.base_rule import CleaningRule
+from scraping.core.base_rule import CleaningRule
 
 class EmptyBodyRule(CleaningRule):
     @property

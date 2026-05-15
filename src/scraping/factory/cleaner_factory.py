@@ -8,13 +8,13 @@ CODICE RIMOSSO (Sprint Filtri Docenti):
 
 from pathlib import Path
 from typing import List
-from transform.core.base_rule import CleaningRule
-from transform.rules.content_rules import (
+from scraping.core.base_rule import CleaningRule
+from scraping.rules.content_rules import (
     EmptyBodyRule,
     NoContentInsertedRule,
     PageNotFoundRule,
 )
-from transform.rules.metadata_rules import (
+from scraping.rules.metadata_rules import (
     FilenameRule,
     NewsRule,
     CalendarRule,

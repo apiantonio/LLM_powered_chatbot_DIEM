@@ -1,6 +1,6 @@
 from typing import List
-from transform.core.base_rule import PdfFilterRule
-from transform.rules.pdf_rules import (
+from scraping.core.base_rule import PdfFilterRule
+from scraping.rules.pdf_rules import (
     ObsoleteYearRule, 
     SemanticTrapRule, 
     DomainWhitelistRule,
