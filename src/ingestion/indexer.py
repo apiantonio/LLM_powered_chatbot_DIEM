@@ -231,6 +231,19 @@ class KnowledgeBaseIndexer:
             if "anno_bando" in clean_metadata:
                 parts.append(f"Anno: {clean_metadata["anno_bando"]}")
 
+        if "doc_id" in clean_metadata:
+            parts.append(f"Codice ID: {clean_metadata['doc_id']}")
+        if "creationdate" in clean_metadata:
+            raw_date = str(clean_metadata['creationdate'])
+            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", raw_date)
+            
+            if date_match:
+                data_pulita = date_match.group(1)
+            else:
+                data_pulita = raw_date[:10]
+                
+            parts.append(f"Anno: {data_pulita}")
+
         if not parts:
             return ""
 
@@ -552,6 +565,10 @@ class KnowledgeBaseIndexer:
                 **extra_meta,
             })
 
+            context_prefix = self._build_context_prefix(page.metadata, CollectionTarget.OFFERTA_FORMATIVA)
+            if context_prefix:
+                page.page_content = context_prefix + page.page_content
+                
         existing_data = self._pc_child_vectorstore.get()
         ids_before = set(existing_data["ids"]) if existing_data and existing_data.get("ids") else set()
 
@@ -591,6 +608,11 @@ class KnowledgeBaseIndexer:
         # Iniezione contesto per PDF (metadati in ogni chunk)
         for chunk in chunks:
             chunk.metadata.update(extra_meta)
+
+            context_prefix = self._build_context_prefix(chunk.metadata, collection)
+
+            if context_prefix:
+                chunk.page_content = context_prefix + chunk.page_content
 
         vectorstore = self._collections[collection]
         filename = os.path.basename(local_path)

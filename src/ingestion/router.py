@@ -285,22 +285,6 @@ def _extract_anno_from_url(source_url: str) -> Optional[str]:
     return None
 
 
-def _extract_anno_from_pdf_path(pdf_url: str) -> Optional[str]:
-    """
-    Ricalcola l'anno dai PDF — audit §5.5 (adattamento C6).
-
-    Estrae dal path URL: __regolamenti-cds/2023/ → "2023"
-                         __statistiche-corsi/2025_09/ → "2025"
-    """
-    match = re.search(r"/(\d{4})(?:[/_]|\.pdf)", pdf_url)
-    if match:
-        anno = match.group(1)
-        # Sanity check: l'anno deve essere ragionevole (2000-2030)
-        if 2000 <= int(anno) <= 2030:
-            return anno
-    return None
-
-
 def _extract_laboratorio_info(html_content: str, source_url: str) -> dict:
     """
     Estrae informazioni su laboratorio — audit §6 VS DIPARTIMENTO.
@@ -513,11 +497,6 @@ class DocumentRouter:
         if collection == CollectionTarget.OFFERTA_FORMATIVA:
             metadata["sotto_area"] = _classify_offerta_sottoarea_pdf(pdf_url)
 
-            # Anno ricalcolato dal path — audit §5.5
-            anno = _extract_anno_from_pdf_path(pdf_url)
-            if anno:
-                metadata["anno"] = anno
-
             # Tentativo estrazione corso_slug dal path
             corso_match = re.search(r"corsi\.unisa\.it/([^/]+)", pdf_url)
             if corso_match:
@@ -527,10 +506,6 @@ class DocumentRouter:
 
         elif collection == CollectionTarget.DIPARTIMENTO:
             metadata["sotto_area"] = "bandi"
-
-            anno = _extract_anno_from_pdf_path(pdf_url)
-            if anno:
-                metadata["anno_bando"] = anno
 
         return metadata
 
