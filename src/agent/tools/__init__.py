@@ -235,15 +235,6 @@ class SearchPersoneInput(BaseModel):
             "Lascia vuoto se non sei sicuro."
         )
     )
-    nome_insegnamenti: Optional[str] = Field(
-        default=None,
-        description=(
-            "Nome esatto dell'insegnamento/corso da cercare, "
-            "estratto dalla domanda dell'utente. "
-            "Esempio: 'Machine Learning', 'Algoritmi e Strutture Dati'. "
-            "Lascia vuoto se l'utente non menziona un insegnamento specifico."
-        )
-    )
     anno: Optional[int] = Field(
         default=None,
         description=(
@@ -330,7 +321,6 @@ class SearchAllInput(BaseModel):
 def search_persone(
     query: str,
     sotto_area: Optional[str] = None,
-    nome_insegnamenti: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
     """Cerca informazioni su DOCENTI del DIEM: profilo, email, ricevimento, corsi insegnati, syllabus/insegnamenti, ricerca, attività internazionali.
@@ -338,7 +328,6 @@ def search_persone(
 USA QUESTO TOOL per:
 - "Chi è il prof. X?" → profilo docente
 - "Cosa insegna il prof. X?" → corsi del docente
-- "Chi insegna Machine Learning?" → cerca nel campo nomi_insegnamenti
 - "Syllabus/programma di Algoritmi" → didattica dell'insegnamento (sotto_area="didattica")
 - "Email/ricevimento del prof. X"
 
@@ -355,15 +344,13 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
     metadata_filter = {}
     if sotto_area:
         metadata_filter["sotto_area"] = sotto_area
-    if nome_insegnamenti:
-        metadata_filter["nome_insegnamenti"] = nome_insegnamenti
     if anno is not None:
         metadata_filter["anno"] = str(anno)
 
     metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
-    print(f"  sotto_area={sotto_area}, nome_insegnamenti={nome_insegnamenti}, anno={anno}")
+    print(f"  sotto_area={sotto_area},anno={anno}")
 
     return _search_collection(
         query, CollectionTarget.PERSONE,
