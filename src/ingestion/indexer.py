@@ -210,16 +210,12 @@ class KnowledgeBaseIndexer:
                 parts.append(f"Progetto: {clean_metadata['progetti']}")
             if "nomi_insegnamenti" in clean_metadata:
                 parts.append(f"Insegnamento: {clean_metadata['nomi_insegnamenti']}") 
-            if "anno" in clean_metadata:
-                parts.append(f"Anno: {clean_metadata['anno']}")
 
         elif collection == CollectionTarget.OFFERTA_FORMATIVA:
             if "nome_corso" in clean_metadata:
                 parts.append(f"Corso di Laurea: {clean_metadata['nome_corso']}")
             if "sotto_area" in clean_metadata:
                 parts.append(f"Sezione: {clean_metadata['sotto_area']}")
-            if "anno" in clean_metadata:
-                parts.append(f"Anno: {clean_metadata['anno']}")
 
         elif collection == CollectionTarget.DIPARTIMENTO:
             if "laboratorio_nome" in clean_metadata:
@@ -228,11 +224,11 @@ class KnowledgeBaseIndexer:
                 parts.append(f"Tipo bando: {clean_metadata['tipo_bando']}")
             if "sotto_area" in clean_metadata:
                 parts.append(f"Sezione: {clean_metadata['sotto_area']}")
-            if "anno_bando" in clean_metadata:
-                parts.append(f"Anno: {clean_metadata["anno_bando"]}")
 
         if "doc_id" in clean_metadata:
             parts.append(f"Codice ID: {clean_metadata['doc_id']}")
+        if "anno" in clean_metadata:
+                parts.append(f"Anno: {clean_metadata['anno']}")
             
         if not parts:
             return ""
@@ -613,11 +609,8 @@ class KnowledgeBaseIndexer:
                 else:
                     anno_estratto = raw_date[:4]
                 
-                # 4. Scegliamo la chiave corretta in base alla collezione
-                if collection == CollectionTarget.DIPARTIMENTO:
-                    page.metadata["anno_bando"] = anno_estratto
-                else:
-                    page.metadata["anno"] = anno_estratto
+                
+                page.metadata["anno"] = anno_estratto
 
             # 5. Applichiamo i metadati calcolati dal router
             page.metadata.update({

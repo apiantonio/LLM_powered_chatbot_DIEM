@@ -21,7 +21,7 @@ METADATI ESTRATTI (audit §6 — Schema Definitivo):
            formato_sorgente, url_originale, anno
   OFFERTA_FORMATIVA: nome_corso, corso_slug, sotto_area,
                      formato_sorgente, url_originale, anno
-  DIPARTIMENTO: sotto_area, tipo_bando, anno_bando, laboratorio_nome,
+  DIPARTIMENTO: sotto_area, tipo_bando, anno, laboratorio_nome,
                 laboratorio_id, formato_sorgente, url_originale
 
 CHUNKING CONTEXT-AWARE (audit §5, risoluzione problema chunk orfani):
@@ -479,7 +479,7 @@ class DocumentRouter:
             # Anno per bandi
             anno = _extract_anno_from_url(source_url)
             if anno:
-                metadata["anno_bando"] = anno
+                metadata["anno"] = anno
 
         return metadata
 
