@@ -57,59 +57,34 @@ from retrieval.engine import RetrievalEngine
 
 logger = logging.getLogger(__name__)
 
-
 # ============================================================
-# MIDDLEWARE: Contesto Temporale (v3.2 — SEMPRE iniettato)
+# MIDDLEWARE: Contesto Temporale (Isolato e Deterministico)
 # ============================================================
 
-def _build_temporal_context() -> str:
+def _get_temporal_system_message() -> dict:
     """
-    Costruisce il blocco di contesto temporale da iniettare SEMPRE.
-
-    Logica anno accademico:
-      - L'anno accademico inizia a ottobre.
-      - Il metadato "anno" nei Vector Store corrisponde all'anno di INIZIO
-        dell'anno accademico (es. A.A. 2025/2026 → anno = 2025).
-      - Se siamo tra ottobre e dicembre, l'A.A. corrente è iniziato
-        quest'anno (anno_solare); se siamo tra gennaio e settembre,
-        è iniziato l'anno scorso (anno_solare - 1).
-
-    Il blocco è volutamente compatto (~80 token) per non sprecare
-    context window su Qwen2.5 7B, ma sufficientemente informativo
-    per permettere al LLM di risolvere qualsiasi espressione temporale.
+    Costruisce un dizionario (messaggio di sistema) con il contesto temporale.
+    La direttiva usa il "Negative Prompting" per evitare l'uso forzato dell'anno.
     """
     now = datetime.now()
-    giorni = [
-        "lunedì", "martedì", "mercoledì", "giovedì",
-        "venerdì", "sabato", "domenica",
-    ]
-    mesi = [
-        "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-        "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
-    ]
+    giorni = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", 
+            "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
 
     anno_solare = now.year
+    anno_accademico = anno_solare if now.month >= 10 else anno_solare - 1
 
-    # Anno accademico: se siamo tra ottobre e dicembre, l'A.A. è iniziato
-    # quest'anno (anno_solare); altrimenti è iniziato l'anno scorso.
-    if now.month >= 10:
-        anno_accademico = anno_solare
-    else:
-        anno_accademico = anno_solare - 1
-
-    return (
-        f"[Contesto temporale di sistema — "
-        f"Oggi: {giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {anno_solare}, "
-        f"ore {now.strftime('%H:%M')}. "
-        f"Anno accademico corrente: {anno_accademico}/{anno_accademico + 1}. "
-        f"Se l'utente usa espressioni temporali relative "
-        f"(es. 'anno scorso', 'due anni fa', '10 anni fa', 'quest\\'anno'), "
-        f"calcola l'anno corretto a partire da {anno_solare} e passalo come parametro "
-        f"'anno' (intero) al tool. "
-        f"Esempio: 'anno scorso' → anno={anno_solare - 1}, "
-        f"'due anni fa' → anno={anno_solare - 2}.]"
+    content = (
+        f"[CONTESTO TEMPORALE - Oggi: {giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {anno_solare}. "
+        f"Anno Accademico corrente: {anno_accademico}/{anno_accademico + 1}.]\n"
+        f"REGOLA CRITICA PER I TOOL: Devi valorizzare il parametro 'anno' SOLO E SOLTANTO SE "
+        f"l'utente fa esplicito riferimento al tempo (es. 'quest'anno', 'nel 2024', 'l'anno scorso'). "
+        f"Se la domanda NON contiene riferimenti temporali espliciti, lascia SEMPRE il parametro 'anno' VUOTO/NULL.]"
     )
+    
+    return {"role": "system", "content": content}
 
+# NOTA: Elimina del tutto la funzione inject_temporal_context()
 
 def inject_temporal_context(query: str) -> str:
     """
@@ -168,16 +143,56 @@ class RAGAgent:
           5. Logging + Memory update
         """
 
-        # --- STEP 1: Iniezione Contesto Temporale (SEMPRE) ---
-        query_for_agent = inject_temporal_context(user_query)
+        """
+        Punto di ingresso principale.
+        Il contesto temporale viene iniettato solo al volo (fly-injection),
+        mantenendo la memoria immacolata.
+        """
+        # --- STEP 0: Corto Circuito via Cache (Match Esatto/Praticamente Uguale) ---
+        cached_response = self._memory.find_exact_match(user_query)
+        
+        if cached_response:
+            print(f"⚡ RISPOSTA RECUPERATA IMMEDIATAMENTE DA CACHE PER: {user_query}")
+            
+            # Costruiamo una traccia finta/minimale per non rompere il frontend 
+            # o i sistemi di analisi che leggono il dizionario "trace"
+            dummy_trace = {
+                "tool_name": "(Risposta da Cache)",
+                "tools_invoked": [],
+                "rewritten_query": "",
+                "multi_queries": [],
+                "collection": "",
+                "metadata_filter": None,
+                "top_links": []
+            }
+            
+            return {
+                "response": cached_response,
+                "blocked": False,
+                "block_reason": None,
+                "trace": dummy_trace,
+                "turn": self._memory.turn_count, # Mantiene il numero dell'ultimo turno reale
+            }
 
-        print(f"USER QUERY (con contesto temporale): {query_for_agent}")
 
-        # --- STEP 2: Registra il turno e costruisci i messaggi ---
+        print(f"USER QUERY (pulita): {user_query}")
+
+        # --- STEP 1: Salva in memoria la query ORIGINALE e PULITA ---
         turn_number = self._memory.add_user_message(user_query)
-        messages = self._memory.get_messages_for_agent(query_for_agent)
+        
+        # --- STEP 2: Recupera lo storico usando la query PULITA ---
+        messages = self._memory.get_messages_for_agent(user_query)
 
-        print(f"MESSAGGIO DALLA MEMORIA: {messages}")
+        # --- STEP 3: Iniezione Effimera del Contesto Temporale ---
+        # Inseriamo il messaggio di sistema temporale appena PRIMA della query dell'utente
+        # in modo che il LLM lo legga come contesto immediato, ma non finisca in memoria.
+        temporal_msg = _get_temporal_system_message()
+        if messages and messages[-1]["role"] == "user":
+            messages.insert(-1, temporal_msg)
+        else:
+            messages.append(temporal_msg)
+
+        print(f"MESSAGGI INVIATI ALL'AGENTE: {messages}")
 
         # Inietta la chat history nei tool per il query rewriting
         set_chat_history(self._memory.get_langchain_history())

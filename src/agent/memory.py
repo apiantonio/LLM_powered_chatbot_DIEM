@@ -200,6 +200,39 @@ class SmartConversationMemory:
         )
         return messages
 
+    def find_exact_match(self, query: str) -> Optional[str]:
+        """
+        Cerca se la query è già stata posta in questa sessione calcolando 
+        una "fingerprint" (impronta) della stringa per tollerare variazioni 
+        di spazi, punteggiatura e maiuscole.
+        """
+        if not self._turns:
+            return None
+
+        # Funzione interna per creare un'impronta normalizzata estrema
+        def get_fingerprint(text: str) -> str:
+            # 1. Convertiamo tutto in minuscolo
+            text = text.lower()
+            # 2. Rimuoviamo tutto ciò che NON è una lettera o un numero.
+            # [\W_]+ intercetta spazi, punteggiatura, simboli e underscore.
+            # (Le lettere accentate come 'è' o 'à' vengono preservate da Python 3)
+            fingerprint = re.sub(r'[\W_]+', '', text)
+            return fingerprint
+
+        query_fingerprint = get_fingerprint(query)
+
+        # Se la query è vuota dopo la pulizia (es. l'utente ha mandato solo "?"), ignoriamo
+        if not query_fingerprint:
+            return None
+
+        # Scorriamo i turni al contrario (dal più recente al più vecchio)
+        for turn in reversed(self._turns):
+            if get_fingerprint(turn.user_message) == query_fingerprint:
+                logger.info(f"🎯 Cache HIT! Impronta '{query_fingerprint}' trovata al Turno #{turn.turn_number}")
+                return turn.assistant_message
+
+        return None
+
     def get_messages_for_agent(self, current_query: str) -> list:
         """
         Costruisce la lista messaggi per create_agent.invoke().
@@ -293,7 +326,7 @@ def create_conversation_memory(
     max_tokens: Optional[int] = None,
     llm_for_summary=None,
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
-    similarity_threshold: float = 0.3,
+    similarity_threshold: float = 0.45,
     max_token_limit: int = 1500,
 ) -> SmartConversationMemory:
     """Factory Method: crea la SmartConversationMemory."""
