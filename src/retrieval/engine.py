@@ -1,16 +1,30 @@
 """
 retrieval/engine.py — RetrievalEngine RIVISTO per 3 Vector Store.
 
-REFACTORING v2:
-  - QueryOptimizer.rewrite(): prompt RISCRITTO DA ZERO.
-    * Unico compito: risolvere coreferenze (pronomi → nomi propri dalla history)
-    * ZERO logiche hardcoded (if/else per pronomi ELIMINATI)
-    * NON risponde alla domanda, NON aggiunge info dalla risposta precedente
-    * Se non ci sono riferimenti da svelare, mantiene la query identica
-  - MULTI_QUERY_PROMPT: semplificato, stesse regole di conservazione entità
-  - Iniezione temporale dinamica: middleware pre-agente (vedi agent.py)
-  - CrossEncoderReranker: invariato
-  - RetrievalEngine: invariato
+REFACTORING v3 — FIX PARENT-CHILD RETRIEVAL:
+  BUG CRITICO RISOLTO:
+    I PDF di regolamenti e piani di studio vengono indicizzati nella
+    collection Chroma "offerta_formativa_pdf_childs" tramite il
+    ParentDocumentRetriever, ma il tool search_offerta_formativa
+    cercava SOLO nella collection "offerta_formativa".
+
+    Inoltre, il merge con Parent-Child era condizionato a
+    `not metadata_filter`, quindi qualsiasi filtro (sotto_area,
+    anno, ecc.) escludeva completamente i PDF Parent-Child.
+
+  SOLUZIONE:
+    Quando collection == "offerta_formativa", il retrieve() ora:
+      1. Cerca nella collection standard "offerta_formativa" (HTML)
+      2. Cerca SEMPRE anche nella collection Parent-Child (PDF)
+      3. Se c'è un metadata_filter, lo applica anche al PC child
+         vectorstore tramite accesso diretto a Chroma (non tramite
+         il ParentDocumentRetriever, che non supporta filtri nativi)
+      4. Merge + dedup + rerank su tutti i candidati
+
+  ALTRI FIX:
+    - Rimosso codice irraggiungibile in retrieve_from_all() (doppio return)
+    - QueryOptimizer: invariato (v2)
+    - CrossEncoderReranker: invariato
 
 FLUSSO:
   rewrite → expand (multiquery) → retrieval parallelo → merge → rerank
@@ -231,7 +245,7 @@ class CrossEncoderReranker:
 
         # Stampa classifica per debug
         print(f"\n--- TOP 5 CLASSIFICA (su {len(ranked)} CANDIDATI) ---")
-        for i, (doc, score) in enumerate(ranked[:5]):  # <-- Modificato qui: aggiunto [:5]
+        for i, (doc, score) in enumerate(ranked[:5]):
             print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
             print(f"    Testo: {doc.page_content[:150]}...")
         print("-" * 65)
@@ -258,7 +272,7 @@ class CrossEncoderReranker:
 
 
 # ============================================================
-# RETRIEVAL ENGINE — aggiornato per 3 Vector Store
+# RETRIEVAL ENGINE — FIX Parent-Child per offerta_formativa
 # ============================================================
 
 class RetrievalEngine:
@@ -266,6 +280,10 @@ class RetrievalEngine:
     Orchestratore retrieval per 3 Vector Store (audit §8).
 
     Flusso: rewrite → expand (multiquery) → retrieval parallelo → merge → rerank.
+
+    FIX v3: quando collection == "offerta_formativa", il retrieval
+    include SEMPRE anche la collection Parent-Child (PDF regolamenti
+    e piani di studio), applicando gli stessi filtri metadata.
     """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
@@ -280,6 +298,9 @@ class RetrievalEngine:
                 indexer.get_collection_retriever(target)
             )
         self._pc_retriever = indexer.get_parent_child_retriever()
+
+        # Accesso diretto al PC child vectorstore per ricerche con filtro
+        self._pc_child_vectorstore = indexer._pc_child_vectorstore
 
     def retrieve(
         self,
@@ -319,6 +340,7 @@ class RetrievalEngine:
         seen_hashes: Set[int] = set()
 
         for mq in multi_queries:
+            # 3a. Retrieval dalla collection standard
             if metadata_filter:
                 retriever = self._get_filtered_retriever(collection, metadata_filter)
             else:
@@ -338,17 +360,26 @@ class RetrievalEngine:
             except Exception as e:
                 logger.warning(f"Errore retrieval multiquery '{mq[:60]}': {e}")
 
-        # Parent-Child merge per offerta_formativa
-        if collection == CollectionTarget.OFFERTA_FORMATIVA.value and not metadata_filter:
-            try:
-                pc_docs = self._pc_retriever.invoke(effective_query)
-                for doc in pc_docs:
-                    h = hash(doc.page_content[:200])
-                    if h not in seen_hashes:
-                        seen_hashes.add(h)
-                        all_candidates.append(doc)
-            except Exception as e:
-                logger.warning(f"Errore retrieval Parent-Child: {e}")
+            # 3b. FIX: Retrieval SEMPRE dal Parent-Child per offerta_formativa
+            #     Questo copre i PDF di regolamenti e piani di studio che sono
+            #     indicizzati nella collection separata "offerta_formativa_pdf_childs"
+            if collection == CollectionTarget.OFFERTA_FORMATIVA.value:
+                try:
+                    pc_docs = self._retrieve_from_parent_child(
+                        mq, metadata_filter
+                    )
+                    for doc in pc_docs:
+                        h = hash(doc.page_content[:200])
+                        if h not in seen_hashes:
+                            seen_hashes.add(h)
+                            all_candidates.append(doc)
+                except Exception as e:
+                    logger.warning(f"Errore retrieval Parent-Child per '{mq[:60]}': {e}")
+
+        logger.info(
+            f"Retrieval completato: {len(all_candidates)} candidati unici "
+            f"(collection={collection}, filter={metadata_filter})"
+        )
 
         # ── STEP 4: RERANKING ──
         final_docs = self._reranker.rerank(effective_query, all_candidates)
@@ -364,6 +395,7 @@ class RetrievalEngine:
         seen_hashes: Set[int] = set()
 
         for mq in multi_queries:
+            # Retrieval da tutte le collection standard
             for collection_name, default_retriever in self._collection_retrievers.items():
                 try:
                     retriever = default_retriever
@@ -371,7 +403,7 @@ class RetrievalEngine:
                         filtered = self._get_filtered_retriever(collection_name, metadata_filter)
                         if filtered:
                             retriever = filtered
-                            
+
                     docs = retriever.invoke(mq)
                     for doc in docs:
                         h = hash(doc.page_content[:200])
@@ -381,22 +413,81 @@ class RetrievalEngine:
                 except Exception as e:
                     logger.warning(f"Errore retrieval da {collection_name}: {e}")
 
+            # Retrieval dal Parent-Child (SEMPRE, con filtro se presente)
             try:
-                if not metadata_filter:
-                    pc_docs = self._pc_retriever.invoke(mq)
-                    for doc in pc_docs:
-                        h = hash(doc.page_content[:200])
-                        if h not in seen_hashes:
-                            seen_hashes.add(h)
-                            all_candidates.append(doc)
+                pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
+                for doc in pc_docs:
+                    h = hash(doc.page_content[:200])
+                    if h not in seen_hashes:
+                        seen_hashes.add(h)
+                        all_candidates.append(doc)
             except Exception as e:
                 logger.warning(f"Errore retrieval Parent-Child: {e}")
 
         final_docs = self._reranker.rerank(query, all_candidates)
         return final_docs, query
 
-        final_docs = self._reranker.rerank(query, all_candidates)
-        return final_docs, query
+    # ================================================================
+    # PARENT-CHILD RETRIEVAL — con supporto filtri metadata
+    # ================================================================
+
+    def _retrieve_from_parent_child(
+        self,
+        query: str,
+        metadata_filter: Optional[dict] = None,
+    ) -> List[Document]:
+        """
+        Recupera documenti dal Parent-Child vectorstore.
+
+        Se metadata_filter è presente, usa accesso diretto a Chroma
+        con filtro (il ParentDocumentRetriever non supporta filtri nativi).
+        Se metadata_filter è None, usa il ParentDocumentRetriever standard
+        (che restituisce i parent document completi).
+
+        NOTA ARCHITETTURALE:
+          Quando si usa il filtro, si bypassa il meccanismo parent→child→parent
+          e si restituiscono direttamente i child chunks filtrati. Questo è
+          un compromesso accettabile perché:
+            1. I child chunks contengono già il prefisso contestuale
+               (iniettato durante l'indicizzazione)
+            2. Il reranker a valle selezionerà comunque i più rilevanti
+            3. L'alternativa (nessun risultato) è peggiore
+        """
+        if metadata_filter:
+            # Accesso diretto con filtro al child vectorstore
+            chroma_where = self._build_chroma_filter(metadata_filter)
+            try:
+                retriever = self._pc_child_vectorstore.as_retriever(
+                    search_type=self._indexer._settings.vectorstore.search_type,
+                    search_kwargs={
+                        "k": self._indexer._settings.vectorstore.search_k,
+                        "filter": chroma_where,
+                    },
+                )
+                docs = retriever.invoke(query)
+                logger.info(
+                    f"Parent-Child (filtrato): {len(docs)} child chunks "
+                    f"(filter={metadata_filter})"
+                )
+                return docs
+            except Exception as e:
+                logger.warning(
+                    f"Errore Parent-Child con filtro {metadata_filter}: {e}. "
+                    f"Fallback a retrieval senza filtro."
+                )
+                # Fallback: prova senza filtro
+                try:
+                    return self._pc_retriever.invoke(query)
+                except Exception as e2:
+                    logger.warning(f"Anche il fallback Parent-Child è fallito: {e2}")
+                    return []
+        else:
+            # Retrieval standard via ParentDocumentRetriever (restituisce parent)
+            return self._pc_retriever.invoke(query)
+
+    # ================================================================
+    # FILTERED RETRIEVER FACTORY
+    # ================================================================
 
     def _get_filtered_retriever(self, collection_name: str, metadata_filter: dict):
         """Crea un retriever Chroma con filtro metadata."""
