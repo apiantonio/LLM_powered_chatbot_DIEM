@@ -230,8 +230,8 @@ class CrossEncoderReranker:
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
 
         # Stampa classifica per debug
-        print(f"\n--- CLASSIFICA COMPLETA ({len(ranked)} CANDIDATI) ---")
-        for i, (doc, score) in enumerate(ranked):
+        print(f"\n--- TOP 5 CLASSIFICA (su {len(ranked)} CANDIDATI) ---")
+        for i, (doc, score) in enumerate(ranked[:5]):  # <-- Modificato qui: aggiunto [:5]
             print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
             print(f"    Testo: {doc.page_content[:150]}...")
         print("-" * 65)
