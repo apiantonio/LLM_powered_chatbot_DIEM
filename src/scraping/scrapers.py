@@ -297,6 +297,7 @@ class UnisaCrawler:
         local_new_links = set()
         local_pdfs = set()
 
+        # [Logica Esistente] Estrazione iniziale di link e PDF
         for a_tag in soup.find_all('a', href=True):
             raw_href = a_tag['href'].strip()
 
@@ -324,7 +325,30 @@ class UnisaCrawler:
                 if self.is_valid_url(full_url):
                     local_new_links.add(full_url)
 
-        # ---- PULIZIA DOM ----
+        # ============================================================================
+        # --- ECCEZIONE ESCLUSIVA: Cattura preventiva del sub-footer per la Home ---
+        # ============================================================================
+        sub_footer_content = ""
+        # Verifica se l'URL corrisponde esattamente alla pagina principale del DIEM
+        if source_url.rstrip("/") in [
+            "https://www.diem.unisa.it", 
+            "http://www.diem.unisa.it", 
+            "https://www.diem.unisa.it/home", 
+            "http://www.diem.unisa.it/home"
+        ]:
+            # Utilizza un selettore flessibile per ID o Classe che contenga 'sub-footer'
+            sub_footer_el = soup.select_one(".sub-footer, #sub-footer, [class*='sub-footer'], [id*='sub-footer']")
+            if sub_footer_el:
+                # Applichiamo la pulizia degli attributi anche al sub-footer per uniformitÃ 
+                allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
+                for tag in sub_footer_el.find_all(True):
+                    tag.attrs = {k: v for k, v in tag.attrs.items() if k in allowed_attrs}
+                sub_footer_el.attrs = {k: v for k, v in sub_footer_el.attrs.items() if k in allowed_attrs}
+                
+                # Salviamo il contenuto testuale/HTML strutturato
+                sub_footer_content = f"\n<div class=\"sub-footer-exception\">\n Posizione dipartimento DIEM:{sub_footer_el.decode_contents().strip()}\n</div>\n"
+
+        # ---- PULIZIA DOM GENERALE [Logica Esistente] ----
         noise_selectors = [
             "#header", "#main-menu", "#menu-bar", "#unisa-left-menu",
             "#box-agenda", "#share-dropdown", ".breadcrumb",
@@ -345,6 +369,12 @@ class UnisaCrawler:
             for tag in main_content.find_all(True):
                 tag.attrs = {k: v for k, v in tag.attrs.items() if k in allowed_attrs}
             clean_html = main_content.decode_contents().strip()
+
+        # ============================================================================
+        # --- CODA ECCEZIONE: Se abbiamo estratto il sub-footer, lo appendiamo qui ---
+        # ============================================================================
+        if sub_footer_content:
+            clean_html += sub_footer_content
 
         return clean_html, local_new_links, local_pdfs
 

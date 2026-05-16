@@ -239,7 +239,8 @@ def load_settings() -> AppSettings:
             pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
-            index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json")
+            index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json"),
+            max_depth=int(os.getenv("MAX_DEPTH", "5"))
         ),
         crawler=CrawlerConfig(
             thread_cpu_factor=float(os.getenv("CRAWLER_THREAD_FACTOR", "0.75")),
