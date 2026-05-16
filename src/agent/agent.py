@@ -1,36 +1,32 @@
 """
 Agente RAG DIEM — Orchestratore principale.
 
-REFACTORING v3 — GUARDRAILS VIA MIDDLEWARE:
-  I vecchi guardrails (ScopeGuardrail, InputSanitizer, OutputValidator)
-  sono stati COMPLETAMENTE ELIMINATI e sostituiti con middleware LangChain
-  inseriti direttamente nel grafo dell'agente tramite create_agent(middleware=[...]).
+REFACTORING v3.1 — RISOLUZIONE TEMPORALE + PYDANTIC TOOLS:
 
-  Middleware attivi (in ordine):
-    Prebuilt:
-      - PIIMiddleware (codice fiscale, NO email/telefoni)
-      - ModelCallLimitMiddleware (anti-loop)
-      - ToolCallLimitMiddleware (limiti tool)
-    Custom (before_model):
-      - InjectionGuardMiddleware (prompt injection)
-      - ToxicityFilterMiddleware (profanità/minacce)
-      - TopicalGuardrailMiddleware (fuori contesto)
-    Custom (after_model):
-      - HallucinationGuardMiddleware (confabulazione)
-      - CodeGenerationGuardMiddleware (blocco generazione codice)
-      - OutputPIIGuardMiddleware (PII nell'output)
+  RISOLUZIONE TEMPORALE (v3.1):
+    Il middleware temporale è stato potenziato:
+    - Rileva riferimenti temporali relativi ("quest'anno", "anno scorso",
+      "due anni fa", "prossimo semestre") e assoluti impliciti ("oggi",
+      "domani", "lunedì prossimo")
+    - Inietta un BLOCCO DI CONTESTO TEMPORALE strutturato nella query,
+      contenente data corrente, anno corrente, anno precedente, anno
+      successivo — così il LLM può risolvere autonomamente le espressioni
+      temporali senza bisogno di parser regex complessi
+    - Il blocco viene iniettato PRIMA dell'invio all'agente, in modo
+      trasparente per il resto della pipeline
+
+  GUARDRAILS VIA MIDDLEWARE (invariato da v3):
+    I guardrails sono middleware LangChain integrati nel grafo dell'agente.
+
+  PYDANTIC TOOLS (v3.1):
+    I tool usano ora args_schema con BaseModel + Field per compatibilità
+    ottimale con Qwen2.5 7B/14B. L'anno è Optional[int] e viene risolto
+    dal LLM grazie al contesto temporale iniettato.
 
   Il flusso dell'agente è ora:
-    User Query → Temporal Middleware (pre-agent)
+    User Query → Temporal Middleware (pre-agent, arricchito)
                → Memory → Agent Graph (con middleware integrati)
                → Response
-
-  I middleware gestiscono internamente:
-    - Blocco injection PRIMA del model call
-    - Blocco tossicità PRIMA del model call
-    - Blocco off-topic PRIMA del model call
-    - Validazione output DOPO il model call
-    - Limiti su model/tool calls
 """
 
 import re
@@ -59,30 +55,104 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# MIDDLEWARE: Iniezione Temporale Dinamica
+# MIDDLEWARE: Risoluzione Temporale Dinamica (v3.1 — Potenziato)
 # ============================================================
 
-_TEMPORAL_PATTERNS = [
-    r"\b(oggi|domani|ieri|dopodomani)\b",
-    r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)\s+(prossim[oa]|scors[oa])\b",
+# --- Pattern per riferimenti temporali RELATIVI ---
+# Questi richiedono iniezione del contesto data/anno per il LLM
+_TEMPORAL_RELATIVE_PATTERNS = [
+    # Riferimenti relativi all'anno
+    r"\b(quest['']?\s*anno|anno\s+corrente|anno\s+in\s+corso)\b",
+    r"\b(anno\s+scorso|l['']?\s*anno\s+scorso|anno\s+passato|anno\s+precedente)\b",
+    r"\b(anno\s+prossimo|l['']?\s*anno\s+prossimo|prossimo\s+anno)\b",
+    r"\b(\d+)\s+ann[io]\s+fa\b",
+    # Riferimenti relativi a semestre/trimestre
+    r"\b(questo|prossimo|scorso|corrente)\s+(semestre|trimestre)\b",
+    # Riferimenti relativi a settimana/mese
     r"\b(questa|prossima|scorsa)\s+(settimana|lezione)\b",
-    r"\b(questo|prossimo|scorso)\s+(mese|semestre|anno|trimestre)\b",
-    r"\b(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica)\b",
-    r"\b(ora|adesso|attualmente|corrente|in corso)\b",
-    r"\b(quando|a che ora|orario)\b",
+    r"\b(questo|prossimo|scorso)\s+(mese)\b",
+]
+
+# --- Pattern per riferimenti temporali ASSOLUTI IMPLICITI ---
+# Questi richiedono la data esatta per la risoluzione
+_TEMPORAL_ABSOLUTE_PATTERNS = [
+    r"\b(oggi|domani|ieri|dopodomani|l['']?\s*altro\s+ieri)\b",
+    r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)\s+(prossim[oa]|scors[oa])\b",
+    r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)\b",
+    r"\b(ora|adesso|attualmente|corrente|in\s+corso)\b",
+    r"\b(quando|a\s+che\s+ora|orario)\b",
     r"\b(prossim[oa]|scors[oa])\b",
 ]
 
-_TEMPORAL_REGEX = [re.compile(p, re.IGNORECASE) for p in _TEMPORAL_PATTERNS]
+_TEMPORAL_RELATIVE_REGEX = [
+    re.compile(p, re.IGNORECASE) for p in _TEMPORAL_RELATIVE_PATTERNS
+]
+_TEMPORAL_ABSOLUTE_REGEX = [
+    re.compile(p, re.IGNORECASE) for p in _TEMPORAL_ABSOLUTE_PATTERNS
+]
+
+# Pattern per verificare se l'utente ha già specificato un anno esatto
+_EXPLICIT_YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
 
 
 def _has_temporal_reference(query: str) -> bool:
-    """Controlla se la query contiene riferimenti temporali impliciti."""
-    return any(p.search(query) for p in _TEMPORAL_REGEX)
+    """Controlla se la query contiene QUALSIASI riferimento temporale."""
+    return (
+        any(p.search(query) for p in _TEMPORAL_RELATIVE_REGEX)
+        or any(p.search(query) for p in _TEMPORAL_ABSOLUTE_REGEX)
+    )
 
 
-def _get_temporal_context() -> str:
-    """Genera la stringa di contesto temporale corrente."""
+def _has_relative_temporal_reference(query: str) -> bool:
+    """Controlla se la query contiene riferimenti temporali RELATIVI (che richiedono l'anno)."""
+    return any(p.search(query) for p in _TEMPORAL_RELATIVE_REGEX)
+
+
+def _has_explicit_year(query: str) -> bool:
+    """Controlla se la query contiene già un anno esplicito (es. 2024, 2025)."""
+    return bool(_EXPLICIT_YEAR_PATTERN.search(query))
+
+
+def _get_temporal_context_block() -> str:
+    """
+    Genera il blocco di contesto temporale strutturato per il LLM.
+
+    Questo blocco contiene tutte le informazioni necessarie affinché
+    il LLM possa risolvere autonomamente espressioni temporali come
+    "quest'anno", "anno scorso", "due anni fa", ecc.
+
+    Il formato è pensato per essere compatto ma non ambiguo per Qwen2.5 7B.
+    """
+    now = datetime.now()
+    giorni = ["lunedì", "martedì", "mercoledì", "giovedì",
+              "venerdì", "sabato", "domenica"]
+    mesi = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+            "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+
+    anno_corrente = now.year
+    anno_precedente = anno_corrente - 1
+    anno_successivo = anno_corrente + 1
+
+    return (
+        f"[Informazione di sistema: La data odierna è "
+        f"{giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {anno_corrente}, "
+        f"ore {now.strftime('%H:%M')}. "
+        f"Anno corrente: {anno_corrente}. "
+        f"Anno scorso: {anno_precedente}. "
+        f"Anno prossimo: {anno_successivo}. "
+        f"Usa queste informazioni per risolvere riferimenti temporali relativi "
+        f"come 'quest\\'anno' → {anno_corrente}, "
+        f"'anno scorso' → {anno_precedente}, "
+        f"'due anni fa' → {anno_corrente - 2}. "
+        f"Se l'utente menziona un anno relativo, converti nel parametro 'anno' (intero) del tool.]"
+    )
+
+
+def _get_simple_temporal_context() -> str:
+    """
+    Genera una stringa di contesto temporale semplice (solo data/ora).
+    Usata quando ci sono riferimenti temporali assoluti ma non relativi.
+    """
     now = datetime.now()
     giorni = ["lunedì", "martedì", "mercoledì", "giovedì",
               "venerdì", "sabato", "domenica"]
@@ -97,13 +167,34 @@ def _get_temporal_context() -> str:
 
 def inject_temporal_context(query: str) -> str:
     """
-    Middleware pre-agente: inietta data/ora SOLO se la query
-    contiene riferimenti temporali impliciti o relativi.
+    Middleware pre-agente: Risoluzione Temporale Dinamica (v3.1).
+
+    Strategia a 3 livelli:
+      1. Se l'utente ha già un anno esplicito (es. "bandi 2024") → nessuna iniezione
+      2. Se ci sono riferimenti RELATIVI ("quest'anno", "anno scorso") →
+         inietta il BLOCCO COMPLETO con anno corrente/precedente/successivo
+         per permettere al LLM di risolvere e passare `anno` come int al tool
+      3. Se ci sono solo riferimenti ASSOLUTI ("oggi", "domani", "lunedì") →
+         inietta solo data/ora corrente (contesto semplice)
     """
+    # Livello 1: anno esplicito presente → nessuna iniezione necessaria
+    if _has_explicit_year(query):
+        logger.debug(f"Anno esplicito rilevato in query, skip iniezione temporale")
+        return query
+
+    # Livello 2: riferimenti relativi → blocco completo con anni
+    if _has_relative_temporal_reference(query):
+        temporal_block = _get_temporal_context_block()
+        logger.info(f"Iniezione temporale COMPLETA (riferimento relativo rilevato)")
+        return f"{query}\n{temporal_block}"
+
+    # Livello 3: riferimenti assoluti → contesto semplice
     if _has_temporal_reference(query):
-        temporal = _get_temporal_context()
-        logger.info(f"Iniezione temporale: {temporal}")
+        temporal = _get_simple_temporal_context()
+        logger.info(f"Iniezione temporale semplice: {temporal}")
         return f"{query}\n{temporal}"
+
+    # Nessun riferimento temporale → query invariata
     return query
 
 
@@ -117,7 +208,7 @@ class RAGAgent:
 
     NOTA: I guardrails sono ora gestiti internamente dal grafo dell'agente
     tramite middleware LangChain. Questo Facade si occupa solo di:
-      1. Pre-processing temporale
+      1. Pre-processing temporale (v3.1 — risoluzione anno relativo)
       2. Gestione memoria conversazionale
       3. Invocazione dell'agente
       4. Logging e osservabilità
@@ -139,7 +230,7 @@ class RAGAgent:
         Punto di ingresso principale per l'interazione con l'agente.
 
         Flusso semplificato (i guardrails sono nei middleware):
-          1. Middleware temporale: inietta data/ora se necessario
+          1. Middleware temporale: inietta data/anno se necessario (v3.1)
           2. Memory: costruzione messaggi con storico
           3. Chat history injection per tool
           4. Agent: invocazione (i middleware gestiscono guardrails)
@@ -147,7 +238,7 @@ class RAGAgent:
         """
         print(f"USER QUERY: {user_query}")
 
-        # --- STEP 1: Middleware Iniezione Temporale ---
+        # --- STEP 1: Middleware Risoluzione Temporale (v3.1) ---
         query_for_agent = inject_temporal_context(user_query)
 
         # --- STEP 2: Registra il turno e costruisci i messaggi ---
@@ -342,10 +433,10 @@ class RAGAgentFactory:
     """
     Factory per la costruzione dell'agente RAG completo.
 
-    REFACTORING v3:
-      I guardrails sono ora middleware LangChain passati a create_agent().
-      Non esistono più oggetti ScopeGuardrail, InputSanitizer, OutputValidator
-      separati — tutto è integrato nel grafo dell'agente.
+    REFACTORING v3.1:
+      - Tool con Pydantic args_schema per compatibilità Qwen2.5 7B/14B
+      - Risoluzione temporale potenziata nel middleware pre-agente
+      - Guardrails middleware LangChain (invariato da v3)
     """
 
     @staticmethod
@@ -371,6 +462,12 @@ class RAGAgentFactory:
         set_retrieval_engine(retrieval_engine)
         tools = get_all_tools()
         logger.info(f"   ✅ Tools registrati: {[t.name for t in tools]}")
+
+        # Log degli schema Pydantic per debug
+        for t in tools:
+            if hasattr(t, 'args_schema') and t.args_schema is not None:
+                schema_fields = list(t.args_schema.model_fields.keys())
+                logger.info(f"      📐 {t.name} args_schema: {schema_fields}")
 
         # --- 3. System Prompt ---
         system_prompt = get_agent_system_prompt()
@@ -424,9 +521,9 @@ class RAGAgentFactory:
         logger.info("=" * 60)
         logger.info("🚀 Agente RAG DIEM assemblato e pronto!")
         logger.info("   📋 Prompt: v2 (ottimizzato 7B, no data statica)")
-        logger.info("   ⏰ Temporale: middleware dinamico")
+        logger.info("   ⏰ Temporale: middleware dinamico v3.1 (risoluzione anno)")
         logger.info("   🧠 Memoria: SmartConversationMemory")
-        logger.info("   🔧 Tools: 4 tool con routing syllabus fix")
+        logger.info("   🔧 Tools: 4 tool con Pydantic args_schema")
         logger.info("   🛡️ Guardrails: MIDDLEWARE-BASED")
         logger.info(f"      - {len(guardrail_middleware)} middleware attivi")
         logger.info("      - Injection Guard (before_model)")

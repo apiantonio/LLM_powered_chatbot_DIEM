@@ -1,18 +1,20 @@
 """
-agent/tools/__init__.py — Tool RIVISTI per 3 Vector Store.
+agent/tools/__init__.py — Tool con schema Pydantic rigoroso per Qwen2.5 7B/14B.
 
-REFACTORING v2:
-  - FIX Syllabus routing (Punto 7): "Syllabus di X" → search_persone
-    (il VS PERSONE contiene i dati di didattica dei docenti, inclusi
-    i programmi/syllabus degli insegnamenti)
-  - Descrizioni tool compatte per 7B (meno token nel prompt)
-  - Anti-compressione mantenuta
+REFACTORING v3 — Pydantic Tool Calling:
+  - Ogni tool ha un args_schema definito con pydantic.BaseModel + Field
+  - sotto_area validato con Literal[...] per ogni collection
+  - anno come Optional[int] per abbinamento con risoluzione temporale
+  - corso_di_laurea NON esposto (rischio hallucination su 7B)
+  - Descrizioni tool compatte e direttive anti-compressione mantenute
   - Fallback signals invariati
 """
 
 from __future__ import annotations
 import logging
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
+
+from pydantic import BaseModel, Field
 from langchain.tools import tool
 from ingestion.router import CollectionTarget
 
@@ -206,11 +208,131 @@ def _format_results(documents) -> str:
 
 
 # ============================================================
-# TOOL 1: PERSONE — FIX Syllabus routing (Punto 7)
+# PYDANTIC SCHEMAS — args_schema per ogni tool
 # ============================================================
 
-@tool("search_persone")
-def search_persone(query: str, sotto_area: Optional[str] = None, nome_insegnamenti: Optional[str] = None, anno: Optional[str] = None) -> str:
+class SearchPersoneInput(BaseModel):
+    """Schema input per il tool search_persone."""
+    query: str = Field(
+        description=(
+            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
+            "NON ridurre a keyword, NON parafrasare. "
+            "Esempio corretto: 'Chi è il Professore Rossi?' "
+            "Esempio VIETATO: 'Rossi'"
+        )
+    )
+    sotto_area: Optional[Literal[
+        "profilo", "didattica", "ricerca", "internazionale", "risorse"
+    ]] = Field(
+        default=None,
+        description=(
+            "Filtro sulla sezione della pagina docente. Valori ammessi: "
+            "'profilo' (bio, CV, contatti, email, ricevimento), "
+            "'didattica' (corsi insegnati, syllabus, programmi), "
+            "'ricerca' (pubblicazioni, progetti, laboratori), "
+            "'internazionale' (attività internazionali, Erasmus docente), "
+            "'risorse' (materiale didattico). "
+            "Lascia vuoto se non sei sicuro."
+        )
+    )
+    nome_insegnamenti: Optional[str] = Field(
+        default=None,
+        description=(
+            "Nome esatto dell'insegnamento/corso da cercare, "
+            "estratto dalla domanda dell'utente. "
+            "Esempio: 'Machine Learning', 'Algoritmi e Strutture Dati'. "
+            "Lascia vuoto se l'utente non menziona un insegnamento specifico."
+        )
+    )
+    anno: Optional[int] = Field(
+        default=None,
+        description=(
+            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Usa il contesto temporale fornito nel messaggio per risolvere "
+            "espressioni come 'quest'anno' o 'anno scorso' in un numero. "
+            "Lascia vuoto se l'utente non specifica alcun periodo temporale."
+        )
+    )
+
+
+class SearchOffertaFormativaInput(BaseModel):
+    """Schema input per il tool search_offerta_formativa."""
+    query: str = Field(
+        description=(
+            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
+            "NON ridurre a keyword, NON parafrasare."
+        )
+    )
+    anno: Optional[int] = Field(
+        default=None,
+        description=(
+            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Usa il contesto temporale fornito nel messaggio per risolvere "
+            "espressioni relative. Lascia vuoto se non specificato."
+        )
+    )
+
+
+class SearchDipartimentoInput(BaseModel):
+    """Schema input per il tool search_dipartimento."""
+    query: str = Field(
+        description=(
+            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
+            "NON ridurre a keyword, NON parafrasare."
+        )
+    )
+    sotto_area: Optional[Literal[
+        "aule", "laboratori", "sedi", "bandi",
+        "ricerca_dipartimentale", "terza_missione",
+        "internazionale", "organizzazione", "generale"
+    ]] = Field(
+        default=None,
+        description=(
+            "Filtro sulla sezione del dipartimento. Valori ammessi: "
+            "'aule' (aule, strutture didattiche, capienza), "
+            "'laboratori' (laboratori di ricerca), "
+            "'sedi' (edifici, campus, indirizzi), "
+            "'bandi' (bandi, borse, concorsi, dottorato, avvisi), "
+            "'ricerca_dipartimentale' (ricerca del dipartimento), "
+            "'terza_missione' (terza missione, impatto sociale), "
+            "'internazionale' (Erasmus, mobilità, accordi internazionali), "
+            "'organizzazione' (organigramma, commissioni, personale), "
+            "'generale' (informazioni generiche dipartimento). "
+            "ATTENZIONE: 'strutture' NON esiste. Usa 'aule', 'laboratori' o 'sedi'. "
+            "Lascia vuoto se non sei sicuro."
+        )
+    )
+    anno: Optional[int] = Field(
+        default=None,
+        description=(
+            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Utile per filtrare bandi per anno. "
+            "Lascia vuoto se non specificato."
+        )
+    )
+
+
+class SearchAllInput(BaseModel):
+    """Schema input per il tool search_all."""
+    query: str = Field(
+        description=(
+            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
+            "NON ridurre a keyword, NON parafrasare."
+        )
+    )
+
+
+# ============================================================
+# TOOL 1: PERSONE — con Pydantic schema
+# ============================================================
+
+@tool("search_persone", args_schema=SearchPersoneInput)
+def search_persone(
+    query: str,
+    sotto_area: Optional[str] = None,
+    nome_insegnamenti: Optional[str] = None,
+    anno: Optional[int] = None,
+) -> str:
     """Cerca informazioni su DOCENTI del DIEM: profilo, email, ricevimento, corsi insegnati, syllabus/insegnamenti, ricerca, attività internazionali.
 
 USA QUESTO TOOL per:
@@ -220,32 +342,28 @@ USA QUESTO TOOL per:
 - "Syllabus/programma di Algoritmi" → didattica dell'insegnamento (sotto_area="didattica")
 - "Email/ricevimento del prof. X"
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
+DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
-Args:
-    query: Domanda COMPLETA dell'utente.
-    sotto_area: Filtro opzionale: "profilo", "didattica", "ricerca", "internazionale", "risorse".
-    nome_insegnamenti: Parametro opzionale. Valorizza esplicitamente estraendo il nome dell'insegnamento/corso dalla query (es. "Machine Learning", "Algoritmi").
-    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
-    """
-
+    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
         logger.warning(f"sotto_area non valido per PERSONE: '{sotto_area}'. Ignoro.")
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    metadata_filter = None
+    # Costruzione metadata_filter
+    metadata_filter = {}
     if sotto_area:
-        metadata_filter = {"sotto_area": sotto_area}
+        metadata_filter["sotto_area"] = sotto_area
     if nome_insegnamenti:
-        metadata_filter = {"nome_insegnamenti": nome_insegnamenti}
-    if anno:
-        metadata_filter = {"anno": anno}
+        metadata_filter["nome_insegnamenti"] = nome_insegnamenti
+    if anno is not None:
+        metadata_filter["anno"] = str(anno)
 
     metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
+    print(f"  sotto_area={sotto_area}, nome_insegnamenti={nome_insegnamenti}, anno={anno}")
 
     return _search_collection(
         query, CollectionTarget.PERSONE,
@@ -254,11 +372,14 @@ Args:
 
 
 # ============================================================
-# TOOL 2: OFFERTA FORMATIVA
+# TOOL 2: OFFERTA FORMATIVA — con Pydantic schema
 # ============================================================
 
-@tool("search_offerta_formativa")
-def search_offerta_formativa(query: str, anno: Optional[str] = None) -> str:
+@tool("search_offerta_formativa", args_schema=SearchOffertaFormativaInput)
+def search_offerta_formativa(
+    query: str,
+    anno: Optional[int] = None,
+) -> str:
     """Cerca informazioni su CORSI DI LAUREA del DIEM: piani di studio, regolamenti, requisiti ammissione, CFU, OFA, tesi, statistiche.
 
 USA QUESTO TOOL per:
@@ -268,50 +389,44 @@ USA QUESTO TOOL per:
 
 NON contiene info su chi insegna o syllabus di insegnamenti specifici → usa search_persone.
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
-
-Args:
-    query: Domanda COMPLETA dell'utente su corsi e offerta formativa.
-    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
-    """
+DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = {}
-    if anno:
-        metadata_filter = {"anno": anno}
+    if anno is not None:
+        metadata_filter["anno"] = str(anno)
 
     metadata_filter = metadata_filter if metadata_filter else None
 
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
-        "search_offerta_formativa"
+        "search_offerta_formativa", metadata_filter
     )
 
 
 # ============================================================
-# TOOL 3: DIPARTIMENTO
+# TOOL 3: DIPARTIMENTO — con Pydantic schema
 # ============================================================
 
-@tool("search_dipartimento")
-def search_dipartimento(query: str, sotto_area: Optional[str] = None, anno: Optional[str] = None) -> str:
+@tool("search_dipartimento", args_schema=SearchDipartimentoInput)
+def search_dipartimento(
+    query: str,
+    sotto_area: Optional[str] = None,
+    anno: Optional[int] = None,
+) -> str:
     """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione.
 
-sotto_area ammessi: "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale", "terza_missione", "internazionale", "organizzazione", "generale".
-ATTENZIONE: "strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
+ATTENZIONE: sotto_area="strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword.
+DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
-Args:
-    query: Domanda COMPLETA dell'utente.
-    sotto_area: Filtro opzionale: "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale", "terza_missione", "internazionale", "organizzazione", "generale".
-    anno: Parametro opzionale. Valorizza estraendo l'anno di riferimento (es. "2023", "2023/2024") se menzionato.
-    """
+    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
         logger.warning(f"sotto_area non valido per DIPARTIMENTO: '{sotto_area}'. Ignoro.")
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    # Inferenza automatica sotto_area dalla query
+    # Inferenza automatica sotto_area dalla query (se non specificato dal modello)
     if sotto_area is None:
         query_lower = query.lower()
         if any(kw in query_lower for kw in [
@@ -340,11 +455,12 @@ Args:
         ]):
             sotto_area = "internazionale"
 
-    metadata_filter = None
+    # Costruzione metadata_filter
+    metadata_filter = {}
     if sotto_area:
-        metadata_filter = {"sotto_area": sotto_area}
-    if anno:
-        metadata_filter = {"anno": anno}
+        metadata_filter["sotto_area"] = sotto_area
+    if anno is not None:
+        metadata_filter["anno"] = str(anno)
 
     metadata_filter = metadata_filter if metadata_filter else None
 
@@ -355,18 +471,14 @@ Args:
 
 
 # ============================================================
-# TOOL 4: Ricerca Trasversale
+# TOOL 4: Ricerca Trasversale — con Pydantic schema
 # ============================================================
 
-@tool("search_all")
+@tool("search_all", args_schema=SearchAllInput)
 def search_all(query: str) -> str:
     """Ricerca trasversale su TUTTA la knowledge base del DIEM. Usa SOLO quando gli altri tool falliscono o la domanda è ambigua/cross-dominio.
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`.
-
-Args:
-    query: Domanda COMPLETA dell'utente.
-    """
+DIRETTIVA: Passa la query INTEGRA nel campo `query`."""
     global _last_search_meta
 
     if _retrieval_engine is None:
