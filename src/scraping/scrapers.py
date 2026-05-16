@@ -425,93 +425,6 @@ class UnisaCrawler:
         with self._counter_lock:
             self.processed_count += 1
             return self.processed_count
-
-
-    # ==========================================
-    # REQ 5: POST-PROCESSING DIDATTICA
-    # ==========================================
-    def _postprocess_didattica_cleanup(self) -> int:
-        """
-        Eliminazione gerarchica della didattica (Versione Corretta):
-        1. Se esiste almeno un cId -> Elimina il Nonno (solo id).
-        2. A parità di id -> Mantieni SOLO i file del cId più alto (elimina versioni vecchie).
-        3. Se per il cId più alto esiste almeno un Figlio (con pId) -> Elimina TUTTI i padri (senza pId).
-        """
-        deleted_count = 0
-        output_path = Path(self.output_dir)
-
-        # Regex per estrarre id e cId in modo sicuro
-        pattern_extract = re.compile(r'id=(\d+)(?:.*?cid=([a-zA-Z0-9\-]+))?', re.IGNORECASE)
-        
-        # Mappe per tracciare la struttura su disco
-        ids_con_almeno_un_cid = set()
-        id_cid_con_almeno_un_pid = set()
-        max_cid_per_id = {}
-
-        def cid_score(cid_str: str):
-            """Confronto numerico per cId (es. '10001-2025' -> [10001, 2025])"""
-            if not cid_str: return []
-            return [int(n) for n in re.findall(r'\d+', cid_str)]
-
-        # --- FASE 1: Mappatura completa del disco ---
-        for saved_file in output_path.glob("*.html"):
-            filename_lower = saved_file.name.lower()
-            if "-didattica-" in filename_lower and "id=" in filename_lower:
-                match = pattern_extract.search(filename_lower)
-                if match:
-                    curr_id, curr_cid = match.group(1), match.group(2)
-                    ha_pid = "pid=" in filename_lower
-
-                    if curr_cid:
-                        ids_con_almeno_un_cid.add(curr_id)
-                        # Aggiorniamo il cId massimo per questo id
-                        best_cid = max_cid_per_id.get(curr_id)
-                        if not best_cid or cid_score(curr_cid) > cid_score(best_cid):
-                            max_cid_per_id[curr_id] = curr_cid
-                        
-                        if ha_pid:
-                            id_cid_con_almeno_un_pid.add((curr_id, curr_cid))
-
-        # --- FASE 2: Eliminazione basata sulle tre regole ---
-        for saved_file in output_path.glob("*.html"):
-            filename_lower = saved_file.name.lower()
-            if "-didattica-" in filename_lower and "id=" in filename_lower:
-                match = pattern_extract.search(filename_lower)
-                if match:
-                    curr_id, curr_cid = match.group(1), match.group(2)
-                    ha_pid = "pid=" in filename_lower
-                    
-                    should_delete = False
-                    reason = ""
-
-                    # REGOLA 1: Eliminazione del Nonno (Solo id)
-                    if not curr_cid and not ha_pid:
-                        if curr_id in ids_con_almeno_un_cid:
-                            should_delete = True
-                            reason = f"Esiste almeno un cId per id={curr_id}"
-
-                    # REGOLA 2: Eliminazione versioni cId obsolete
-                    elif curr_cid and curr_cid != max_cid_per_id.get(curr_id):
-                        should_delete = True
-                        reason = f"Esiste un cId maggiore ({max_cid_per_id[curr_id]})"
-
-                    # REGOLA 3: Eliminazione Padri se esistono Figli (per la versione max)
-                    elif curr_cid and not ha_pid:
-                        # Se questa versione ha dei figli, eliminiamo il padre
-                        if (curr_id, curr_cid) in id_cid_con_almeno_un_pid:
-                            should_delete = True
-                            reason = f"Esistono figli con pId per questa versione (id={curr_id}, cId={curr_cid})"
-
-                    if should_delete:
-                        try:
-                            saved_file.unlink()
-                            deleted_count += 1
-                            logger.debug(f"  Cleanup Didattica: rimosso {saved_file.name} -> {reason}")
-                        except OSError as e:
-                            logger.warning(f"  Impossibile eliminare {saved_file.name}: {e}")
-
-        logger.info(f"Post-processing didattica: {deleted_count} file rimossi.")
-        return deleted_count
     
     # ============================================================
     # POST-INGESTION: CLEANUP FILE CON -anno=YYYY (Feature 3)
@@ -709,24 +622,20 @@ class UnisaCrawler:
         # POST-PROCESSING (eseguito DOPO la fine di TUTTI i batch)
         # ============================================================
 
-        # (Req 5) Eliminazione file didattica padre
-        didattica_deleted = self._postprocess_didattica_cleanup()
 
         # (Feature 3) Eliminazione file con -anno=YYYY < cutoff_year
         # ECCEZIONE: -anno=0 viene SEMPRE preservato.
         anno_deleted = self._postprocess_anno_cleanup()
 
-        self._print_summary(didattica_deleted, anno_deleted)
+        self._print_summary(anno_deleted=anno_deleted)
 
-    def _print_summary(self, didattica_deleted: int = 0, anno_deleted: int = 0):
+    def _print_summary(self, anno_deleted: int = 0):
         logger.info("====== RESOCONTO FINALE ======")
         logger.info(f"URL visitati: {len(self.visited_urls)}")
         logger.info(f"HTML salvati: {self.processed_count}")
         logger.info(f"HTML filtrati (scartati): {self.filtered_count}")
         logger.info(f"PDF validi raccolti: {len(self.found_pdf_links)}")
         logger.info(f"Thread pool utilizzato: {self.max_workers} workers")
-        if didattica_deleted:
-            logger.info(f"Didattica post-processing: {didattica_deleted} file padre rimossi")
         if anno_deleted:
             logger.info(
                 f"Anno post-processing: {anno_deleted} file con anno obsoleto rimossi "
