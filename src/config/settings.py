@@ -240,7 +240,7 @@ def load_settings() -> AppSettings:
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
             index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json"),
-            max_depth=int(os.getenv("MAX_DEPTH", "5"))
+            max_depth=int(os.getenv("MAX_DEPTH", "5")),
             batch_size=int(os.getenv("BATCH_SIZE", "1024"))
         ),
         crawler=CrawlerConfig(
