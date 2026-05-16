@@ -106,8 +106,8 @@ def _build_temporal_context() -> str:
         f"(es. 'anno scorso', 'due anni fa', '10 anni fa', 'quest\\'anno'), "
         f"calcola l'anno corretto a partire da {anno_solare} e passalo come parametro "
         f"'anno' (intero) al tool. "
-        f"Esempio: 'anno scorso' → anno={anno_accademico - 1}, "
-        f"'due anni fa' → anno={anno_accademico - 2}.]"
+        f"Esempio: 'anno scorso' → anno={anno_solare - 1}, "
+        f"'due anni fa' → anno={anno_solare - 2}.]"
     )
 
 

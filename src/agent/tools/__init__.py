@@ -384,6 +384,9 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = metadata_filter if metadata_filter else None
 
+    print(f"QUERY ARRIVATA A SEARCH OFFERTA FORMATIVA: {query}")
+    print(f"  anno={anno}")
+
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
         "search_offerta_formativa", metadata_filter
