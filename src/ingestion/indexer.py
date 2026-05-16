@@ -233,17 +233,7 @@ class KnowledgeBaseIndexer:
 
         if "doc_id" in clean_metadata:
             parts.append(f"Codice ID: {clean_metadata['doc_id']}")
-        if "creationdate" in clean_metadata:
-            raw_date = str(clean_metadata['creationdate'])
-            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", raw_date)
             
-            if date_match:
-                data_pulita = date_match.group(1)
-            else:
-                data_pulita = raw_date[:10]
-                
-            parts.append(f"Anno: {data_pulita}")
-
         if not parts:
             return ""
 
@@ -559,16 +549,32 @@ class KnowledgeBaseIndexer:
         pages = loader.load()
 
         for page in pages:
+            # 1. Controlliamo se esiste il metadato nativo del PDF
+            if "creationdate" in page.metadata:
+                # 2. Rimuoviamo la vecchia chiave e prendiamo il valore
+                raw_date = str(page.metadata.pop("creationdate"))
+                # 3. Estraiamo l'anno a 4 cifre
+                date_match = re.search(r"(\d{4})", raw_date)
+                
+                if date_match:
+                    anno_estratto = date_match.group(1)
+                else:
+                    anno_estratto = raw_date[:4]
+                
+                # 4. Essendo parent-child per offerta formativa, usiamo sempre la chiave 'anno'
+                page.metadata["anno"] = anno_estratto
+
             page.metadata.update({
                 "source_url": source_url,
                 "doc_type": "pdf",
                 **extra_meta,
             })
-
+            
+            # Generiamo e iniettiamo il prefisso sulla pagina intera prima dello split interno
             context_prefix = self._build_context_prefix(page.metadata, CollectionTarget.OFFERTA_FORMATIVA)
             if context_prefix:
                 page.page_content = context_prefix + page.page_content
-                
+
         existing_data = self._pc_child_vectorstore.get()
         ids_before = set(existing_data["ids"]) if existing_data and existing_data.get("ids") else set()
 
@@ -595,6 +601,25 @@ class KnowledgeBaseIndexer:
         pages = loader.load()
 
         for page in pages:
+            # 1. Controlliamo se esiste il metadato nativo del PDF
+            if "creationdate" in page.metadata:
+                # 2. Rimuoviamo la vecchia chiave e prendiamo il valore come stringa
+                raw_date = str(page.metadata.pop("creationdate"))
+                # 3. Estraiamo solo le prime 4 cifre consecutive (l'anno)
+                date_match = re.search(r"(\d{4})", raw_date)
+                
+                if date_match:
+                    anno_estratto = date_match.group(1)
+                else:
+                    anno_estratto = raw_date[:4]
+                
+                # 4. Scegliamo la chiave corretta in base alla collezione
+                if collection == CollectionTarget.DIPARTIMENTO:
+                    page.metadata["anno_bando"] = anno_estratto
+                else:
+                    page.metadata["anno"] = anno_estratto
+
+            # 5. Applichiamo i metadati calcolati dal router
             page.metadata.update({
                 "source_url": source_url,
                 "doc_type": "pdf",

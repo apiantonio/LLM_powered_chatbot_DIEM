@@ -451,6 +451,9 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = metadata_filter if metadata_filter else None
 
+    print(f"QUERY ARRIVATA A SEARCH DIPARTIMENTO: {query}")
+    print(f"  sotto_area={sotto_area},anno={anno}")
+
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO,
         "search_dipartimento", metadata_filter
