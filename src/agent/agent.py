@@ -102,7 +102,6 @@ def _build_temporal_context() -> str:
         f"Oggi: {giorni[now.weekday()]} {now.day} {mesi[now.month - 1]} {anno_solare}, "
         f"ore {now.strftime('%H:%M')}. "
         f"Anno accademico corrente: {anno_accademico}/{anno_accademico + 1}. "
-        f"Se l'utente non specifica un anno, usa anno={anno_accademico}. "
         f"Se l'utente usa espressioni temporali relative "
         f"(es. 'anno scorso', 'due anni fa', '10 anni fa', 'quest\\'anno'), "
         f"calcola l'anno corretto a partire da {anno_solare} e passalo come parametro "
