@@ -1,13 +1,18 @@
 """
 agent/tools/__init__.py — Tool con schema Pydantic rigoroso per Qwen2.5 7B/14B.
 
-REFACTORING v3 — Pydantic Tool Calling:
+REFACTORING v3.2 — Pydantic Tool Calling:
   - Ogni tool ha un args_schema definito con pydantic.BaseModel + Field
   - sotto_area validato con Literal[...] per ogni collection
   - anno come Optional[int] per abbinamento con risoluzione temporale
   - corso_di_laurea NON esposto (rischio hallucination su 7B)
   - Descrizioni tool compatte e direttive anti-compressione mantenute
   - Fallback signals invariati
+
+  NOTA: search_offerta_formativa ora ha sotto_area opzionale con i valori
+  derivati da router.py (_classify_offerta_sottoarea_html + _classify_offerta_sottoarea_pdf):
+    HTML: "informazioni_corso", "didattica", "aule", "terza_missione"
+    PDF:  "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso", "aule"
 """
 
 from __future__ import annotations
@@ -58,6 +63,11 @@ def get_last_search_meta() -> Dict[str, Any]:
 # ── Valori ammessi per sotto_area ──
 _VALID_SOTTO_AREA_PERSONE = frozenset({
     "profilo", "didattica", "ricerca", "internazionale", "risorse"
+})
+
+_VALID_SOTTO_AREA_OFFERTA_FORMATIVA = frozenset({
+    "informazioni_corso", "didattica", "aule", "terza_missione",
+    "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso",
 })
 
 _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
@@ -238,7 +248,7 @@ class SearchPersoneInput(BaseModel):
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Anno di riferimento come numero intero (es. 2024, 2025). "
             "Usa il contesto temporale fornito nel messaggio per risolvere "
             "espressioni come 'quest'anno' o 'anno scorso' in un numero. "
             "Lascia vuoto se l'utente non specifica alcun periodo temporale."
@@ -254,10 +264,28 @@ class SearchOffertaFormativaInput(BaseModel):
             "NON ridurre a keyword, NON parafrasare."
         )
     )
+    sotto_area: Optional[Literal[
+        "informazioni_corso", "didattica", "aule", "terza_missione",
+        "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso"
+    ]] = Field(
+        default=None,
+        description=(
+            "Filtro sulla sezione dell'offerta formativa. Valori ammessi: "
+            "'informazioni_corso' (info generali sul corso di laurea, presentazione, obiettivi), "
+            "'didattica' (piano di studi, insegnamenti del corso, CFU), "
+            "'aule' (aule e strutture didattiche del corso), "
+            "'terza_missione' (attività di terza missione del corso), "
+            "'statistiche' (statistiche sul corso: iscritti, laureati, occupazione), "
+            "'regolamenti' (regolamento didattico del CdS, norme, propedeuticità), "
+            "'piani_di_studio' (piano di studi ufficiale, curriculum, percorsi), "
+            "'documentazione_corso' (altri documenti PDF del corso). "
+            "Lascia vuoto se non sei sicuro."
+        )
+    )
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Anno di riferimento come numero intero (es. 2024, 2025). "
             "Usa il contesto temporale fornito nel messaggio per risolvere "
             "espressioni relative. Lascia vuoto se non specificato."
         )
@@ -296,7 +324,7 @@ class SearchDipartimentoInput(BaseModel):
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno solare di riferimento come numero intero (es. 2024, 2025). "
+            "Anno di riferimento come numero intero (es. 2024, 2025). "
             "Utile per filtrare bandi per anno. "
             "Lascia vuoto se non specificato."
         )
@@ -328,6 +356,7 @@ def search_persone(
 USA QUESTO TOOL per:
 - "Chi è il prof. X?" → profilo docente
 - "Cosa insegna il prof. X?" → corsi del docente
+- "Chi insegna Machine Learning?" → cerca nel campo nomi_insegnamenti
 - "Syllabus/programma di Algoritmi" → didattica dell'insegnamento (sotto_area="didattica")
 - "Email/ricevimento del prof. X"
 
@@ -350,7 +379,7 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
     metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
-    print(f"  sotto_area={sotto_area},anno={anno}")
+    print(f"  sotto_area={sotto_area}, anno={anno}")
 
     return _search_collection(
         query, CollectionTarget.PERSONE,
@@ -359,33 +388,69 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
 
 # ============================================================
-# TOOL 2: OFFERTA FORMATIVA — con Pydantic schema
+# TOOL 2: OFFERTA FORMATIVA — con Pydantic schema + sotto_area
 # ============================================================
 
 @tool("search_offerta_formativa", args_schema=SearchOffertaFormativaInput)
 def search_offerta_formativa(
     query: str,
+    sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
     """Cerca informazioni su CORSI DI LAUREA del DIEM: piani di studio, regolamenti, requisiti ammissione, CFU, OFA, tesi, statistiche.
 
 USA QUESTO TOOL per:
-- "Piano di studi Informatica triennale"
-- "Regolamento Ingegneria Informatica magistrale"
-- "Quali esami ci sono al primo anno?"
+- "Piano di studi Informatica triennale" → sotto_area="piani_di_studio"
+- "Regolamento Ingegneria Informatica magistrale" → sotto_area="regolamenti"
+- "Quali esami ci sono al primo anno?" → sotto_area="didattica"
+- "Statistiche occupazionali del corso" → sotto_area="statistiche"
+- "Informazioni sul corso di Informatica" → sotto_area="informazioni_corso"
 
 NON contiene info su chi insegna o syllabus di insegnamenti specifici → usa search_persone.
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
+    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
+    if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
+        logger.warning(f"sotto_area non valido per OFFERTA_FORMATIVA: '{sotto_area}'. Ignoro.")
+        sotto_area = None
+    elif sotto_area:
+        sotto_area = sotto_area.lower().strip()
+
+    # Inferenza automatica sotto_area dalla query (se non specificato dal modello)
+    if sotto_area is None:
+        query_lower = query.lower()
+        if any(kw in query_lower for kw in [
+            "regolamento", "regolamenti", "propedeuticità", "propedeuticita",
+            "norme", "regole"
+        ]):
+            sotto_area = "regolamenti"
+        elif any(kw in query_lower for kw in [
+            "piano di studi", "piano di studio", "curriculum", "percorso",
+            "percorsi", "insegnamenti del corso"
+        ]):
+            sotto_area = "piani_di_studio"
+        elif any(kw in query_lower for kw in [
+            "statistica", "statistiche", "occupazione", "occupazionali",
+            "laureati", "iscritti"
+        ]):
+            sotto_area = "statistiche"
+        elif any(kw in query_lower for kw in [
+            "aula", "aule", "strutture didattiche"
+        ]):
+            sotto_area = "aule"
+
+    # Costruzione metadata_filter
     metadata_filter = {}
+    if sotto_area:
+        metadata_filter["sotto_area"] = sotto_area
     if anno is not None:
         metadata_filter["anno"] = str(anno)
 
     metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH OFFERTA FORMATIVA: {query}")
-    print(f"  anno={anno}")
+    print(f"  sotto_area={sotto_area}, anno={anno}")
 
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
@@ -455,7 +520,7 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
     metadata_filter = metadata_filter if metadata_filter else None
 
     print(f"QUERY ARRIVATA A SEARCH DIPARTIMENTO: {query}")
-    print(f"  sotto_area={sotto_area},anno={anno}")
+    print(f"  sotto_area={sotto_area}, anno={anno}")
 
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO,

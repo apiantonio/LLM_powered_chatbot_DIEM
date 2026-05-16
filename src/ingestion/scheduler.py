@@ -71,7 +71,7 @@ class IngestionScheduler:
         if not skip_crawl:
             try:
                 logger.info("[FASE 1/3] Avvio crawling...")
-                from src.transform.scrapers import UnisaCrawler
+                from src.scraping.scrapers import UnisaCrawler
                 
                 crawler = UnisaCrawler(
                     max_depth=self._settings.ingestion.max_depth,
