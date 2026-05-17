@@ -336,7 +336,7 @@ def create_conversation_memory(
     max_tokens: Optional[int] = None,
     llm_for_summary=None,
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
-    similarity_threshold: float = 0.45,
+    similarity_threshold: float = 0.55,
     max_token_limit: int = 1500,
 ) -> SmartConversationMemory:
     """Factory Method: crea la SmartConversationMemory."""

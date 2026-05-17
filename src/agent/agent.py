@@ -125,34 +125,7 @@ class RAGAgent:
           6. Logging + Memory update
         """
 
-        # --- STEP 0: Corto Circuito via Cache (Match Esatto/Praticamente Uguale) ---
-        cached_response = self._memory.find_exact_match(user_query)
-        
-        if cached_response:
-            print(f"⚡ RISPOSTA RECUPERATA IMMEDIATAMENTE DA CACHE PER: {user_query}")
-            
-            dummy_trace = {
-                "tool_name": "(Risposta da Cache)",
-                "tools_invoked": [],
-                "rewritten_query": "",
-                "multi_queries": [],
-                "collection": "",
-                "metadata_filter": None,
-                "top_links": []
-            }
-            
-            return {
-                "response": cached_response,
-                "blocked": False,
-                "block_reason": None,
-                "trace": dummy_trace,
-                "turn": self._memory.turn_count,
-            }
-
         print(f"USER QUERY (pulita): {user_query}")
-
-        # --- STEP 1: Salva in memoria la query ORIGINALE e PULITA ---
-        turn_number = self._memory.add_user_message(user_query)
         
         # --- STEP 2: Recupera lo storico usando la query PULITA ---
         messages = self._memory.get_messages_for_agent(user_query)
@@ -173,6 +146,33 @@ class RAGAgent:
                 # Sostituisci la query nel messaggio utente (ultimo messaggio)
                 # preservando eventuali suffix (es. RETRIEVAL_REMINDER)
                 self._replace_query_in_messages(messages, user_query, rewritten_query)
+
+        # --- STEP 0: Corto Circuito via Cache (Match Esatto/Praticamente Uguale) ---
+        cached_response = self._memory.find_exact_match(rewritten_query)
+        
+        if cached_response:
+            print(f"⚡ RISPOSTA RECUPERATA IMMEDIATAMENTE DA CACHE PER: {rewritten_query}")
+            
+            dummy_trace = {
+                "tool_name": "(Risposta da Cache)",
+                "tools_invoked": [],
+                "rewritten_query": "",
+                "multi_queries": [],
+                "collection": "",
+                "metadata_filter": None,
+                "top_links": []
+            }
+            
+            return {
+                "response": cached_response,
+                "blocked": False,
+                "block_reason": None,
+                "trace": dummy_trace,
+                "turn": self._memory.turn_count,
+            }
+        
+        # --- STEP 1: Salva in memoria la query ORIGINALE e PULITA ---
+        turn_number = self._memory.add_user_message(rewritten_query)
 
         # --- STEP 3: Iniezione Effimera del Contesto Temporale ---
         temporal_msg = _get_temporal_system_message()
