@@ -430,6 +430,105 @@ class UnisaCrawler:
     # POST-INGESTION: CLEANUP FILE CON -anno=YYYY (Feature 3)
     # ============================================================
 
+    def _postprocess_didattica_cleanup(self) -> int:
+        deleted_count = 0
+        output_path = Path(self.output_dir)
+
+        def natural_sort_key(s):
+            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+        max_cid_per_anno_id = {}
+        has_cid_per_anno_id = set()
+        has_pid_per_anno_id_cid = set()
+
+        pattern_anno = re.compile(r'anno=(\d+)', re.IGNORECASE)
+        pattern_id = re.compile(r'id=(\d+)', re.IGNORECASE)
+        pattern_cid = re.compile(r'cid=([^&.]+)', re.IGNORECASE)
+        pattern_pid = re.compile(r'pid=([^&.]+)', re.IGNORECASE)
+
+        # --- FASE 1: Scansione del disco per mappare la gerarchia ---
+        for saved_file in output_path.glob("*.html"):
+            filename = saved_file.name
+            
+            if "-didattica-" in filename.lower():
+                match_anno = pattern_anno.search(filename)
+                match_id = pattern_id.search(filename)
+                match_cid = pattern_cid.search(filename)
+                match_pid = pattern_pid.search(filename)
+
+                anno = match_anno.group(1) if match_anno else None
+                current_id = match_id.group(1) if match_id else None
+                current_cid = match_cid.group(1) if match_cid else None
+                current_pid = match_pid.group(1) if match_pid else None
+
+                if anno and current_id:
+                    key_anno_id = (anno, current_id)
+
+                    if current_cid:
+                        has_cid_per_anno_id.add(key_anno_id)
+
+                        existing_max_cid = max_cid_per_anno_id.get(key_anno_id)
+                        if not existing_max_cid:
+                            max_cid_per_anno_id[key_anno_id] = current_cid
+                        else:
+                            if natural_sort_key(current_cid) > natural_sort_key(existing_max_cid):
+                                max_cid_per_anno_id[key_anno_id] = current_cid
+
+                        if current_pid:
+                            has_pid_per_anno_id_cid.add((anno, current_id, current_cid))
+
+        # --- FASE 2: Eliminazione mirata in base alle regole ---
+        for saved_file in output_path.glob("*.html"):
+            filename = saved_file.name
+            
+            if "-didattica-" in filename.lower():
+                match_anno = pattern_anno.search(filename)
+                match_id = pattern_id.search(filename)
+                match_cid = pattern_cid.search(filename)
+                match_pid = pattern_pid.search(filename)
+
+                anno = match_anno.group(1) if match_anno else None
+                current_id = match_id.group(1) if match_id else None
+                current_cid = match_cid.group(1) if match_cid else None
+                current_pid = match_pid.group(1) if match_pid else None
+
+                if anno and not current_id:
+                    continue
+
+                if anno and current_id:
+                    should_delete = False
+                    reason = ""
+                    key_anno_id = (anno, current_id)
+
+                    if current_cid:
+                        max_cid = max_cid_per_anno_id.get(key_anno_id)
+                        
+                        if natural_sort_key(current_cid) < natural_sort_key(max_cid):
+                            should_delete = True
+                            reason = f"per anno={anno} e id={current_id} esiste un cId maggiore ({max_cid}). Questo ha cId={current_cid}."
+                        
+                        elif not current_pid:
+                            if (anno, current_id, current_cid) in has_pid_per_anno_id_cid:
+                                should_delete = True
+                                reason = f"esiste un file Figlio (con pId) per l'anno={anno}, id={current_id} e cId={current_cid}."
+
+                    elif not current_cid and not current_pid:
+                        if key_anno_id in has_cid_per_anno_id:
+                            should_delete = True
+                            reason = f"esiste almeno un file Padre/Figlio (con cId) per l'anno={anno} e id={current_id}."
+
+                    if should_delete:
+                        try:
+                            saved_file.unlink()
+                            deleted_count += 1
+                            logger.debug(f"Cleanup Didattica: rimosso '{filename}' -> MOTIVO: {reason}")
+                        except OSError as e:
+                            logger.warning(f"Errore eliminazione '{filename}': {e}")
+
+        logger.info(f"Post-processing completato: rimosse {deleted_count} occorrenze ridondanti.")
+        return deleted_count
+
+
     def _postprocess_anno_cleanup(self) -> int:
         """
         Elimina i file salvati il cui nome contiene -anno=YYYY con YYYY < cutoff_year.
@@ -622,22 +721,22 @@ class UnisaCrawler:
         # POST-PROCESSING (eseguito DOPO la fine di TUTTI i batch)
         # ============================================================
 
+        didattica_deleted = self._postprocess_didattica_cleanup()
 
         # (Feature 3) Eliminazione file con -anno=YYYY < cutoff_year
         # ECCEZIONE: -anno=0 viene SEMPRE preservato.
         anno_deleted = self._postprocess_anno_cleanup()
 
-        self._print_summary(anno_deleted=anno_deleted)
+        self._print_summary(didattica_deleted, anno_deleted)
 
-    def _print_summary(self, anno_deleted: int = 0):
+    def _print_summary(self, didattica_deleted: int = 0, anno_deleted: int = 0):
         logger.info("====== RESOCONTO FINALE ======")
         logger.info(f"URL visitati: {len(self.visited_urls)}")
         logger.info(f"HTML salvati: {self.processed_count}")
         logger.info(f"HTML filtrati (scartati): {self.filtered_count}")
         logger.info(f"PDF validi raccolti: {len(self.found_pdf_links)}")
         logger.info(f"Thread pool utilizzato: {self.max_workers} workers")
+        if didattica_deleted:
+            logger.info(f"Didattica post-processing: {didattica_deleted} file padre rimossi")
         if anno_deleted:
-            logger.info(
-                f"Anno post-processing: {anno_deleted} file con anno obsoleto rimossi "
-                f"(cutoff: {self._ingestion_cfg.cutoff_year}, anno=0 preservato)"
-            )
+            logger.info(f"Anno post-processing: {anno_deleted} file obsoleti rimossi")
