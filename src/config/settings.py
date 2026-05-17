@@ -1,17 +1,9 @@
 """
 Configurazione centralizzata del sistema RAG DIEM.
 
-REFACTORING audit_fattibilita_metadati.md:
-  - Chunking per-collection aggiornato per 3 Vector Store (PERSONE,
-    OFFERTA_FORMATIVA, DIPARTIMENTO).
-  - Parametro context_prefix_template per il chunking context-aware
-    (iniezione metadati in ogni chunk).
-
-Principi:
-- Single Source of Truth per tutti i parametri del sistema.
-- Nessun valore hardcodato nei moduli applicativi.
-- Type-safe tramite dataclass + factory method.
-- Le API key NON vengono mai hardcodate; si leggono dall'ambiente.
+v4: aggiunto groq_api_key in LLMConfig per il provider Groq.
+    REWRITER_PROVIDER e REWRITER_MODEL vengono letti direttamente
+    dall'ambiente in llm_providers.py.
 """
 
 import os
@@ -24,12 +16,10 @@ from urllib.parse import urlparse
 class IngestionConfig:
     """Parametri per la pipeline di scraping e indicizzazione."""
 
-    # --- Sorgenti dati ---
     html_raw_dir: str = "data/raw/html_samples"
     pdf_links_file: str = "data/raw/html_samples/pdf_links.txt"
     pdf_download_dir: str = "data/raw/pdfs"
 
-    # --- Domini consentiti (bounded knowledge scope) ---
     seed_urls: tuple[str, ...] = (
         "https://www.diem.unisa.it",
         "https://corsi.unisa.it/ingegneria-informatica",
@@ -41,12 +31,10 @@ class IngestionConfig:
         "https://corsi.unisa.it/photovoltaics",
     )
 
-    # --- Crawler ---
     max_depth: int = 5
     batch_size: int = 1024
     crawl_delay_seconds: float = 2.0
 
-    # --- Pulizia (centralizzata per scrapers e transform) ---
     cutoff_year: int = 2020
     target_department: str = "300638"
     ignored_extensions: tuple[str, ...] = (
@@ -54,37 +42,25 @@ class IngestionConfig:
         '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     )
 
-    # --- Chunking HTML LEGACY (fallback) ---
     html_chunk_size: int = 700
     html_chunk_overlap: int = 50
 
-    # --- Chunking HTML PER-COLLECTION (3 Vector Store — audit §8) ---
-    # PERSONE: chunk più grandi per preservare contesto docente
     persone_html_chunk_size: int = 800
     persone_html_chunk_overlap: int = 100
-
-    # OFFERTA_FORMATIVA: chunk standard
     offerta_html_chunk_size: int = 700
     offerta_html_chunk_overlap: int = 50
-
-    # DIPARTIMENTO: chunk più grandi (include bandi, lab, ricerca)
     dipartimento_html_chunk_size: int = 800
     dipartimento_html_chunk_overlap: int = 100
 
-    # --- Chunking PDF Parent-Child ---
     pdf_parent_chunk_size: int = 3000
     pdf_parent_chunk_overlap: int = 500
     pdf_child_chunk_size: int = 400
     pdf_child_chunk_overlap: int = 50
 
-    # --- Chunking PDF diretto ---
     pdf_direct_chunk_size: int = 1500
     pdf_direct_chunk_overlap: int = 200
 
-    # --- Registro incrementale ---
     index_registry_path: str = "data/vectorstore/index_registry.json"
-
-    # --- Derived helpers ---
 
     def get_allowed_domains(self) -> set[str]:
         domains = set()
@@ -102,38 +78,16 @@ class IngestionConfig:
         )
 
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
-        """
-        Restituisce (chunk_size, chunk_overlap) per la collection.
-
-        Aggiornato per i 3 Vector Store dell'audit §8.
-        """
         mapping = {
-            "persone": (
-                self.persone_html_chunk_size,
-                self.persone_html_chunk_overlap,
-            ),
-            "offerta_formativa": (
-                self.offerta_html_chunk_size,
-                self.offerta_html_chunk_overlap,
-            ),
-            "dipartimento": (
-                self.dipartimento_html_chunk_size,
-                self.dipartimento_html_chunk_overlap,
-            ),
+            "persone": (self.persone_html_chunk_size, self.persone_html_chunk_overlap),
+            "offerta_formativa": (self.offerta_html_chunk_size, self.offerta_html_chunk_overlap),
+            "dipartimento": (self.dipartimento_html_chunk_size, self.dipartimento_html_chunk_overlap),
         }
-        return mapping.get(
-            collection_name,
-            (self.html_chunk_size, self.html_chunk_overlap),
-        )
+        return mapping.get(collection_name, (self.html_chunk_size, self.html_chunk_overlap))
 
-
-# ============================================================
-# CRAWLER CONFIG
-# ============================================================
 
 @dataclass(frozen=True)
 class CrawlerConfig:
-    """Parametri specifici per il crawler (UnisaCrawler)."""
     thread_cpu_factor: float = 0.75
     thread_min_workers: int = 2
     thread_max_workers: int = 16
@@ -154,15 +108,11 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class VectorStoreConfig:
-    """
-    Configurazione Vector Store — aggiornata per 3 collection (audit §8).
-    """
     persist_directory: str = "data/vectorstore/chroma"
     collection_name: str = "diem_knowledge_base"
     parent_store_directory: str = "data/vectorstore/parent_docstore"
     search_type: str = "similarity"
     search_k: int = 20
-    # Collection Parent-Child per regolamenti/piani di studio
     parent_child_collection_name: str = "offerta_formativa_pdf_childs"
 
 
@@ -182,6 +132,7 @@ class LLMConfig:
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
     ollama_base_url: str = "http://localhost:11434"
+    groq_api_key: Optional[str] = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -212,7 +163,6 @@ class ObservabilityConfig:
 
 @dataclass(frozen=True)
 class AppSettings:
-    """Aggregatore di tutte le configurazioni."""
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     crawler: CrawlerConfig = field(default_factory=CrawlerConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
@@ -225,12 +175,11 @@ class AppSettings:
 
 
 def load_settings() -> AppSettings:
-    """Factory method che costruisce le impostazioni leggendo le variabili d'ambiente."""
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass # Se la libreria non è installata, prosegue con le variabili di sistema standard
+        pass
 
     return AppSettings(
         ingestion=IngestionConfig(
@@ -253,7 +202,7 @@ def load_settings() -> AppSettings:
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            
+            groq_api_key=os.getenv("GROQ_API_KEY"),
         ),
         embedding=EmbeddingConfig(
             model_name=os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
@@ -270,7 +219,7 @@ def load_settings() -> AppSettings:
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
         ),
         reranker=RerankerConfig(
-            model_name = os.getenv("RERANKER_MOIDEL", "Qwen/Qwen3-Reranker-0.6B"),
+            model_name=os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-0.6B"),
             score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0"))
         ),
         guardrails=GuardrailsConfig(

@@ -1,11 +1,11 @@
 """
 Gestione della memoria conversazionale per l'Agente RAG DIEM.
 
-REFACTORING v2:
-  - RETRIEVAL_REMINDER semplificato (meno token per 7B)
+REFACTORING v4:
+  - get_langchain_history() restituisce SOLO l'ultimo turno (1 coppia
+    HumanMessage + AIMessage) per il rewriter. Il contesto di
+    coreferenza si basa esclusivamente sull'ultima interazione.
   - Invariata l'architettura a due stadi (similarità + summarization)
-  - get_langchain_history() restituisce SOLO le ultime N interazioni
-    per evitare di passare troppo contesto al rewriter
 """
 
 import logging
@@ -202,30 +202,22 @@ class SmartConversationMemory:
 
     def find_exact_match(self, query: str) -> Optional[str]:
         """
-        Cerca se la query è già stata posta in questa sessione calcolando 
-        una "fingerprint" (impronta) della stringa per tollerare variazioni 
-        di spazi, punteggiatura e maiuscole.
+        Cerca se la query è già stata posta in questa sessione calcolando
+        una "fingerprint" normalizzata.
         """
         if not self._turns:
             return None
 
-        # Funzione interna per creare un'impronta normalizzata estrema
         def get_fingerprint(text: str) -> str:
-            # 1. Convertiamo tutto in minuscolo
             text = text.lower()
-            # 2. Rimuoviamo tutto ciò che NON è una lettera o un numero.
-            # [\W_]+ intercetta spazi, punteggiatura, simboli e underscore.
-            # (Le lettere accentate come 'è' o 'à' vengono preservate da Python 3)
             fingerprint = re.sub(r'[\W_]+', '', text)
             return fingerprint
 
         query_fingerprint = get_fingerprint(query)
 
-        # Se la query è vuota dopo la pulizia (es. l'utente ha mandato solo "?"), ignoriamo
         if not query_fingerprint:
             return None
 
-        # Scorriamo i turni al contrario (dal più recente al più vecchio)
         for turn in reversed(self._turns):
             if get_fingerprint(turn.user_message) == query_fingerprint:
                 logger.info(f"🎯 Cache HIT! Impronta '{query_fingerprint}' trovata al Turno #{turn.turn_number}")
@@ -275,21 +267,20 @@ class SmartConversationMemory:
         """
         Restituisce lo storico come lista di BaseMessage LangChain.
 
-        Usato dal QueryOptimizer per la risoluzione di coreferenze.
-        Restituisce SOLO gli ultimi 3 turni per limitare il contesto
-        passato al rewriter (evita confusione su 7B).
+        v4: Restituisce SOLO l'ultimo turno completato (1 coppia
+        HumanMessage + AIMessage). Il rewriter ha bisogno esclusivamente
+        dell'ultima interazione per risolvere le coreferenze.
         """
-        history_messages: List[BaseMessage] = []
-        # Limita a ultimi 3 turni per il rewriter
-        recent_turns = self._turns[-3:] if len(self._turns) > 3 else self._turns
-        for turn in recent_turns:
-            history_messages.append(HumanMessage(content=turn.user_message))
-            # Tronca la risposta per non inquinare il rewriter con troppo contesto
-            truncated_response = turn.assistant_message[:200]
-            if len(turn.assistant_message) > 200:
-                truncated_response += "..."
-            history_messages.append(AIMessage(content=truncated_response))
-        return history_messages
+        if not self._turns:
+            return []
+
+        last_turn = self._turns[-1]
+        history = [
+            HumanMessage(content=last_turn.user_message),
+            AIMessage(content=last_turn.assistant_message[:300]
+                      + ("..." if len(last_turn.assistant_message) > 300 else "")),
+        ]
+        return history
 
     def get_history_summary(self) -> str:
         """Restituisce un riepilogo testuale dello storico completo."""

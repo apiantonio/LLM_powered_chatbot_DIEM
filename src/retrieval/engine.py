@@ -1,35 +1,31 @@
 """
 retrieval/engine.py — RetrievalEngine RIVISTO per 3 Vector Store.
 
-REFACTORING v3 — FIX PARENT-CHILD RETRIEVAL:
-  BUG CRITICO RISOLTO:
-    I PDF di regolamenti e piani di studio vengono indicizzati nella
-    collection Chroma "offerta_formativa_pdf_childs" tramite il
-    ParentDocumentRetriever, ma il tool search_offerta_formativa
-    cercava SOLO nella collection "offerta_formativa".
+REFACTORING v4 — QUERY REWRITING CON LLAMA 3.3 70B (via Groq):
 
-    Inoltre, il merge con Parent-Child era condizionato a
-    `not metadata_filter`, quindi qualsiasi filtro (sotto_area,
-    anno, ecc.) escludeva completamente i PDF Parent-Child.
+  Il QueryOptimizer usa Llama 3.3 70B (Groq free tier)
+  esclusivamente per rewrite e multiquery expansion.
 
-  SOLUZIONE:
-    Quando collection == "offerta_formativa", il retrieve() ora:
-      1. Cerca nella collection standard "offerta_formativa" (HTML)
-      2. Cerca SEMPRE anche nella collection Parent-Child (PDF)
-      3. Se c'è un metadata_filter, lo applica anche al PC child
-         vectorstore tramite accesso diretto a Chroma (non tramite
-         il ParentDocumentRetriever, che non supporta filtri nativi)
-      4. Merge + dedup + rerank su tutti i candidati
+  REWRITE — Regole:
+    - Risolve coreferenze su QUALSIASI entità (persone, corsi, aule,
+      laboratori, bandi, sedi, ecc.), non solo su nomi di docenti.
+    - Il contesto è SOLO l'ultimo turno (ultima domanda utente +
+      risposta ottenuta). Non serve l'intera history.
+    - Se la query è autosufficiente, viene restituita identica.
 
-  ALTRI FIX:
-    - Rimosso codice irraggiungibile in retrieve_from_all() (doppio return)
-    - QueryOptimizer: invariato (v2)
-    - CrossEncoderReranker: invariato
+  EXPAND:
+    - 3 varianti semantiche per multiquery retrieval.
+
+  INVARIATI DA v3:
+    - CrossEncoderReranker
+    - RetrievalEngine (flusso retrieve/retrieve_from_all)
+    - FIX Parent-Child per offerta_formativa
 
 FLUSSO:
   rewrite → expand (multiquery) → retrieval parallelo → merge → rerank
 """
 
+import re
 import logging
 from typing import List, Optional, Set
 
@@ -45,127 +41,132 @@ logger = logging.getLogger(__name__)
 
 class QueryOptimizer:
     """
-    Pre-Retrieval: Query Rewriting minimale + Multiquery Expansion.
+    Pre-Retrieval: Query Rewriting + Multiquery Expansion.
 
-    REWRITE (v2 — riscritto da zero):
-      Unico compito: prendere la query dell'utente e sostituire pronomi
-      o riferimenti impliciti con i nomi propri estratti dalla history.
-      NON rispondere alla domanda.
-      NON aggiungere informazioni dalla risposta precedente.
-      Se non ci sono riferimenti da svelare, restituire la query IDENTICA.
-
-    EXPAND:
-      Genera 3 varianti semantiche preservando entità e intento.
+    Usa un LLM dedicato (Llama 3.3 70B via Groq) per:
+      1. REWRITE — risoluzione coreferenze basata su ultimo turno
+      2. EXPAND — generazione varianti semantiche per retrieval
     """
 
+    # ──────────────────────────────────────────────────────────
+    # REWRITE PROMPT — Llama 3.3 70B
+    #
+    # Il contesto passato è SOLO l'ultimo turno: la domanda
+    # precedente dell'utente e la risposta ricevuta.
+    # Il modello deve risolvere pronomi e riferimenti impliciti
+    # su QUALSIASI tipo di entità (corsi, aule, docenti, bandi, ecc.)
+    #
+    # Few-shot:
+    #   (a) Coreferenza su persona
+    #   (b) Coreferenza su corso di laurea
+    #   (c) Query autosufficiente (nessuna sostituzione)
+    # ──────────────────────────────────────────────────────────
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         """Sei un risolutore di coreferenze. Il tuo UNICO compito:
-
-REGOLE:
-1. Se la query contiene pronomi o riferimenti impliciti (lui, lei, questo corso, quali corsi insegna, ecc.) che si riferiscono a entità nominate nella history, SOSTITUISCI quei pronomi con i nomi propri corrispondenti.
-2. Se la query è autosufficiente (non ha pronomi da risolvere), restituiscila IDENTICA.
-3. NON rispondere MAI alla domanda.
-4. NON aggiungere MAI informazioni prese dalle risposte precedenti.
-5. NON espandere, arricchire o riformulare la query oltre la sostituzione dei pronomi.
-6. Output: SOLO la query risultante, nient'altro.
-
-ESEMPI:
-- History: "Chi è X?" / Query: "Quali corsi insegna?"
-  → "Quali corsi insegna X?"
-
-- History: "Parlami di Ingegneria Informatica" / Query: "Quali sono i requisiti?"
-  → "Quali sono i requisiti di Ingegneria Informatica?"
-
-- History: "Chi è X?" / Query: "Dove si trova l'aula Y?"
-  → "Dove si trova l'aula Y?"
-  (Nessun pronome da risolvere, query restituita identica)
-
-- Query senza history: "Quali laboratori ha il DIEM?"
-  → "Quali laboratori ha il DIEM?"
-  (Nessuna history, query restituita identica)"""),
-        ("placeholder", "{history}"),
-        ("human", "{question}"),
+         "You are a coreference resolver for an Italian university Q&A system. "
+         "You receive the last interaction (user question + assistant answer) and a new query. "
+         "Replace any pronouns or implicit references (lui, lei, suo, suoi, questo, quella, "
+         "lì, ci, ne, quali sono i suoi, ecc.) with the explicit entity from the last interaction. "
+         "The entity can be anything: a person, a course, a classroom, a lab, a scholarship, etc. "
+         "If the new query is already self-contained, return it unchanged. "
+         "Do not answer the question. Output only the rewritten query.\n\n"
+         "Last Q: \"Chi è il prof. Rossi?\" Last A: \"Il prof. Rossi insegna...\" → "
+         "New query: \"Qual è il suo ricevimento?\" → "
+         "Output: Qual è il ricevimento del prof. Rossi?\n\n"
+         "Last Q: \"Parlami del corso di Informatica triennale\" Last A: \"Il corso prevede...\" → "
+         "New query: \"Quali sono i suoi contenuti?\" → "
+         "Output: Quali sono i contenuti del corso di Informatica triennale?\n\n"
+         "Last Q: \"Dove si trova l'aula 10?\" Last A: \"L'aula 10 è nel campus...\" → "
+         "New query: \"Quanti posti ha?\" → "
+         "Output: Quanti posti ha l'aula 10?\n\n"
+         "Last Q: \"Parlami di Ingegneria Informatica\" Last A: \"...\" → "
+         "New query: \"Dove si trova l'aula 10?\" → "
+         "Output: Dove si trova l'aula 10?"),
+        ("human",
+         "Last Q: \"{last_user_query}\"\nLast A: \"{last_assistant_answer}\"\n\n"
+         "New query: \"{question}\""),
     ])
 
+    # ──────────────────────────────────────────────────────────
+    # MULTIQUERY PROMPT — Llama 3.3 70B
+    # ──────────────────────────────────────────────────────────
     MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         """Genera ESATTAMENTE 3 varianti della domanda fornita per la ricerca semantica.
-
-REGOLE:
-1. Ogni variante DEVE contenere TUTTI i nomi propri della domanda originale.
-2. Ogni variante DEVE mantenere lo STESSO intento (se chiede "ricevimento", tutte chiedono "ricevimento").
-3. Varia vocabolario e struttura, ma conserva entità e intento.
-4. Frasi complete, MAI keyword isolate.
-
-Output: 3 varianti, una per riga, senza numerazione."""),
+         "Generate exactly 3 Italian rephrasings of the given question for semantic search. "
+         "Preserve all proper nouns and the original intent. "
+         "Output one variant per line, no numbering, no explanations."),
         ("human", "{question}"),
     ])
 
     def __init__(self, llm_chat_model):
         self._llm = llm_chat_model
+
+        # Chain REWRITE: invoca LLM, prende solo la prima riga dell'output
         self._rewrite_chain = self.REWRITE_PROMPT | self._llm | RunnableLambda(
-            lambda msg: msg.content.strip()
+            lambda msg: msg.content.strip().split('\n')[0].strip()
         )
+
+        # Chain EXPAND: invoca LLM, splitta per newline
         self._multi_query_chain = self.MULTI_QUERY_PROMPT | self._llm | RunnableLambda(
             lambda msg: [q.strip() for q in msg.content.strip().split("\n") if q.strip()]
         )
 
-    def rewrite(self, question: str, history: Optional[list] = None) -> str:
+    def rewrite(
+        self,
+        question: str,
+        last_user_query: str = "",
+        last_assistant_answer: str = "",
+    ) -> str:
         """
-        Riscrivi la query risolvendo SOLO coreferenze.
+        Riscrivi la query risolvendo coreferenze dall'ultimo turno.
 
-        Se non c'è history o non ci sono pronomi da risolvere,
-        restituisce la query originale.
+        Args:
+            question: La query corrente dell'utente.
+            last_user_query: La domanda dell'utente nel turno precedente.
+            last_assistant_answer: La risposta dell'assistente nel turno precedente.
+
+        Returns:
+            La query riscritta con coreferenze risolte, oppure
+            la query originale se non c'è contesto o è autosufficiente.
         """
-        # Se non c'è history, non c'è nulla da risolvere
-        if not history or len(history) == 0:
-            logger.info(f"Nessuna history, query invariata: '{question}'")
+        # Se non c'è un turno precedente, la query è per forza autosufficiente
+        if not last_user_query:
+            logger.info(f"Nessun turno precedente, query invariata: '{question}'")
             return question
+
+        # Tronca la risposta precedente per non sprecare token
+        # (al rewriter serve solo sapere DI COSA si parlava, non l'intera risposta)
+        truncated_answer = last_assistant_answer[:300]
+        if len(last_assistant_answer) > 300:
+            truncated_answer += "..."
 
         try:
             result = self._rewrite_chain.invoke({
                 "question": question,
-                "history": history,
+                "last_user_query": last_user_query,
+                "last_assistant_answer": truncated_answer,
             })
 
-            # Sanity check: il modello potrebbe aver generato una risposta
-            # invece di una query. Segnali di allucinazione:
-            if any(marker in result for marker in [
-                "**", "1.", "2.", "3.", "Ecco", "In base", "Basandomi",
-                "La risposta", "Il docente", "Il corso",
-            ]):
-                logger.warning(
-                    f"Rewriting ha prodotto una risposta invece di una query. "
-                    f"Originale: '{question}' → Riscritta: '{result[:100]}...'. "
-                    f"Uso l'originale."
-                )
+            # ── Sanity checks minimali ──
+
+            if not result.strip():
+                logger.warning("Rewriting ha prodotto stringa vuota. Uso l'originale.")
                 return question
 
-            # Se il risultato è troppo lungo rispetto all'originale (>3x),
-            # probabilmente il modello ha risposto alla domanda
             if len(result) > len(question) * 3:
                 logger.warning(
-                    f"Rewriting troppo lungo ({len(result)} vs {len(question)} chars). "
+                    f"Rewriting sospetto ({len(result)} chars vs {len(question)}). "
                     f"Uso l'originale."
                 )
                 return question
 
-            # Se il risultato è vuoto
-            if not result.strip():
-                logger.warning("Rewriting ha prodotto stringa vuota.")
-                return question
-
-            # Validazione conservazione entità: i nomi propri della query
-            # originale devono essere presenti nella riscritta
+            # Verifica conservazione entità della query originale
             original_entities = self._extract_proper_nouns(question)
             if original_entities:
                 result_lower = result.lower()
                 missing = [e for e in original_entities if e.lower() not in result_lower]
                 if missing:
-                    logger.warning(
-                        f"Rewriting ha perso entità: {missing}. Uso l'originale."
-                    )
+                    logger.warning(f"Rewriting ha perso entità: {missing}. Uso l'originale.")
                     return question
 
             logger.info(f"Query rewritten: '{question}' → '{result}'")
@@ -176,19 +177,17 @@ Output: 3 varianti, una per riga, senza numerazione."""),
             return question
 
     def expand(self, question: str) -> List[str]:
-        """Genera varianti semantiche della query."""
+        """Genera varianti semantiche della query per multiquery retrieval."""
         try:
             variants = self._multi_query_chain.invoke({"question": question})
             seen: Set[str] = {question.strip().lower()}
             unique_variants = []
             for v in variants[:3]:
-                v_clean = v.strip()
+                v_clean = v.strip().lstrip('0123456789.-) ')
                 if v_clean and v_clean.lower() not in seen:
                     seen.add(v_clean.lower())
                     unique_variants.append(v_clean)
-            logger.info(
-                f"Multiquery expansion: {len(unique_variants)} varianti generate"
-            )
+            logger.info(f"Multiquery expansion: {len(unique_variants)} varianti generate")
             return [question] + unique_variants
         except Exception as e:
             logger.warning(f"Errore multi-query expansion: {e}")
@@ -196,11 +195,7 @@ Output: 3 varianti, una per riga, senza numerazione."""),
 
     @staticmethod
     def _extract_proper_nouns(text: str) -> list:
-        """
-        Estrae probabili nomi propri da un testo.
-        Cerca parole con maiuscola iniziale che non siano a inizio frase
-        o parole funzionali italiane.
-        """
+        """Estrae probabili nomi propri da un testo italiano."""
         skip_words = {
             "chi", "cosa", "come", "dove", "quando", "quale", "quali",
             "parlami", "dimmi", "spiegami", "cercami", "trovami",
@@ -219,7 +214,7 @@ Output: 3 varianti, una per riga, senza numerazione."""),
 
 
 # ============================================================
-# CROSS-ENCODER RERANKER
+# CROSS-ENCODER RERANKER (invariato)
 # ============================================================
 
 class CrossEncoderReranker:
@@ -243,7 +238,6 @@ class CrossEncoderReranker:
         scores = self._model.predict(pairs)
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
 
-        # Stampa classifica per debug
         print(f"\n--- TOP 5 CLASSIFICA (su {len(ranked)} CANDIDATI) ---")
         for i, (doc, score) in enumerate(ranked[:5]):
             print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
@@ -272,7 +266,7 @@ class CrossEncoderReranker:
 
 
 # ============================================================
-# RETRIEVAL ENGINE — FIX Parent-Child per offerta_formativa
+# RETRIEVAL ENGINE
 # ============================================================
 
 class RetrievalEngine:
@@ -281,9 +275,8 @@ class RetrievalEngine:
 
     Flusso: rewrite → expand (multiquery) → retrieval parallelo → merge → rerank.
 
-    FIX v3: quando collection == "offerta_formativa", il retrieval
-    include SEMPRE anche la collection Parent-Child (PDF regolamenti
-    e piani di studio), applicando gli stessi filtri metadata.
+    v4: il rewrite() riceve l'ultimo turno (last_user_query, last_assistant_answer)
+    invece dell'intera chat history.
     """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
@@ -291,15 +284,12 @@ class RetrievalEngine:
         self._reranker = reranker
         self._optimizer = query_optimizer
 
-        # Costruisce retriever per ciascuna delle 3 collection
         self._collection_retrievers = {}
         for target in CollectionTarget:
             self._collection_retrievers[target.value] = (
                 indexer.get_collection_retriever(target)
             )
         self._pc_retriever = indexer.get_parent_child_retriever()
-
-        # Accesso diretto al PC child vectorstore per ricerche con filtro
         self._pc_child_vectorstore = indexer._pc_child_vectorstore
 
     def retrieve(
@@ -312,19 +302,22 @@ class RetrievalEngine:
         """
         Retrieval completo: rewrite → multiquery → retrieval → rerank.
 
-        Args:
-            query: La query originale dell'utente.
-            collection: CollectionTarget.value (es. "persone"). Se None → all.
-            metadata_filter: Filtro Chroma per restringere i risultati.
-            chat_history: Lista di BaseMessage per contesto conversazionale.
-
-        Returns:
-            Tupla (documenti_reranked, query_riscritta, lista_multiqueries).
+        v4: chat_history è atteso come lista di BaseMessage.
+        Il metodo estrae automaticamente l'ultimo turno (ultima coppia
+        HumanMessage + AIMessage) e lo passa al rewriter.
         """
         # ── STEP 1: QUERY REWRITING ──
         effective_query = query
-        if self._optimizer:
-            effective_query = self._optimizer.rewrite(query, chat_history)
+        if self._optimizer and chat_history:
+            last_user, last_assistant = self._extract_last_turn(chat_history)
+            effective_query = self._optimizer.rewrite(
+                question=query,
+                last_user_query=last_user,
+                last_assistant_answer=last_assistant,
+            )
+        elif self._optimizer:
+            # Nessuna history → rewrite restituirà la query invariata
+            effective_query = self._optimizer.rewrite(question=query)
 
         # ── STEP 2: MULTIQUERY EXPANSION ──
         multi_queries = [effective_query]
@@ -340,7 +333,6 @@ class RetrievalEngine:
         seen_hashes: Set[int] = set()
 
         for mq in multi_queries:
-            # 3a. Retrieval dalla collection standard
             if metadata_filter:
                 retriever = self._get_filtered_retriever(collection, metadata_filter)
             else:
@@ -360,14 +352,9 @@ class RetrievalEngine:
             except Exception as e:
                 logger.warning(f"Errore retrieval multiquery '{mq[:60]}': {e}")
 
-            # 3b. FIX: Retrieval SEMPRE dal Parent-Child per offerta_formativa
-            #     Questo copre i PDF di regolamenti e piani di studio che sono
-            #     indicizzati nella collection separata "offerta_formativa_pdf_childs"
             if collection == CollectionTarget.OFFERTA_FORMATIVA.value:
                 try:
-                    pc_docs = self._retrieve_from_parent_child(
-                        mq, metadata_filter
-                    )
+                    pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
                     for doc in pc_docs:
                         h = hash(doc.page_content[:200])
                         if h not in seen_hashes:
@@ -385,6 +372,32 @@ class RetrievalEngine:
         final_docs = self._reranker.rerank(effective_query, all_candidates)
         return final_docs, effective_query, multi_queries
 
+    @staticmethod
+    def _extract_last_turn(chat_history: list) -> tuple:
+        """
+        Estrae l'ultimo turno completo (HumanMessage + AIMessage) dalla history.
+
+        Returns:
+            (last_user_query, last_assistant_answer) — stringhe.
+            Se la history è vuota o incompleta, restituisce ("", "").
+        """
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        last_user = ""
+        last_assistant = ""
+
+        # Scorri al contrario per trovare l'ultima coppia completa
+        for i in range(len(chat_history) - 1, -1, -1):
+            msg = chat_history[i]
+            if isinstance(msg, AIMessage) and not last_assistant:
+                last_assistant = msg.content
+            elif isinstance(msg, HumanMessage) and not last_user:
+                last_user = msg.content
+            if last_user and last_assistant:
+                break
+
+        return last_user, last_assistant
+
     def retrieve_from_all(self, query: str, metadata_filter: Optional[dict] = None) -> tuple:
         """Retrieval cross-collection con multiquery e filtro opzionale."""
         multi_queries = [query]
@@ -395,7 +408,6 @@ class RetrievalEngine:
         seen_hashes: Set[int] = set()
 
         for mq in multi_queries:
-            # Retrieval da tutte le collection standard
             for collection_name, default_retriever in self._collection_retrievers.items():
                 try:
                     retriever = default_retriever
@@ -413,7 +425,6 @@ class RetrievalEngine:
                 except Exception as e:
                     logger.warning(f"Errore retrieval da {collection_name}: {e}")
 
-            # Retrieval dal Parent-Child (SEMPRE, con filtro se presente)
             try:
                 pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
                 for doc in pc_docs:
@@ -428,7 +439,7 @@ class RetrievalEngine:
         return final_docs, query
 
     # ================================================================
-    # PARENT-CHILD RETRIEVAL — con supporto filtri metadata
+    # PARENT-CHILD RETRIEVAL
     # ================================================================
 
     def _retrieve_from_parent_child(
@@ -436,25 +447,8 @@ class RetrievalEngine:
         query: str,
         metadata_filter: Optional[dict] = None,
     ) -> List[Document]:
-        """
-        Recupera documenti dal Parent-Child vectorstore.
-
-        Se metadata_filter è presente, usa accesso diretto a Chroma
-        con filtro (il ParentDocumentRetriever non supporta filtri nativi).
-        Se metadata_filter è None, usa il ParentDocumentRetriever standard
-        (che restituisce i parent document completi).
-
-        NOTA ARCHITETTURALE:
-          Quando si usa il filtro, si bypassa il meccanismo parent→child→parent
-          e si restituiscono direttamente i child chunks filtrati. Questo è
-          un compromesso accettabile perché:
-            1. I child chunks contengono già il prefisso contestuale
-               (iniettato durante l'indicizzazione)
-            2. Il reranker a valle selezionerà comunque i più rilevanti
-            3. L'alternativa (nessun risultato) è peggiore
-        """
+        """Recupera documenti dal Parent-Child vectorstore."""
         if metadata_filter:
-            # Accesso diretto con filtro al child vectorstore
             chroma_where = self._build_chroma_filter(metadata_filter)
             try:
                 retriever = self._pc_child_vectorstore.as_retriever(
@@ -475,14 +469,12 @@ class RetrievalEngine:
                     f"Errore Parent-Child con filtro {metadata_filter}: {e}. "
                     f"Fallback a retrieval senza filtro."
                 )
-                # Fallback: prova senza filtro
                 try:
                     return self._pc_retriever.invoke(query)
                 except Exception as e2:
                     logger.warning(f"Anche il fallback Parent-Child è fallito: {e2}")
                     return []
         else:
-            # Retrieval standard via ParentDocumentRetriever (restituisce parent)
             return self._pc_retriever.invoke(query)
 
     # ================================================================
