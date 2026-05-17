@@ -1,28 +1,26 @@
 """
 retrieval/engine.py — RetrievalEngine RIVISTO per 3 Vector Store.
 
-REFACTORING v4 — QUERY REWRITING CON LLAMA 3.3 70B (via Groq):
+REFACTORING v4.1 — QUERY REWRITING SPOSTATO A LIVELLO AGENTE:
 
-  Il QueryOptimizer usa Llama 3.3 70B (Groq free tier)
-  esclusivamente per rewrite e multiquery expansion.
+  CAMBIAMENTO CHIAVE:
+    Il Query Rewriting (risoluzione coreferenze) NON avviene più in
+    questo file. È stato spostato in agent/agent.py → RAGAgent.chat().
+    Quando retrieve() viene invocato, la query è GIÀ riscritta.
 
-  REWRITE — Regole:
-    - Risolve coreferenze su QUALSIASI entità (persone, corsi, aule,
-      laboratori, bandi, sedi, ecc.), non solo su nomi di docenti.
-    - Il contesto è SOLO l'ultimo turno (ultima domanda utente +
-      risposta ottenuta). Non serve l'intera history.
-    - Se la query è autosufficiente, viene restituita identica.
-
-  EXPAND:
-    - 3 varianti semantiche per multiquery retrieval.
-
-  INVARIATI DA v3:
+  INVARIATI:
+    - QueryOptimizer.rewrite() esiste ancora come metodo (usato da agent.py)
+    - QueryOptimizer.expand() usato per multiquery expansion
     - CrossEncoderReranker
-    - RetrievalEngine (flusso retrieve/retrieve_from_all)
-    - FIX Parent-Child per offerta_formativa
+    - Parent-Child retrieval per offerta_formativa
 
-FLUSSO:
-  rewrite → expand (multiquery) → retrieval parallelo → merge → rerank
+  RIMOSSO DA retrieve():
+    - Parametro chat_history (non più necessario)
+    - Chiamata a self._optimizer.rewrite() dentro retrieve()
+    - Metodo _extract_last_turn() (non più necessario qui)
+
+  FLUSSO:
+    query (già riscritta) → expand (multiquery) → retrieval parallelo → merge → rerank
 """
 
 import re
@@ -45,22 +43,11 @@ class QueryOptimizer:
 
     Usa un LLM dedicato (Llama 3.3 70B via Groq) per:
       1. REWRITE — risoluzione coreferenze basata su ultimo turno
+         (ora invocato da agent.py, non più da retrieve())
       2. EXPAND — generazione varianti semantiche per retrieval
+         (ancora invocato da retrieve())
     """
 
-    # ──────────────────────────────────────────────────────────
-    # REWRITE PROMPT — Llama 3.3 70B
-    #
-    # Il contesto passato è SOLO l'ultimo turno: la domanda
-    # precedente dell'utente e la risposta ricevuta.
-    # Il modello deve risolvere pronomi e riferimenti impliciti
-    # su QUALSIASI tipo di entità (corsi, aule, docenti, bandi, ecc.)
-    #
-    # Few-shot:
-    #   (a) Coreferenza su persona
-    #   (b) Coreferenza su corso di laurea
-    #   (c) Query autosufficiente (nessuna sostituzione)
-    # ──────────────────────────────────────────────────────────
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You are a coreference resolver for an Italian university Q&A system. "
@@ -87,9 +74,6 @@ class QueryOptimizer:
          "New query: \"{question}\""),
     ])
 
-    # ──────────────────────────────────────────────────────────
-    # MULTIQUERY PROMPT — Llama 3.3 70B
-    # ──────────────────────────────────────────────────────────
     MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "Generate exactly 3 Italian rephrasings of the given question for semantic search. "
@@ -101,12 +85,10 @@ class QueryOptimizer:
     def __init__(self, llm_chat_model):
         self._llm = llm_chat_model
 
-        # Chain REWRITE: invoca LLM, prende solo la prima riga dell'output
         self._rewrite_chain = self.REWRITE_PROMPT | self._llm | RunnableLambda(
             lambda msg: msg.content.strip().split('\n')[0].strip()
         )
 
-        # Chain EXPAND: invoca LLM, splitta per newline
         self._multi_query_chain = self.MULTI_QUERY_PROMPT | self._llm | RunnableLambda(
             lambda msg: [q.strip() for q in msg.content.strip().split("\n") if q.strip()]
         )
@@ -120,6 +102,9 @@ class QueryOptimizer:
         """
         Riscrivi la query risolvendo coreferenze dall'ultimo turno.
 
+        NOTA v4.1: Questo metodo è ora invocato da agent.py (RAGAgent.chat()),
+        NON più da RetrievalEngine.retrieve(). La firma è invariata.
+
         Args:
             question: La query corrente dell'utente.
             last_user_query: La domanda dell'utente nel turno precedente.
@@ -129,13 +114,10 @@ class QueryOptimizer:
             La query riscritta con coreferenze risolte, oppure
             la query originale se non c'è contesto o è autosufficiente.
         """
-        # Se non c'è un turno precedente, la query è per forza autosufficiente
         if not last_user_query:
             logger.info(f"Nessun turno precedente, query invariata: '{question}'")
             return question
 
-        # Tronca la risposta precedente per non sprecare token
-        # (al rewriter serve solo sapere DI COSA si parlava, non l'intera risposta)
         truncated_answer = last_assistant_answer[:300]
         if len(last_assistant_answer) > 300:
             truncated_answer += "..."
@@ -147,20 +129,17 @@ class QueryOptimizer:
                 "last_assistant_answer": truncated_answer,
             })
 
-            # ── Sanity checks minimali ──
-
             if not result.strip():
                 logger.warning("Rewriting ha prodotto stringa vuota. Uso l'originale.")
                 return question
 
-            if len(result) > len(question) * 3:
+            if len(result) > len(question) * 8:
                 logger.warning(
                     f"Rewriting sospetto ({len(result)} chars vs {len(question)}). "
                     f"Uso l'originale."
                 )
                 return question
 
-            # Verifica conservazione entità della query originale
             original_entities = self._extract_proper_nouns(question)
             if original_entities:
                 result_lower = result.lower()
@@ -273,10 +252,11 @@ class RetrievalEngine:
     """
     Orchestratore retrieval per 3 Vector Store (audit §8).
 
-    Flusso: rewrite → expand (multiquery) → retrieval parallelo → merge → rerank.
+    v4.1: Il rewriting NON avviene più qui. La query arriva già riscritta
+    da agent.py. Il flusso è ora:
+      query (già riscritta) → expand (multiquery) → retrieval parallelo → merge → rerank
 
-    v4: il rewrite() riceve l'ultimo turno (last_user_query, last_assistant_answer)
-    invece dell'intera chat history.
+    Il parametro chat_history è stato rimosso da retrieve().
     """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
@@ -297,29 +277,30 @@ class RetrievalEngine:
         query: str,
         collection: Optional[str] = None,
         metadata_filter: Optional[dict] = None,
-        chat_history: Optional[list] = None,
     ) -> tuple:
         """
-        Retrieval completo: rewrite → multiquery → retrieval → rerank.
+        Retrieval completo: multiquery expansion → retrieval → rerank.
 
-        v4: chat_history è atteso come lista di BaseMessage.
-        Il metodo estrae automaticamente l'ultimo turno (ultima coppia
-        HumanMessage + AIMessage) e lo passa al rewriter.
+        v4.1: Il parametro chat_history è stato RIMOSSO. La query arriva
+        già riscritta da agent.py. Questo metodo si occupa solo di:
+          1. Multiquery expansion
+          2. Retrieval parallelo
+          3. Reranking
+
+        Args:
+            query: La query (già riscritta se necessario da agent.py).
+            collection: Nome della collection target (opzionale).
+            metadata_filter: Filtro metadata per Chroma (opzionale).
+
+        Returns:
+            (documents, effective_query, multi_queries) — tupla con:
+              - documents: lista di Document reranked
+              - effective_query: la query usata (uguale all'input)
+              - multi_queries: lista delle varianti generate
         """
-        # ── STEP 1: QUERY REWRITING ──
         effective_query = query
-        if self._optimizer and chat_history:
-            last_user, last_assistant = self._extract_last_turn(chat_history)
-            effective_query = self._optimizer.rewrite(
-                question=query,
-                last_user_query=last_user,
-                last_assistant_answer=last_assistant,
-            )
-        elif self._optimizer:
-            # Nessuna history → rewrite restituirà la query invariata
-            effective_query = self._optimizer.rewrite(question=query)
 
-        # ── STEP 2: MULTIQUERY EXPANSION ──
+        # ── STEP 1: MULTIQUERY EXPANSION ──
         multi_queries = [effective_query]
         if self._optimizer:
             multi_queries = self._optimizer.expand(effective_query)
@@ -328,7 +309,7 @@ class RetrievalEngine:
             docs, _ = self.retrieve_from_all(effective_query)
             return docs, effective_query, multi_queries
 
-        # ── STEP 3: RETRIEVAL PARALLELO PER OGNI VARIANTE ──
+        # ── STEP 2: RETRIEVAL PARALLELO PER OGNI VARIANTE ──
         all_candidates = []
         seen_hashes: Set[int] = set()
 
@@ -368,35 +349,9 @@ class RetrievalEngine:
             f"(collection={collection}, filter={metadata_filter})"
         )
 
-        # ── STEP 4: RERANKING ──
+        # ── STEP 3: RERANKING ──
         final_docs = self._reranker.rerank(effective_query, all_candidates)
         return final_docs, effective_query, multi_queries
-
-    @staticmethod
-    def _extract_last_turn(chat_history: list) -> tuple:
-        """
-        Estrae l'ultimo turno completo (HumanMessage + AIMessage) dalla history.
-
-        Returns:
-            (last_user_query, last_assistant_answer) — stringhe.
-            Se la history è vuota o incompleta, restituisce ("", "").
-        """
-        from langchain_core.messages import HumanMessage, AIMessage
-
-        last_user = ""
-        last_assistant = ""
-
-        # Scorri al contrario per trovare l'ultima coppia completa
-        for i in range(len(chat_history) - 1, -1, -1):
-            msg = chat_history[i]
-            if isinstance(msg, AIMessage) and not last_assistant:
-                last_assistant = msg.content
-            elif isinstance(msg, HumanMessage) and not last_user:
-                last_user = msg.content
-            if last_user and last_assistant:
-                break
-
-        return last_user, last_assistant
 
     def retrieve_from_all(self, query: str, metadata_filter: Optional[dict] = None) -> tuple:
         """Retrieval cross-collection con multiquery e filtro opzionale."""

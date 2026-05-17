@@ -1,18 +1,12 @@
 """
 agent/tools/__init__.py — Tool con schema Pydantic rigoroso per Qwen2.5 7B/14B.
 
-REFACTORING v3.2 — Pydantic Tool Calling:
-  - Ogni tool ha un args_schema definito con pydantic.BaseModel + Field
-  - sotto_area validato con Literal[...] per ogni collection
-  - anno come Optional[int] per abbinamento con risoluzione temporale
-  - corso_di_laurea NON esposto (rischio hallucination su 7B)
-  - Descrizioni tool compatte e direttive anti-compressione mantenute
-  - Fallback signals invariati
-
-  NOTA: search_offerta_formativa ora ha sotto_area opzionale con i valori
-  derivati da router.py (_classify_offerta_sottoarea_html + _classify_offerta_sottoarea_pdf):
-    HTML: "informazioni_corso", "didattica", "aule", "terza_missione"
-    PDF:  "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso", "aule"
+REFACTORING v3.3 — Allineamento con spostamento Query Rewriting:
+  - _search_collection() NON passa più chat_history a engine.retrieve()
+    (il rewriting avviene ora in agent.py prima dell'invocazione dell'agente)
+  - set_chat_history() mantenuto per retrocompatibilità ma non più usato
+    nel flusso di retrieval
+  - Tutto il resto invariato: Pydantic schemas, fallback signals, validazione
 """
 
 from __future__ import annotations
@@ -29,7 +23,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _retrieval_engine: "RetrievalEngine | None" = None
 
-# Chat history globale per il query rewriting contestuale
+# Chat history globale — mantenuto per retrocompatibilità
+# NOTA v3.3: non più passato a engine.retrieve() (rewriting spostato in agent.py)
 _chat_history: list = []
 
 # Metadati dell'ultima ricerca per il sistema di logging
@@ -50,7 +45,13 @@ def set_retrieval_engine(engine: "RetrievalEngine") -> None:
 
 
 def set_chat_history(history: list) -> None:
-    """Inietta la chat history corrente nei tool per il query rewriting."""
+    """
+    Inietta la chat history corrente nei tool.
+
+    NOTA v3.3: Mantenuto per retrocompatibilità. La chat_history NON viene
+    più passata a engine.retrieve() poiché il Query Rewriting è stato
+    spostato in agent.py.
+    """
     global _chat_history
     _chat_history = history
 
@@ -109,7 +110,12 @@ def _search_collection(
     tool_name: str,
     metadata_filter: Optional[dict] = None,
 ) -> str:
-    """Helper condiviso per la ricerca in una singola collection."""
+    """
+    Helper condiviso per la ricerca in una singola collection.
+
+    v3.3: NON passa più chat_history a engine.retrieve().
+    La query arriva già riscritta (il rewriting è avvenuto in agent.py).
+    """
     global _last_search_meta
 
     if _retrieval_engine is None:
@@ -120,11 +126,11 @@ def _search_collection(
     print(f"SEARCH COLLECTION: {query}")
 
     try:
+        # v3.3: rimosso chat_history=_chat_history
         result = _retrieval_engine.retrieve(
             query,
             collection=collection.value,
             metadata_filter=metadata_filter,
-            chat_history=_chat_history,
         )
 
         if len(result) == 3:
@@ -356,9 +362,9 @@ def search_persone(
 USA QUESTO TOOL per:
 - "Chi è il prof. X?" → profilo docente
 - "Cosa insegna il prof. X?" → corsi del docente
-- "Chi insegna Machine Learning?" → cerca nel campo nomi_insegnamenti
+- "Chi insegna Machine Learning?"
 - "Syllabus/programma di Algoritmi" → didattica dell'insegnamento (sotto_area="didattica")
-- "Email/ricevimento del prof. X"
+- "Email/ricevimento del prof. X"  → contatti del docente (sotto_area="profilo")
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 

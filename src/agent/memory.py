@@ -1,17 +1,18 @@
 """
 Gestione della memoria conversazionale per l'Agente RAG DIEM.
 
-REFACTORING v4:
-  - get_langchain_history() restituisce SOLO l'ultimo turno (1 coppia
-    HumanMessage + AIMessage) per il rewriter. Il contesto di
-    coreferenza si basa esclusivamente sull'ultima interazione.
-  - Invariata l'architettura a due stadi (similarità + summarization)
+REFACTORING v4.1:
+  - Aggiunto get_last_completed_turn() che restituisce l'ultimo turno
+    completato come tupla (user_message, assistant_message). Usato da
+    agent.py per il Query Rewriting a livello agente.
+  - get_langchain_history() restituisce SOLO l'ultimo turno (invariato)
+  - Architettura a due stadi (similarità + summarization) invariata
 """
 
 import logging
 import re
 import numpy as np
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass, field
 
 from langchain_core.messages import (
@@ -262,6 +263,24 @@ class SmartConversationMemory:
             })
 
         return messages
+
+    def get_last_completed_turn(self) -> Tuple[str, str]:
+        """
+        Restituisce l'ultimo turno COMPLETATO (con risposta dell'assistente).
+
+        v4.1: Metodo aggiunto per supportare il Query Rewriting a livello
+        agente. Restituisce (user_message, assistant_message) dell'ultimo
+        turno completato, oppure ("", "") se non ci sono turni.
+
+        NOTA: Il turno corrente (in cui _pending_user_message è valorizzato
+        ma add_assistant_message non è ancora stato chiamato) NON viene
+        restituito — serve il turno PRECEDENTE per risolvere coreferenze.
+        """
+        if not self._turns:
+            return ("", "")
+
+        last_turn = self._turns[-1]
+        return (last_turn.user_message, last_turn.assistant_message)
 
     def get_langchain_history(self) -> List[BaseMessage]:
         """
