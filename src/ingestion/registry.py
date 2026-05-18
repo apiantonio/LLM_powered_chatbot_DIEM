@@ -1,12 +1,3 @@
-"""
-Registro incrementale per l'indicizzazione.
-
-Mantiene una mappa persistente:
-  source_identifier → (content_hash, [chroma_ids], [parent_ids], collection_name)
-
-Pattern: Repository (DDD) — incapsula l'accesso al registro persistente.
-"""
-
 import json
 import hashlib
 import logging
@@ -19,16 +10,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class IndexEntry:
-    """
-    Record di un singolo documento indicizzato.
-
-    Campi:
-      content_hash: SHA-256 del contenuto (per deduplication incrementale).
-      chroma_ids: Lista degli ID dei chunk in Chroma (per cleanup).
-      parent_ids: Lista degli ID dei parent nel docstore (per cleanup Parent-Child).
-      collection_name: Nome della collection Chroma in cui il documento è indicizzato.
-                       Corrisponde a CollectionTarget.value (es. "persone").
-    """
     content_hash: str
     chroma_ids: List[str] = field(default_factory=list)
     parent_ids: List[str] = field(default_factory=list)
@@ -36,9 +17,6 @@ class IndexEntry:
 
 
 class IndexRegistry:
-    """
-    Registro persistente su file JSON per tracciare lo stato di indicizzazione.
-    """
 
     def __init__(self, registry_path: str):
         self._path = registry_path
