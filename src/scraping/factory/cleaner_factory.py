@@ -1,11 +1,3 @@
-"""
-Factory per creare le regole di pulizia HTML dinamicamente.
-
-CODICE RIMOSSO (Sprint Filtri Docenti):
-  - "obsolete_url": ObsoleteUrlRule eliminata (Req 2).
-  - "didattica": DidatticaFilterRule eliminata (Req 5, post-processing nel crawler).
-"""
-
 from pathlib import Path
 from typing import List
 from scraping.core.base_rule import CleaningRule
@@ -25,7 +17,6 @@ from scraping.rules.metadata_rules import (
 
 
 class RuleFactory:
-    """Factory per creare le regole di pulizia dinamicamente."""
 
     def __init__(
         self,
@@ -38,7 +29,6 @@ class RuleFactory:
         self.target_department = target_department
 
     def create_rules(self, rule_names: List[str]) -> List[CleaningRule]:
-        """Istanzia e restituisce le regole richieste."""
         rules = []
         for name in rule_names:
             name = name.lower()

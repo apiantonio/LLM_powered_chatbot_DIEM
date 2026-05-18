@@ -1,25 +1,3 @@
-"""
-UnisaCrawler — Crawler BFS con filtri iniettati (Strategy Pattern).
-
-ARCHITETTURA (Sprint Filtri Docenti):
-  - Filtri URL docenti: delegati a classificatori in transform/rules/docenti_url_rules.py
-  - Filtraggio DOM pubblicazioni: delegato a PublicationsHtmlFilter in
-    transform/rules/html_content_rules.py
-  - Post-processing didattica: dopo join() di tutti i thread (Req 5 bug fix)
-  - Thread pool: calcolo dinamico conservativo da CrawlerConfig
-  - I/O thread-safe con lock
-
-AGGIORNAMENTO (Sprint Filtri v2):
-  - RicercaBaseUrlClassifier (Req 6): navigate-only per /ricerca base
-  - InternationalUrlClassifier (Req 7): navigate-only per /international
-  - Post-ingestion cleanup: eliminazione file con -anno=YYYY (YYYY < 2020, eccezione anno=0)
-
-Pattern: Strategy (filtri iniettati) + Template Method (ciclo BFS fisso)
-
-Lo scrapers.py fa SOLO scraping: discovery URL, fetch HTML, parsing DOM, salvataggio.
-Le regole di filtraggio sono TUTTE incapsulate in transform/rules/.
-"""
-
 import re
 import os
 import time
@@ -56,26 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 class UnisaCrawler:
-    """
-    Crawler BFS con filtri iniettati (Strategy Pattern).
-
-    Responsabilità:
-      - Discovery e validazione URL (BFS)
-      - Fetch HTML in batch (AsyncHtmlLoader)
-      - Parsing e pulizia DOM base (noise removal)
-      - Salvataggio thread-safe su disco
-      - Raccolta link PDF
-
-    Le logiche di filtraggio sono delegate ai classificatori iniettati:
-      - ProgettiUrlClassifier (Req 1)
-      - PubblicazioniUrlClassifier (Req 2)
-      - DidatticaOrariUrlClassifier (Req 3)
-      - PublicationsHtmlFilter (Req 4)
-      - DidatticaIdUrlClassifier (Req 5)
-      - RicercaBaseUrlClassifier (Req 6)
-      - InternationalUrlClassifier (Req 7)
-    """
-
     ALLOWED_DOMAINS = {
         "www.diem.unisa.it",
         "docenti.unisa.it",
@@ -115,27 +73,22 @@ class UnisaCrawler:
         self.delay = delay
         self.output_dir = output_dir
 
-        # --- Config centralizzata ---
         self._crawler_cfg = crawler_config or CrawlerConfig()
         self._ingestion_cfg = ingestion_config or IngestionConfig()
 
-        # Thread pool: calcolo dinamico conservativo
         if max_workers is not None:
             self.max_workers = max_workers
         else:
             self.max_workers = self._crawler_cfg.compute_max_workers()
 
-        # Filtri inline iniettati (Strategy Pattern)
         self._html_rules = html_rules or []
         self._pdf_rules = pdf_rules or []
 
-        # --- Classificatori URL docenti (Strategy Pattern, da transform/rules/) ---
         self._progetti_classifier = ProgettiUrlClassifier()
         self._pubblicazioni_classifier = PubblicazioniUrlClassifier()
         self._orari_classifier = DidatticaOrariUrlClassifier()
         self._didattica_id_classifier = DidatticaIdUrlClassifier()
 
-        # --- NUOVI classificatori (Sprint Filtri v2) ---
         self._ricerca_base_classifier = RicercaBaseUrlClassifier()
         self._international_classifier = InternationalUrlClassifier()
         self._international_subpages_classifier = InternationalSubpagesUrlClassifier()
@@ -143,7 +96,6 @@ class UnisaCrawler:
         self._corsi_classifier = CorsiUrlClassifier()
 
 
-        # --- Stato ---
         self.visited_urls: Set[str] = set()
         self.found_pdf_links: Set[str] = set()
         self.diem_docenti_whitelist: Set[str] = set()
@@ -151,7 +103,6 @@ class UnisaCrawler:
         self.processed_count = 0
         self.filtered_count = 0
 
-        # --- Lock I/O per scrittura thread-safe ---
         self._write_lock = threading.Lock()
         self._counter_lock = threading.Lock()
 
@@ -163,12 +114,8 @@ class UnisaCrawler:
             f"cutoff_year: {self._ingestion_cfg.cutoff_year}"
         )
 
-    # ==========================================
-    # FILTRI INLINE (logica preesistente, invariata)
-    # ==========================================
 
     def _should_discard_html(self, source_url: str, clean_html: str) -> Tuple[bool, str]:
-        """Valuta il contenuto HTML in-memory contro tutte le regole attive."""
         safe_name = re.sub(
             r'[<>:"/\\|?*]', '-',
             source_url.replace("https://", "").replace("http://", "")
@@ -190,15 +137,10 @@ class UnisaCrawler:
         return False, ""
 
     def _should_discard_pdf(self, pdf_url: str) -> bool:
-        """Valuta un link PDF contro le regole PDF attive."""
         for rule in self._pdf_rules:
             if rule.should_discard(pdf_url):
                 return True
         return False
-
-    # ==========================================
-    # DISCOVERY E VALIDAZIONE URL
-    # ==========================================
 
     def initialize_diem_docenti_whitelist(self):
         url_personale = "https://www.diem.unisa.it/dipartimento/personale"
@@ -223,11 +165,6 @@ class UnisaCrawler:
             logger.error(f"Errore whitelist docenti: {e}")
 
     def is_valid_url(self, url: str) -> bool:
-        """
-        Validazione URL base + filtri docenti (pre-accodamento).
-
-        Gli URL classificati come "discard" non entrano mai nella coda BFS.
-        """
         try:
             parsed_url = urlparse(url)
             if parsed_url.netloc not in self.ALLOWED_DOMAINS:
@@ -267,18 +204,15 @@ class UnisaCrawler:
             if any(trap in url_lower for trap in pdf_traps):
                 return False
 
-        # --- Filtri URL docenti (Req 1, 2, 3): pre-accodamento ---
         if self._progetti_classifier.classify(url) == "discard":
             return False
 
         if self._pubblicazioni_classifier.classify(url) == "discard":
             return False
 
-        # Req 3: Didattica/Orari — scartare completamente
         if self._orari_classifier.classify(url) == "discard":
             return False
 
-        # Req 5: Didattica id/cId/pId — discard versioni incomplete
         if self._didattica_id_classifier.classify(url) == "discard":
             return False
         
@@ -287,17 +221,12 @@ class UnisaCrawler:
         
         return True
 
-    # ==========================================
-    # PARSING (invariato nella struttura)
-    # ==========================================
-
     def process_single_html(self, html_content: str, source_url: str):
         """Parsing e pulizia DOM. STATELESS per ThreadPoolExecutor."""
         soup = BeautifulSoup(html_content, "html.parser")
         local_new_links = set()
         local_pdfs = set()
 
-        # [Logica Esistente] Estrazione iniziale di link e PDF
         for a_tag in soup.find_all('a', href=True):
             raw_href = a_tag['href'].strip()
 
@@ -325,30 +254,22 @@ class UnisaCrawler:
                 if self.is_valid_url(full_url):
                     local_new_links.add(full_url)
 
-        # ============================================================================
-        # --- ECCEZIONE ESCLUSIVA: Cattura preventiva del sub-footer per la Home ---
-        # ============================================================================
         sub_footer_content = ""
-        # Verifica se l'URL corrisponde esattamente alla pagina principale del DIEM
         if source_url.rstrip("/") in [
             "https://www.diem.unisa.it", 
             "http://www.diem.unisa.it", 
             "https://www.diem.unisa.it/home", 
             "http://www.diem.unisa.it/home"
         ]:
-            # Utilizza un selettore flessibile per ID o Classe che contenga 'sub-footer'
             sub_footer_el = soup.select_one(".sub-footer, #sub-footer, [class*='sub-footer'], [id*='sub-footer']")
             if sub_footer_el:
-                # Applichiamo la pulizia degli attributi anche al sub-footer per uniformitÃ 
                 allowed_attrs = ['href', 'src', 'colspan', 'rowspan']
                 for tag in sub_footer_el.find_all(True):
                     tag.attrs = {k: v for k, v in tag.attrs.items() if k in allowed_attrs}
                 sub_footer_el.attrs = {k: v for k, v in sub_footer_el.attrs.items() if k in allowed_attrs}
                 
-                # Salviamo il contenuto testuale/HTML strutturato
                 sub_footer_content = f"\n<div class=\"sub-footer-exception\">\n Posizione dipartimento DIEM:{sub_footer_el.decode_contents().strip()}\n</div>\n"
 
-        # ---- PULIZIA DOM GENERALE [Logica Esistente] ----
         noise_selectors = [
             "#header", "#main-menu", "#menu-bar", "#unisa-left-menu",
             "#box-agenda", "#share-dropdown", ".breadcrumb",
@@ -370,20 +291,13 @@ class UnisaCrawler:
                 tag.attrs = {k: v for k, v in tag.attrs.items() if k in allowed_attrs}
             clean_html = main_content.decode_contents().strip()
 
-        # ============================================================================
-        # --- CODA ECCEZIONE: Se abbiamo estratto il sub-footer, lo appendiamo qui ---
-        # ============================================================================
         if sub_footer_content:
             clean_html += sub_footer_content
 
         return clean_html, local_new_links, local_pdfs
 
-    # ==========================================
-    # SALVATAGGIO (thread-safe con lock)
-    # ==========================================
 
     def _save_single_doc(self, doc, current_depth, doc_index: int) -> Optional[str]:
-        """Salva un documento su disco in modo thread-safe."""
         raw_url = doc.metadata.get('source', 'URL_sconosciuto')
         safe_name = re.sub(
             r'[<>:"/\\|?*]', '-',
@@ -421,14 +335,9 @@ class UnisaCrawler:
                 logger.error(f"Errore scrittura registro PDF: {e}")
 
     def _increment_counter(self) -> int:
-        """Incrementa il contatore processed_count in modo thread-safe."""
         with self._counter_lock:
             self.processed_count += 1
             return self.processed_count
-    
-    # ============================================================
-    # POST-INGESTION: CLEANUP FILE CON -anno=YYYY (Feature 3)
-    # ============================================================
 
     def _postprocess_didattica_cleanup(self) -> int:
         deleted_count = 0
@@ -446,7 +355,6 @@ class UnisaCrawler:
         pattern_cid = re.compile(r'cid=([^&.]+)', re.IGNORECASE)
         pattern_pid = re.compile(r'pid=([^&.]+)', re.IGNORECASE)
 
-        # --- FASE 1: Scansione del disco per mappare la gerarchia ---
         for saved_file in output_path.glob("*.html"):
             filename = saved_file.name
             
@@ -477,7 +385,6 @@ class UnisaCrawler:
                         if current_pid:
                             has_pid_per_anno_id_cid.add((anno, current_id, current_cid))
 
-        # --- FASE 2: Eliminazione mirata in base alle regole ---
         for saved_file in output_path.glob("*.html"):
             filename = saved_file.name
             
@@ -530,23 +437,9 @@ class UnisaCrawler:
 
 
     def _postprocess_anno_cleanup(self) -> int:
-        """
-        Elimina i file salvati il cui nome contiene -anno=YYYY con YYYY < cutoff_year.
-
-        ECCEZIONE CRITICA: i file con -anno=0 NON vengono MAI eliminati.
-        Lo "0" è un valore speciale che indica "tutte le pubblicazioni" e
-        viene gestito come eccezione esplicita.
-
-        Eseguito DOPO la fine di tutti i batch, quando tutti i file sono su disco.
-
-        Returns:
-            Numero di file eliminati.
-        """
         output_path = Path(self.output_dir)
         deleted_count = 0
 
-        # Pattern: cattura -anno=YYYY dove YYYY è un numero.
-        # Usiamo un pattern che matcha qualsiasi sequenza di cifre dopo -anno=
         anno_pattern = re.compile(r'-anno=(\d+)')
 
         for saved_file in output_path.glob("*.html"):
@@ -562,11 +455,9 @@ class UnisaCrawler:
             except ValueError:
                 continue
 
-            # --- ECCEZIONE CRITICA: anno=0 NON viene MAI eliminato ---
             if anno_value == 0:
                 continue
 
-            # --- Anno < cutoff_year → eliminare ---
             if anno_value < self._ingestion_cfg.cutoff_year:
                 try:
                     saved_file.unlink()
@@ -590,17 +481,10 @@ class UnisaCrawler:
 
         return deleted_count
 
-    # ==========================================
-    # DECISIONE SALVATAGGIO
-    # ==========================================
-
-
     def _decide_save(self, source_url: str, clean_html: str, doc, current_depth: int) -> str:
         if not clean_html:
             return "discard"
 
-        # --- STEP 1: Filtri di Navigazione (Esplora link/PDF ma non salvare HTML) ---
-        # Aggiungiamo qui il controllo sulle pubblicazioni
         if self._pubblicazioni_classifier.classify(source_url) == "navigate": return "navigate"
         if self._ricerca_base_classifier.classify(source_url) == "navigate": return "navigate"
         if self._international_classifier.classify(source_url) == "navigate": return "navigate"
@@ -610,27 +494,20 @@ class UnisaCrawler:
         if hasattr(self, '_corsi_classifier'):
             if self._corsi_classifier.classify(source_url) == "navigate": return "navigate"
 
-        # --- STEP 2: Filtri di Scarto (Discard) ---
         if self._pubblicazioni_classifier.classify(source_url) == "discard": return "discard"
         
-        # Filtro inline (404, pagine vuote, ecc.)
         should_discard, reason = self._should_discard_html(source_url, clean_html)
         if should_discard:
             return "discard"
 
-        # Didattica (Req 5)
         didattica_class = self._didattica_id_classifier.classify(source_url)
         if didattica_class == "discard": return "discard"
 
-        # Salvataggio fisico
         doc.page_content = clean_html
         doc_index = self._increment_counter()
         self._save_single_doc(doc, current_depth, doc_index)
         return "save"
 
-    # ==========================================
-    # MOTORE ORCHESTRATORE
-    # ==========================================
 
     def run(self):
         logger.info("--- AVVIO CRAWLING CON FILTRI INLINE + FILTRI DOCENTI ---")
@@ -688,17 +565,13 @@ class UnisaCrawler:
                     try:
                         clean_html, local_new_links, local_pdfs = future.result()
 
-                        # Ottieni la decisione (save, navigate o discard)
                         decision = self._decide_save(source_url, clean_html, doc, current_depth)
 
-                        # GARANZIA PDF: Se la decisione Ã¨ di salvare O di navigare (es. piano-di-studi)
                         if decision in ["save", "navigate"]:
-                            # Raccogliamo i PDF
                             for pdf_url in local_pdfs:
                                 if not self._should_discard_pdf(pdf_url):
                                     self.found_pdf_links.add(pdf_url)
 
-                            # Continuiamo la navigazione BFS per trovare i link figli
                             if current_depth < self.max_depth:
                                 for new_link in local_new_links:
                                     if new_link not in self.visited_urls:
@@ -711,20 +584,12 @@ class UnisaCrawler:
                     except Exception as e:
                         logger.error(f"Errore elaborazione {source_url}: {e}")
 
-            # ThreadPoolExecutor.__exit__ → shutdown(wait=True)
-            # Tutti i thread del batch hanno terminato.
-
             self._save_pdf_ledger()
             time.sleep(self.delay)
 
-        # ============================================================
-        # POST-PROCESSING (eseguito DOPO la fine di TUTTI i batch)
-        # ============================================================
 
         didattica_deleted = self._postprocess_didattica_cleanup()
 
-        # (Feature 3) Eliminazione file con -anno=YYYY < cutoff_year
-        # ECCEZIONE: -anno=0 viene SEMPRE preservato.
         anno_deleted = self._postprocess_anno_cleanup()
 
         self._print_summary(didattica_deleted, anno_deleted)

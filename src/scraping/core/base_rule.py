@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Optional
 
 class CleaningRule(ABC):
-    """Interfaccia base per tutte le regole di pulizia."""
     
     @property
     @abstractmethod
@@ -18,9 +17,7 @@ class CleaningRule(ABC):
     def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
         pass
 
-# --- NUOVA INTERFACCIA PER I PDF ---
 class PdfFilterRule(ABC):
-    """Interfaccia Base per le regole di pulizia dei link PDF."""
     
     @property
     @abstractmethod
@@ -28,5 +25,4 @@ class PdfFilterRule(ABC):
 
     @abstractmethod
     def should_discard(self, url: str) -> bool:
-        """Restituisce True se l'URL del PDF deve essere scartato."""
         pass

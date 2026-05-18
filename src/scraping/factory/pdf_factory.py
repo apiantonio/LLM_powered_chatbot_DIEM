@@ -8,13 +8,11 @@ from scraping.rules.pdf_rules import (
 )
 
 class PdfRuleFactory:
-    """Factory per creare le regole di filtraggio PDF dinamicamente."""
     
     def __init__(self, cutoff_year: int = 2020):
         self.cutoff_year = cutoff_year
 
     def create_rules(self, rule_names: List[str]) -> List[PdfFilterRule]:
-        """Istanzia e restituisce le regole richieste per i PDF."""
         rules = []
         for name in rule_names:
             name = name.lower()
