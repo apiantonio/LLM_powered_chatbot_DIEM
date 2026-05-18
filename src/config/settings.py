@@ -19,6 +19,9 @@ class IngestionConfig:
     html_raw_dir: str = "data/raw/html_samples"
     pdf_links_file: str = "data/raw/html_samples/pdf_links.txt"
     pdf_download_dir: str = "data/raw/pdfs"
+    md_static_dir: str = "data/raw/static_md"
+    md_chunk_size: int = 800
+    md_chunk_overlap: int = 100
 
     seed_urls: tuple[str, ...] = (
         "https://www.diem.unisa.it",
@@ -186,6 +189,7 @@ def load_settings() -> AppSettings:
             html_raw_dir=os.getenv("HTML_RAW_DIR", "data/raw/html_samples"),
             pdf_links_file=os.getenv("PDF_LINKS_FILE", "data/raw/html_samples/pdf_links.txt"),
             pdf_download_dir=os.getenv("PDF_DOWNLOAD_DIR", "data/raw/pdfs"),
+            md_static_dir=os.getenv("MD_STATIC_DIR", "data/raw/static_md"),
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
             index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json"),

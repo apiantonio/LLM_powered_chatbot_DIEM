@@ -49,21 +49,14 @@ logger = logging.getLogger(__name__)
 def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> Dict[str, Any]:
     """
     Verifica lo stato di ogni collection Chroma dopo l'ingestion.
-
-    AGGIORNATO per 3 Vector Store (audit §8):
-      - PERSONE
-      - OFFERTA_FORMATIVA
-      - DIPARTIMENTO
     """
     verification: Dict[str, Any] = {"collections": {}, "total_chunks": 0, "ok": True}
 
-    # Itera sulle 3 collection (CollectionTarget aggiornato)
     for target in CollectionTarget:
-        # pylint: disable=protected-access
         collection = indexer._collections[target]
         try:
-            data = collection.get()
-            count = len(data["ids"]) if data and data.get("ids") else 0
+            # FIX: Accediamo a _collection nativo di ChromaDB per il count() in O(1)
+            count = collection._collection.count()
         except Exception as e:
             logger.error(f"Errore verifica {target.value}: {e}")
             count = 0
@@ -73,12 +66,11 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
         verification["total_chunks"] += count
         logger.info(f"  📊 {target.value}: {count} chunks")
 
-    # Verifica Parent-Child (invariato — usato da OFFERTA_FORMATIVA per i PDF)
+    # Verifica Parent-Child
     pc_collection_name = settings.vectorstore.parent_child_collection_name
     try:
-        # pylint: disable=protected-access
-        pc_data = indexer._pc_child_vectorstore.get()
-        pc_count = len(pc_data["ids"]) if pc_data and pc_data.get("ids") else 0
+        # FIX: Accediamo a _collection nativo
+        pc_count = indexer._pc_child_vectorstore._collection.count()
     except Exception as e:
         logger.error(f"Errore verifica Parent-Child: {e}")
         pc_count = 0
@@ -94,7 +86,6 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
 
     return verification
 
-
 def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int = 3) -> None:
     """Logga un campione di documenti per ogni collection per verifica visiva."""
     logger.info("\n" + "=" * 60)
@@ -102,16 +93,21 @@ def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int 
     logger.info("=" * 60)
 
     for target in CollectionTarget:
-        # pylint: disable=protected-access
         collection = indexer._collections[target]
         try:
-            data = collection.get(include=["metadatas", "documents"])
+            # FIX: Usiamo _collection nativo per eseguire un .get() limitato 
+            # ed evitare il crash "too many SQL variables"
+            data = collection._collection.get(
+                limit=max_per_collection,
+                include=["metadatas", "documents"]
+            )
+            
             ids = data.get("ids", [])
             metadatas = data.get("metadatas", [])
             documents = data.get("documents", [])
 
-            sample_size = min(max_per_collection, len(ids))
-            logger.info(f"\n  📁 {target.value} ({len(ids)} chunks totali, mostro {sample_size}):")
+            sample_size = len(ids)
+            logger.info(f"\n  📁 {target.value} (mostro {sample_size} chunks in sample):")
 
             for i in range(sample_size):
                 meta = metadatas[i] if i < len(metadatas) else {}
@@ -148,6 +144,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         "crawl": None,
         "html_indexing": None,
         "pdf_indexing": None,
+        "md_indexing": None,
         "verification": None,
         "duration_seconds": 0,
         "success": False,
@@ -245,6 +242,23 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     except Exception as e:
         logger.error(f"  ❌ Errore indicizzazione HTML: {e}", exc_info=True)
         report["html_indexing"] = {"error": str(e)}
+        
+    # --- STEP 2.5: Indicizzazione Markdown (File Statici) ---
+    logger.info("\n[STEP 2.5] Indicizzazione file Markdown (Info generali e statiche)...")
+    try:
+        md_stats = indexer.index_markdown_directory()
+        report["md_indexing"] = md_stats
+
+        logger.info(f"  ✅ MD indicizzazione completata:")
+        logger.info(f"     Nuovi: {md_stats.get('indexed', 0)}")
+        logger.info(f"     Aggiornati: {md_stats.get('updated', 0)}")
+        logger.info(f"     Saltati (invariati): {md_stats.get('skipped', 0)}")
+        logger.info(f"     Orfani rimossi: {md_stats.get('orphans_removed', 0)}")
+        logger.info(f"     Errori: {md_stats.get('errors', 0)}")
+
+    except Exception as e:
+        logger.error(f"  ❌ Errore indicizzazione MD: {e}", exc_info=True)
+        report["md_indexing"] = {"error": str(e)}
 
     # --- STEP 3: Indicizzazione PDF ---
     logger.info("\n[STEP 3/4] Indicizzazione PDF con chunking differenziato...")
@@ -305,7 +319,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
 
 def _no_critical_errors(report: Dict[str, Any]) -> bool:
     """Controlla che non ci siano errori critici nel report."""
-    for key in ("html_indexing", "pdf_indexing"):
+    for key in ("html_indexing", "pdf_indexing", "md_indexing"):
         section = report.get(key)
         if isinstance(section, dict) and "error" in section:
             return False
@@ -414,7 +428,7 @@ def setup_file_logger(log_level: str, log_dir: str = "logs") -> str:
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"t6_4_ingestion_{timestamp_str}.txt"
+    log_filename = f"t6_4_ingestion_{timestamp_str}.log"
     log_filepath = os.path.join(log_dir, log_filename)
 
     root_logger = logging.getLogger()

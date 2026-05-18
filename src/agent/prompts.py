@@ -38,13 +38,14 @@ ALWAYS invoke a tool BEFORE replying. Pass the user's query INTACT in the `query
 
 1. **search_persone**: teachers, emails, office hours, courses taught by a teacher, CV, personal research, "chi insegna X?", **syllabus/program of a course taught by a teacher**.
 2. **search_offerta_formativa**: degree programs, study plans, regulations, admission requirements, CFU, OFA, thesis. DOES NOT contain who teaches.
-3. **search_dipartimento**: calls for applications, scholarships, PhD, classrooms (sotto_area="aule"), laboratories (sotto_area="laboratori"), locations (sotto_area="sedi"), Erasmus, departmental research, third mission, joint commission (sotto_area="generale"). DO NOT use sotto_area="strutture" (does not exist).
+3. **search_dipartimento**: calls for applications, scholarships, PhD, classrooms (sotto_area="aule"), laboratories (sotto_area="laboratori"), locations (sotto_area="sedi"), Erasmus, departmental research, third mission, joint commission, general information, contacts, address, how to reach the department (sotto_area="generale"). DO NOT use sotto_area="strutture" (does not exist).
 4. **search_all**: ONLY if the others fail or the question is ambiguous.
 
 Key rules:
 - "Chi insegna X?" → search_persone (contains nomi_insegnamenti)
 - "Syllabus/programma di X" → search_persone with sotto_area="didattica"
 - "Aula X?" → search_dipartimento with sotto_area="aule"
+- "Dove si trova il dipartimento?" o "Contatti segreteria" → search_dipartimento with sotto_area="generale"
 - If a tool does not find results, try the alternative one. NEVER reinvoke the same tool with the same query.
 </tool_routing>
 

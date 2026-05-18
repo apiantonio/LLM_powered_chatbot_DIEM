@@ -43,6 +43,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_classic.retrievers import ParentDocumentRetriever
 from langchain_classic.storage import LocalFileStore, create_kv_docstore
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 from config.settings import AppSettings
 from ingestion.registry import IndexRegistry, IndexEntry
@@ -152,6 +153,20 @@ class KnowledgeBaseIndexer:
             f"  PDF direct splitter: {settings.ingestion.pdf_direct_chunk_size}/"
             f"{settings.ingestion.pdf_direct_chunk_overlap}"
         )
+        
+        # [AGGIUNTA] Inizializzazione splitter per Markdown
+        self._md_header_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[
+                ("#", "Header 1"),
+                ("##", "Header 2"),
+                ("###", "Header 3"),
+            ]
+        )
+        self._md_text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=settings.ingestion.md_chunk_size,
+            chunk_overlap=settings.ingestion.md_chunk_overlap,
+            add_start_index=True,
+        )
 
         # --- Registro incrementale ---
         self._registry = IndexRegistry(settings.ingestion.index_registry_path)
@@ -224,6 +239,8 @@ class KnowledgeBaseIndexer:
                 parts.append(f"Tipo bando: {clean_metadata['tipo_bando']}")
             if "sotto_area" in clean_metadata:
                 parts.append(f"Sezione: {clean_metadata['sotto_area']}")
+            if "titolo_documento" in clean_metadata:
+                parts.append(f"Documento: {clean_metadata['titolo_documento'].title()}")
 
         if "doc_id" in clean_metadata:
             parts.append(f"Codice ID: {clean_metadata['doc_id']}")
@@ -644,6 +661,125 @@ class KnowledgeBaseIndexer:
             f"  PDF diretto: '{filename}' → "
             f"{len(chunks)} chunks → {collection.value}"
         )
+        return chroma_ids
+    
+    def index_markdown_directory(self, directory: Optional[str] = None) -> dict:
+        """
+        Indicizza i file Markdown locali statici, applicando routing semantico 
+        e chunking context-aware basato sugli headers.
+        """
+        directory = directory or self._settings.ingestion.md_static_dir
+        if not os.path.exists(directory):
+            logger.warning(f"Directory MD non trovata: {directory}")
+            return {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0, "errors": 0}
+
+        md_files = list(Path(directory).glob("*.md"))
+        stats = {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0, "errors": 0}
+        current_sources = set()
+
+        for filepath in md_files:
+            source_id = f"md:{filepath.name}"
+            current_sources.add(source_id)
+
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                content_hash = IndexRegistry.compute_hash(content)
+                existing = self._registry.get(source_id)
+
+                if existing and existing.content_hash == content_hash:
+                    stats["skipped"] += 1
+                    continue
+
+                # Routing
+                collection_target = DocumentRouter.route_md(filepath.name)
+                vectorstore = self._collections[collection_target]
+
+                if existing:
+                    old_collection = self._resolve_collection_for_cleanup(existing)
+                    self._delete_from_vectorstore(old_collection, existing.chroma_ids)
+                    stats["updated"] += 1
+                else:
+                    stats["indexed"] += 1
+
+                # Estrazione e fusione metadati
+                url_metadata = DocumentRouter.extract_md_metadata(filepath.name, collection_target)
+                content_metadata = DocumentRouter.extract_content_metadata_md(content, filepath.name)
+                all_metadata = {**url_metadata, **content_metadata}
+
+                # Chunking context-aware
+                chroma_ids = self._chunk_and_index_md(
+                    content, filepath.name, vectorstore, collection_target, all_metadata
+                )
+
+                self._registry.upsert(source_id, IndexEntry(
+                    content_hash=content_hash,
+                    chroma_ids=chroma_ids,
+                    collection_name=collection_target.value,
+                ))
+
+            except Exception as e:
+                logger.error(f"Errore MD {filepath.name}: {e}", exc_info=True)
+                stats["errors"] += 1
+
+        # Pulizia orfani per i file MD cancellati dal file system
+        md_orphans = {
+            sid for sid in self._registry.all_source_ids()
+            if sid.startswith("md:") and sid not in current_sources
+        }
+        for orphan_id in md_orphans:
+            entry = self._registry.remove(orphan_id)
+            if entry:
+                old_collection = self._resolve_collection_for_cleanup(entry)
+                self._delete_from_vectorstore(old_collection, entry.chroma_ids)
+                stats["orphans_removed"] += 1
+
+        self._registry.save()
+        logger.info(f"MD indexing completato: {stats}")
+        return stats
+    
+    def _chunk_and_index_md(
+        self,
+        content: str,
+        filename: str,
+        vectorstore: Chroma,
+        collection: CollectionTarget,
+        all_metadata: dict,
+    ) -> List[str]:
+        """
+        Applica il text splitting contestuale per il Markdown.
+        1. Splitting strutturale per gerarchia di Headers (#, ##, ###).
+        2. RecursiveCharacterTextSplitter per overflow del limite token.
+        3. Context injection (risolve problema chunk orfani).
+        """
+        # Step 1: Split strutturale per Headers
+        header_splits = self._md_header_splitter.split_text(content)
+
+        normalized = []
+        for doc in header_splits:
+            doc.metadata.update({
+                "source_url": filename,
+                "doc_type": "md",
+            })
+            normalized.append(doc)
+
+        # Step 2: Recursive split per assicurare dimensione massima
+        chunks = self._md_text_splitter.split_documents(normalized)
+        if not chunks:
+            return []
+
+        # Step 3: Iniezione contesto
+        context_prefix = self._build_context_prefix(all_metadata, collection)
+        chunks = self._inject_context_in_chunks(chunks, context_prefix, all_metadata)
+
+        # Step 4: Indicizzazione
+        chroma_ids = [
+            f"{collection.value}_md_{filename}_{i}"
+            for i in range(len(chunks))
+        ]
+        vectorstore.add_documents(chunks, ids=chroma_ids)
+
         return chroma_ids
 
     # ==========================================================

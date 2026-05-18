@@ -588,6 +588,43 @@ class DocumentRouter:
 
         return content_meta
 
+    @classmethod
+    def route_md(cls, filename: str) -> CollectionTarget:
+        """
+        Determina la collection target per un file Markdown statico.
+        Attualmente tutti i file descrittivi del dipartimento vanno in DIPARTIMENTO.
+        """
+        return CollectionTarget.DIPARTIMENTO
+
+    @classmethod
+    def extract_md_metadata(cls, filename: str, collection: CollectionTarget) -> dict:
+        """
+        Estrae i metadati di base per un file Markdown locale statico.
+        """
+        return {
+            "formato_sorgente": "md",
+            "url_originale": f"local_static:{filename}",
+            "source_domain": "localhost",
+            "sotto_area": "generale"  # Sotto-area esplicita per info di dipartimento
+        }
+
+    @classmethod
+    def extract_content_metadata_md(cls, md_content: str, filename: str) -> dict:
+        """
+        Estrae metadati dal contenuto Markdown. 
+        Cerca il primo header di livello 1 (# Titolo) per estrarre il nome del documento.
+        """
+        content_meta = {}
+        # Cerca il primo Header 1 (h1) per usarlo come titolo identificativo
+        match = re.search(r"^#\s+(.+)$", md_content, re.MULTILINE)
+        if match:
+            content_meta["titolo_documento"] = match.group(1).strip()
+        else:
+            # Fallback: pulisce il nome file eliminando l'estensione e sostituendo gli underscore
+            content_meta["titolo_documento"] = filename.replace(".md", "").replace("_", " ").title()
+            
+        return content_meta
+
 
 def _extract_domain(url: str) -> str:
     """Estrae il dominio da un URL."""

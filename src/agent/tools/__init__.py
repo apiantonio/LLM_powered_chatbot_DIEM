@@ -322,7 +322,7 @@ class SearchDipartimentoInput(BaseModel):
             "'terza_missione' (terza missione, impatto sociale), "
             "'internazionale' (Erasmus, mobilità, accordi internazionali), "
             "'organizzazione' (organigramma, commissioni, personale), "
-            "'generale' (informazioni generiche dipartimento). "
+            "'generale' (informazioni generiche dipartimento, contatti istituzionali, indirizzo, dove si trova il dipartimento, come raggiungerci, P.IVA). "
             "ATTENZIONE: 'strutture' NON esiste. Usa 'aule', 'laboratori' o 'sedi'. "
             "Lascia vuoto se non sei sicuro."
         )
@@ -474,7 +474,7 @@ def search_dipartimento(
     sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
-    """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione.
+    """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione, contatti, informazioni generali, indirizzo, come raggiungerci.
 
 ATTENZIONE: sotto_area="strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
 
@@ -515,6 +515,10 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
             "erasmus", "internazionale", "international", "mobilità"
         ]):
             sotto_area = "internazionale"
+        elif any(kw in query_lower for kw in [
+            "contatt", "indirizzo", "dove si trova", "raggiung", "telefono", "email", "p.iva", "posizione"
+        ]):
+            sotto_area = "generale"
 
     # Costruzione metadata_filter
     metadata_filter = {}
