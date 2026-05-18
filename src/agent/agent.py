@@ -1,55 +1,35 @@
 """
 Agente RAG DIEM — Orchestratore principale.
 
-REFACTORING v3.4 — CHAT LOOP OTTIMIZZATO:
+REFACTORING v3.6 — GUARDRAILS FIX ORDINE:
 
-  CAMBIAMENTI RISPETTO A v3.3:
+  CAMBIAMENTI RISPETTO A v3.5:
 
-    1. RIMOSSO IL RETRY "NO TOOL":
-       Il vecchio meccanismo _MAX_RETRY_NO_TOOL è stato eliminato.
-       Se il modello risponde direttamente (dalla memoria, dallo storico,
-       o da conoscenza contestuale) senza invocare tool, la risposta
-       viene accettata così com'è. Nessuna reinvocazione forzata.
+    1. INPUT GUARDRAIL CHECK PRIMA DEL REWRITING:
+       Il check input ora avviene sulla query ORIGINALE dell'utente,
+       PRIMA del query rewriting. Questo impedisce che la tossicità
+       venga "lavata" dalla riscrittura (es. "quel coglione" → "Mario Vento").
 
-    2. RIMOSSO IL FALLBACK search_all A LIVELLO AGENTE:
-       Il fallback su search_all è stato spostato DENTRO _search_collection()
-       nel file tools/__init__.py. Quando un tool specifico non trova
-       risultati, il fallback trasversale avviene IMMEDIATAMENTE a livello
-       tool, PRIMA che il modello possa decidere di invocare altri tool.
-
-       PRIMA (v3.3):
-         search_persone → 0 docs → fallback signal al modello
-         → modello chiama search_offerta_formativa → 0 docs
-         → modello chiama search_dipartimento → 0 docs
-         → modello risponde "non trovato"
-         → agent.py intercetta → reinvoca con search_all
-         TOTALE: 4 ricerche + reinvocazione agente
-
-       ADESSO (v3.4):
-         search_persone → 0 docs → fallback interno retrieve_from_all()
-         → risultati (o "non trovato" definitivo) → modello risponde → FINE
-         TOTALE: 1 ricerca + 1 fallback interno
-
-    3. CHAT LOOP LINEARE:
-       Il metodo chat() è ora completamente lineare:
-       query → rewriting → cache check → agent invoke → risposta → FINE
-       Nessun loop, nessun retry, nessuna reinvocazione condizionale.
+    2. OUTPUT GUARDRAIL CHECK invariato (dopo la risposta finale).
 
   FLUSSO:
     User Query → Costruzione messaggi (con storico)
+               → **INPUT GUARDRAIL CHECK** (sulla query ORIGINALE)
                → Query Rewriting (risoluzione coreferenze)
                → Corto circuito cache (se match esatto)
                → Salvataggio in memoria
                → Iniezione contesto temporale
-               → Agent Graph (SINGOLA invocazione)
+               → Agent Graph (SINGOLA invocazione, senza middleware)
+               → **OUTPUT GUARDRAIL CHECK** (sulla risposta finale)
                → Response
 
   INVARIATI:
     - Contesto temporale iniettato come messaggio di sistema effimero
-    - Guardrails via middleware LangChain
     - Pydantic tools con args_schema
     - SmartConversationMemory a due stadi
     - Query Rewriting a livello agente (v3.3)
+    - Fallback search_all interno ai tool (v3.4)
+    - GuardrailsChecker standalone (v3.5)
 """
 
 import logging
@@ -68,7 +48,7 @@ from agent.callbacks import (
 )
 from agent.memory import SmartConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
-from agent.guardrails import build_guardrail_middleware
+from agent.guardrails import GuardrailsChecker, build_guardrails_checker
 from agent.tools import set_retrieval_engine, set_chat_history, get_all_tools, get_last_search_meta
 from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine, QueryOptimizer
@@ -111,39 +91,39 @@ class RAGAgent:
     """
     Facade principale per l'interazione con l'agente RAG DIEM.
 
-    NOTA v3.4: Il chat loop è ora completamente lineare.
-      - Nessun retry "no tool" (risposta diretta = risposta valida)
-      - Nessun fallback a livello agente (gestito internamente dai tool)
-      - Una singola invocazione dell'agente per turno
+    NOTA v3.6: I guardrails sono integrati direttamente in chat().
+      - check_input() sulla query ORIGINALE PRIMA del rewriting
+      - check_output() sulla risposta finale DOPO l'agente
+      - Nessun middleware sull'agent graph
     """
 
     def __init__(self, agent_graph, memory, settings,
                  interaction_logger: InteractionLogHandler,
-                 query_optimizer: Optional[QueryOptimizer] = None):
+                 query_optimizer: Optional[QueryOptimizer] = None,
+                 guardrails_checker: Optional[GuardrailsChecker] = None):
         self._agent = agent_graph
         self._memory = memory
         self._settings = settings
         self._interaction_logger = interaction_logger
         self._query_optimizer = query_optimizer
+        self._guardrails_checker = guardrails_checker
         self._traces = []
 
     def chat(self, user_query: str) -> dict:
         """
         Punto di ingresso principale per l'interazione con l'agente.
 
-        Flusso v3.4 (LINEARE — nessun loop/retry):
+        Flusso v3.6 (LINEARE con guardrails nell'ordine corretto):
           1. Memory: costruzione messaggi con storico
-          2. Query Rewriting: risoluzione coreferenze
-          3. Cache: corto circuito se match esatto
-          4. Memory: salvataggio query
-          5. Iniezione contesto temporale (effimero)
-          6. Chat history injection per tool
-          7. Agent: SINGOLA invocazione
-             - Se il modello risponde direttamente (senza tool) → OK
-             - Se il modello invoca un tool e il tool non trova nulla →
-               il fallback su search_all avviene DENTRO il tool, in modo
-               trasparente. Il modello riceve i risultati e risponde.
-          8. Logging + Memory update
+          2. **INPUT GUARDRAIL CHECK** (sulla query ORIGINALE, PRIMA del rewriting)
+          3. Query Rewriting: risoluzione coreferenze
+          4. Cache: corto circuito se match esatto
+          5. Memory: salvataggio query
+          6. Iniezione contesto temporale (effimero)
+          7. Chat history injection per tool
+          8. Agent: SINGOLA invocazione (SENZA middleware)
+          9. **OUTPUT GUARDRAIL CHECK** (sulla risposta finale)
+          10. Logging + Memory update
         """
 
         print(f"USER QUERY (pulita): {user_query}")
@@ -151,7 +131,45 @@ class RAGAgent:
         # --- STEP 1: Recupera lo storico usando la query PULITA ---
         messages = self._memory.get_messages_for_agent(user_query)
 
-        # --- STEP 2: QUERY REWRITING (risoluzione coreferenze) ---
+        # ==============================================================
+        # STEP 2: INPUT GUARDRAIL CHECK — sulla query ORIGINALE
+        #
+        # v3.6 FIX CRITICO: Il check input avviene PRIMA del query
+        # rewriting. Questo è essenziale perché il rewriting può
+        # rimuovere contenuto tossico (es. "quel coglione" → "Mario Vento")
+        # facendo passare il guardrail. Checkando la query originale,
+        # la tossicità viene intercettata correttamente.
+        # ==============================================================
+        if self._guardrails_checker:
+            input_allowed, block_message = self._guardrails_checker.check_input(user_query)
+            if not input_allowed:
+                logger.warning(
+                    f"🛡️ INPUT BLOCCATO dal guardrail: '{user_query[:80]}...'"
+                )
+                print(f"🛡️ INPUT BLOCCATO: {user_query}")
+
+                # Salva comunque in memoria per consistenza
+                turn_number = self._memory.add_user_message(user_query)
+                self._memory.add_assistant_message(block_message)
+
+                return {
+                    "response": block_message,
+                    "blocked": True,
+                    "block_reason": "input_guardrail",
+                    "trace": {
+                        "tool_name": "(Bloccato da Input Guardrail)",
+                        "tools_invoked": [],
+                        "rewritten_query": "",
+                        "multi_queries": [],
+                        "collection": "",
+                        "metadata_filter": None,
+                        "top_links": []
+                    },
+                    "turn": turn_number,
+                }
+
+        # --- STEP 3: QUERY REWRITING (risoluzione coreferenze) ---
+        # Avviene DOPO il guardrail check, sulla query già validata
         rewritten_query = user_query
         if self._query_optimizer and not self._is_meta_query(user_query):
             rewritten_query = self._rewrite_query(user_query)
@@ -160,11 +178,9 @@ class RAGAgent:
                     f"Query rewritten in chat(): '{user_query}' → '{rewritten_query}'"
                 )
                 print(f"QUERY RISCRITTA: {user_query} → {rewritten_query}")
-                # Sostituisci la query nel messaggio utente (ultimo messaggio)
-                # preservando eventuali suffix (es. RETRIEVAL_REMINDER)
                 self._replace_query_in_messages(messages, user_query, rewritten_query)
 
-        # --- STEP 3: Corto Circuito via Cache (Match Esatto/Praticamente Uguale) ---
+        # --- STEP 4: Corto Circuito via Cache (Match Esatto/Praticamente Uguale) ---
         cached_response = self._memory.find_exact_match(rewritten_query)
 
         if cached_response:
@@ -188,10 +204,10 @@ class RAGAgent:
                 "turn": self._memory.turn_count,
             }
 
-        # --- STEP 4: Salva in memoria la query ORIGINALE e PULITA ---
+        # --- STEP 5: Salva in memoria la query RISCRITTA ---
         turn_number = self._memory.add_user_message(rewritten_query)
 
-        # --- STEP 5: Iniezione Effimera del Contesto Temporale ---
+        # --- STEP 6: Iniezione Effimera del Contesto Temporale ---
         temporal_msg = _get_temporal_system_message()
         if messages and messages[-1]["role"] == "user":
             messages.insert(-1, temporal_msg)
@@ -200,7 +216,7 @@ class RAGAgent:
 
         print(f"MESSAGGI INVIATI ALL'AGENTE: {messages}")
 
-        # --- STEP 6: Inietta la chat history nei tool ---
+        # --- STEP 7: Inietta la chat history nei tool ---
         set_chat_history(self._memory.get_langchain_history())
 
         obs_handler = create_observability_handler(
@@ -210,22 +226,7 @@ class RAGAgent:
 
         try:
             # =============================================================
-            # STEP 7: SINGOLA INVOCAZIONE DELL'AGENTE
-            #
-            # v3.4: Nessun retry, nessun fallback a questo livello.
-            #
-            # - Se il modello risponde senza invocare tool (es. dalla
-            #   history, dalla memoria, o per una meta-query): la risposta
-            #   è valida e viene restituita direttamente.
-            #
-            # - Se il modello invoca un tool specifico e quel tool non
-            #   trova risultati: il fallback su search_all avviene
-            #   INTERNAMENTE al tool (in _search_collection), in modo
-            #   completamente trasparente per l'agente. Il modello riceve
-            #   i risultati del fallback (o il messaggio definitivo di
-            #   "non trovato") e genera la risposta finale.
-            #
-            # In entrambi i casi: UNA SOLA invocazione, nessun loop.
+            # STEP 8: SINGOLA INVOCAZIONE DELL'AGENTE (SENZA MIDDLEWARE)
             # =============================================================
             result = self._agent.invoke(
                 {"messages": messages},
@@ -259,14 +260,26 @@ class RAGAgent:
                     "Riprova tra qualche istante."
                 )
 
-        # --- STEP 8: Aggiorna handler e memoria ---
+        # --- STEP 9: OUTPUT GUARDRAIL CHECK ---
+        blocked_by_output = False
+        if self._guardrails_checker and response_text:
+            output_allowed, block_message = self._guardrails_checker.check_output(response_text)
+            if not output_allowed:
+                logger.warning(
+                    f"🛡️ OUTPUT BLOCCATO dal guardrail al turno #{turn_number}"
+                )
+                print(f"🛡️ OUTPUT BLOCCATO: risposta sostituita con messaggio policy")
+                response_text = block_message
+                blocked_by_output = True
+
+        # --- STEP 10: Aggiorna handler e memoria ---
         obs_handler.set_final_output(response_text)
         self._memory.add_assistant_message(response_text)
 
         trace_dict = obs_handler.get_trace_dict()
         self._traces.append(trace_dict)
 
-        # --- STEP 9: Salva il log dell'interazione ---
+        # --- STEP 11: Salva il log dell'interazione ---
         self._save_interaction_log(
             turn_number=turn_number,
             user_query=user_query,
@@ -280,8 +293,8 @@ class RAGAgent:
 
         return {
             "response": response_text,
-            "blocked": False,
-            "block_reason": None,
+            "blocked": blocked_by_output,
+            "block_reason": "output_guardrail" if blocked_by_output else None,
             "trace": trace_dict,
             "turn": turn_number,
         }
@@ -291,26 +304,12 @@ class RAGAgent:
     # ==============================
 
     def _rewrite_query(self, user_query: str) -> str:
-        """
-        Riscrive la query risolvendo coreferenze dall'ultimo turno.
-
-        Estrae l'ultimo turno completato dalla memoria e lo passa
-        al QueryOptimizer per risolvere pronomi e riferimenti impliciti.
-
-        Returns:
-            La query riscritta, oppure la query originale se:
-            - Non c'è storico (primo turno)
-            - Il QueryOptimizer non è disponibile
-            - Si verifica un errore
-        """
         if not self._query_optimizer:
             return user_query
 
-        # Estrai l'ultimo turno completato dalla memoria
         last_user, last_assistant = self._memory.get_last_completed_turn()
 
         if not last_user:
-            # Primo turno: nessuna coreferenza possibile
             logger.debug("Nessun turno precedente, skip rewriting.")
             return user_query
 
@@ -329,14 +328,6 @@ class RAGAgent:
     def _replace_query_in_messages(
         messages: list, original_query: str, rewritten_query: str
     ) -> None:
-        """
-        Sostituisce la query originale con quella riscritta nell'ultimo
-        messaggio utente della lista messaggi.
-
-        Preserva eventuali suffissi aggiunti da get_messages_for_agent()
-        (es. RETRIEVAL_REMINDER).
-        """
-        # Cerca l'ultimo messaggio "user" e sostituisci la query
         for i in range(len(messages) - 1, -1, -1):
             msg = messages[i]
             if msg.get("role") == "user" and original_query in msg["content"]:
@@ -361,16 +352,13 @@ class RAGAgent:
         final_response: str,
         rewritten_query: str = "",
     ) -> None:
-        """Raccoglie i dati e salva un unico file di log per l'interazione."""
         try:
             system_prompt = obs_handler.get_system_prompt()
             history_str = self._memory.get_history_summary()
             search_meta = get_last_search_meta()
 
-            # v3.3: se il rewriting è avvenuto a livello agente, usiamo quello
             effective_rewritten = rewritten_query if rewritten_query != user_query else ""
             meta_rewritten = search_meta.get("rewritten_query", "")
-            # Priorità: rewriting dell'agente > rewriting del tool (che ora non c'è più)
             final_rewritten = effective_rewritten or meta_rewritten
 
             multi_queries = search_meta.get("multi_queries", [])
@@ -400,18 +388,15 @@ class RAGAgent:
             logger.error(f"Errore salvataggio log interazione: {e}")
 
     def get_all_traces(self) -> List[Dict[str, Any]]:
-        """Restituisce tutte le trace della sessione."""
         return self._traces
 
     def reset_memory(self) -> None:
-        """Resetta la memoria conversazionale."""
         self._memory.clear()
         self._traces.clear()
         logger.info("Sessione agente resettata")
 
     @property
     def memory(self) -> SmartConversationMemory:
-        """Restituisce l'istanza di SmartConversationMemory."""
         return self._memory
 
     # ==============================
@@ -450,9 +435,10 @@ class RAGAgentFactory:
     """
     Factory per la costruzione dell'agente RAG completo.
 
-    REFACTORING v3.4:
-      - Chat loop lineare (nessun retry, nessun fallback a livello agente)
-      - Fallback search_all gestito internamente dai tool
+    REFACTORING v3.6:
+      - Guardrails via GuardrailsChecker (non più middleware)
+      - Input check PRIMA del rewriting (fix ordine v3.6)
+      - Agent graph compilato SENZA middleware
     """
 
     @staticmethod
@@ -507,27 +493,31 @@ class RAGAgentFactory:
         else:
             logger.warning("   ⚠️ QueryOptimizer non disponibile — rewriting disabilitato")
 
-        # --- 6. GUARDRAILS VIA MIDDLEWARE ---
-        logger.info("   📋 Assemblaggio middleware guardrails...")
-        guardrail_middleware = build_guardrail_middleware(
+        # --- 6. GUARDRAILS CHECKER ---
+        logger.info("   📋 Configurazione GuardrailsChecker...")
+        guardrails_checker = build_guardrails_checker(
             enable_pii=settings.guardrails.enable_pii_filter,
             enable_topical=enable_scope_guardrail,
             enable_injection=True,
             enable_toxicity=True,
             enable_hallucination=True,
-            enable_code_guard=True
+            enable_code_guard=True,
         )
 
-        # --- 7. Assembla l'agente CON middleware ---
+        if guardrails_checker:
+            logger.info("   ✅ GuardrailsChecker configurato e attivo")
+        else:
+            logger.warning("   ⚠️ GuardrailsChecker non disponibile — guardrails disabilitati")
+
+        # --- 7. Assembla l'agente SENZA middleware ---
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=system_prompt,
-            middleware=guardrail_middleware,
         )
-        logger.info("   ✅ create_agent() — grafo agente compilato CON middleware")
+        logger.info("   ✅ create_agent() — grafo agente compilato (SENZA middleware)")
 
         # --- 8. Wrappa nel Facade ---
         agent = RAGAgent(
@@ -536,6 +526,7 @@ class RAGAgentFactory:
             settings=settings,
             interaction_logger=interaction_logger,
             query_optimizer=query_optimizer,
+            guardrails_checker=guardrails_checker,
         )
 
         # --- Log di riepilogo ---
@@ -548,16 +539,13 @@ class RAGAgentFactory:
         logger.info("   🧠 Memoria: SmartConversationMemory")
         logger.info("   🔧 Tools: 4 tool con Pydantic args_schema")
         logger.info(f"   ✏️ Rewriting: {'ATTIVO a livello agente' if query_optimizer else 'DISABILITATO'}")
-        logger.info("   🛡️ Guardrails: MIDDLEWARE-BASED")
-        logger.info(f"      - {len(guardrail_middleware)} middleware attivi")
-        logger.info("      - Injection Guard (before_model)")
-        logger.info("      - Toxicity Filter (before_model)")
-        logger.info("      - Topical Guard (before_model, dual-layer)")
-        logger.info("      - Hallucination Guard (after_model)")
-        logger.info("      - Code Generation Guard (after_model)")
-        logger.info("      - PII Guard (codice fiscale, NO email/tel)")
-        logger.info("      - Model Call Limit (anti-loop)")
-        logger.info("      - Tool Call Limit")
+        logger.info("   🛡️ Guardrails: CHECKER INTEGRATO IN chat()")
+        if guardrails_checker:
+            logger.info("      - Input check: PRIMA del rewriting (query originale)")
+            logger.info("      - Output check: DOPO la risposta finale")
+            logger.info("      - LLM check: Groq Llama 3.3 70B")
+        else:
+            logger.info("      - DISABILITATI (nessuna API key)")
         logger.info("   🔄 Fallback: search_all INTERNO ai tool (v3.4)")
         logger.info("   ⚡ Chat loop: LINEARE (no retry, no reinvocazione)")
         logger.info("=" * 60)
