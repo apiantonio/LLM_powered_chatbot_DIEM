@@ -1,11 +1,3 @@
-"""
-Entry point per l'esecuzione del crawler con filtri docenti avanzati.
-
-Uso:
-  cd src/
-  python scrapers_main.py
-"""
-
 from pathlib import Path
 from scraping.scrapers import UnisaCrawler
 from scraping.factory.cleaner_factory import RuleFactory
