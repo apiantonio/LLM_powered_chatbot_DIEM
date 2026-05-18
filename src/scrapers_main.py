@@ -20,15 +20,10 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
-    # --- Caricamento settings centralizzato ---
     settings = load_settings()
 
     output_dir = settings.ingestion.html_raw_dir
 
-    # --- Costruzione regole con le Factory ---
-    # NOTA: "obsolete_url" e "didattica" RIMOSSI (Sprint Filtri Docenti).
-    # Il filtraggio URL è ora gestito dai classificatori in docenti_url_rules.py,
-    # il post-processing didattica è nel crawler stesso.
     html_factory = RuleFactory(
         directory=Path(output_dir),
         cutoff_year=settings.ingestion.cutoff_year,
@@ -45,7 +40,6 @@ if __name__ == "__main__":
         "domain_whitelist", "semantic_trap", "obsolete_year", "english_pdf"
     ])
 
-    # --- Crawler con config centralizzata ---
     crawler = UnisaCrawler(
         max_depth=settings.ingestion.max_depth,
         batch_size=settings.ingestion.batch_size,

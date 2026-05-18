@@ -1,24 +1,3 @@
-#!/usr/bin/env python3
-"""
-ingestion_main.py — Script di Ingestion Definitiva (Task T6.4)
-
-REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md §8):
-  - verify_collections() aggiornato per 3 CollectionTarget:
-    PERSONE, OFFERTA_FORMATIVA, DIPARTIMENTO
-  - Rimosso riferimento a BANDI_AMMINISTRAZIONE (assorbita in DIPARTIMENTO)
-
-Esegue la re-indicizzazione COMPLETA della Knowledge Base DIEM nelle
-3 collection Chroma multi-tematiche.
-
-Uso:
-  cd src/
-  python ingestion_main.py
-  python ingestion_main.py --skip-crawl
-  python ingestion_main.py --crawl
-  python ingestion_main.py --log-level DEBUG
-  python ingestion_main.py --verify-only
-"""
-
 import sys
 import os
 import json
@@ -28,9 +7,6 @@ import argparse
 from datetime import datetime
 from typing import Dict, Any
 
-# ============================================================
-# PATH SETUP
-# ============================================================
 _src_dir = os.path.dirname(os.path.abspath(__file__))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
@@ -41,21 +17,12 @@ from ingestion.router import CollectionTarget
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# VERIFICA POST-INGESTION — aggiornata per 3 collection
-# ============================================================
-
 def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> Dict[str, Any]:
-    """
-    Verifica lo stato di ogni collection Chroma dopo l'ingestion.
-    """
     verification: Dict[str, Any] = {"collections": {}, "total_chunks": 0, "ok": True}
 
     for target in CollectionTarget:
         collection = indexer._collections[target]
         try:
-            # FIX: Accediamo a _collection nativo di ChromaDB per il count() in O(1)
             count = collection._collection.count()
         except Exception as e:
             logger.error(f"Errore verifica {target.value}: {e}")
@@ -64,12 +31,10 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
 
         verification["collections"][target.value] = count
         verification["total_chunks"] += count
-        logger.info(f"  📊 {target.value}: {count} chunks")
+        logger.info(f" {target.value}: {count} chunks")
 
-    # Verifica Parent-Child
     pc_collection_name = settings.vectorstore.parent_child_collection_name
     try:
-        # FIX: Accediamo a _collection nativo
         pc_count = indexer._pc_child_vectorstore._collection.count()
     except Exception as e:
         logger.error(f"Errore verifica Parent-Child: {e}")
@@ -78,25 +43,22 @@ def verify_collections(indexer: KnowledgeBaseIndexer, settings: AppSettings) -> 
 
     verification["collections"][pc_collection_name] = pc_count
     verification["total_chunks"] += pc_count
-    logger.info(f"  📊 {pc_collection_name} (Parent-Child childs): {pc_count} chunks")
+    logger.info(f" {pc_collection_name} (Parent-Child childs): {pc_count} chunks")
 
     if verification["total_chunks"] == 0:
         verification["ok"] = False
-        logger.warning("⚠️  ATTENZIONE: nessun chunk indicizzato!")
+        logger.warning("ATTENZIONE: nessun chunk indicizzato!")
 
     return verification
 
 def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int = 3) -> None:
-    """Logga un campione di documenti per ogni collection per verifica visiva."""
     logger.info("\n" + "=" * 60)
-    logger.info("🔎 CAMPIONE DOCUMENTI PER COLLECTION (verifica routing)")
+    logger.info("CAMPIONE DOCUMENTI PER COLLECTION (verifica routing)")
     logger.info("=" * 60)
 
     for target in CollectionTarget:
         collection = indexer._collections[target]
         try:
-            # FIX: Usiamo _collection nativo per eseguire un .get() limitato 
-            # ed evitare il crash "too many SQL variables"
             data = collection._collection.get(
                 limit=max_per_collection,
                 include=["metadatas", "documents"]
@@ -107,7 +69,7 @@ def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int 
             documents = data.get("documents", [])
 
             sample_size = len(ids)
-            logger.info(f"\n  📁 {target.value} (mostro {sample_size} chunks in sample):")
+            logger.info(f"\n{target.value} (mostro {sample_size} chunks in sample):")
 
             for i in range(sample_size):
                 meta = metadatas[i] if i < len(metadatas) else {}
@@ -121,21 +83,9 @@ def log_sample_documents(indexer: KnowledgeBaseIndexer, max_per_collection: int 
                     f"         content: {content}..."
                 )
         except Exception as e:
-            logger.warning(f"  ⚠️  Errore lettura campione {target.value}: {e}")
-
-
-# ============================================================
-# PIPELINE DI INGESTION T6.4
-# ============================================================
+            logger.warning(f"Errore lettura campione {target.value}: {e}")
 
 def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, Any]:
-    """
-    Esegue l'ingestion completa T6.4:
-      1. (Opzionale) Crawling dei siti DIEM
-      2. Indicizzazione HTML con routing nelle 3 collection
-      3. Indicizzazione PDF con chunking differenziato
-      4. Verifica post-ingestion
-    """
     start_time = time.time()
     report: Dict[str, Any] = {
         "task": "T6.4 — Re-indicizzazione completa 3 collection (audit §8)",
@@ -151,7 +101,7 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     }
 
     logger.info("=" * 70)
-    logger.info("🚀 T6.4 — AVVIO RE-INDICIZZAZIONE COMPLETA (3 VECTOR STORE)")
+    logger.info("T6.4 — AVVIO RE-INDICIZZAZIONE COMPLETA (3 VECTOR STORE)")
     logger.info("=" * 70)
     logger.info(f"   Timestamp: {report['timestamp']}")
     logger.info(f"   HTML dir: {settings.ingestion.html_raw_dir}")
@@ -161,8 +111,6 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
     logger.info(f"   Skip crawl: {skip_crawl}")
     logger.info(f"   Collection: {[t.value for t in CollectionTarget]}")
     logger.info("=" * 70)
-
-    # --- STEP 0: Inizializzazione Indexer ---
     logger.info("\n[STEP 0/4] Inizializzazione KnowledgeBaseIndexer (3 collection)...")
     indexer = KnowledgeBaseIndexer(settings)
 
@@ -181,11 +129,10 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         f"{settings.ingestion.pdf_direct_chunk_overlap}"
     )
 
-    # --- STEP 1: Crawling (opzionale) ---
     if not skip_crawl:
         logger.info("\n[STEP 1/4] Avvio crawling siti DIEM...")
         try:
-            from src.transform.scrapers import UnisaCrawler
+            from src.scraping.scrapers import UnisaCrawler
 
             html_rules = _load_html_cleaning_rules(settings)
             pdf_rules = _load_pdf_filter_rules(settings)
@@ -208,25 +155,24 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
                 "html_filtered": crawler.filtered_count,
                 "pdf_links_found": len(crawler.found_pdf_links),
             }
-            logger.info(f"  ✅ Crawling completato: {report['crawl']}")
+            logger.info(f"Crawling completato: {report['crawl']}")
 
         except ImportError as e:
-            logger.warning(f"  ⚠️  Modulo crawling non disponibile: {e}")
+            logger.warning(f"Modulo crawling non disponibile: {e}")
             report["crawl"] = {"error": f"Import error: {e}"}
         except Exception as e:
-            logger.error(f"  ❌ Errore durante il crawling: {e}", exc_info=True)
+            logger.error(f"Errore durante il crawling: {e}", exc_info=True)
             report["crawl"] = {"error": str(e)}
     else:
         logger.info("\n[STEP 1/4] Crawling SALTATO (skip_crawl=True)")
         report["crawl"] = "skipped"
 
-    # --- STEP 2: Indicizzazione HTML ---
     logger.info("\n[STEP 2/4] Indicizzazione HTML con routing 3 collection...")
     try:
         html_stats = indexer.index_html_directory()
         report["html_indexing"] = html_stats
 
-        logger.info(f"  ✅ HTML indicizzazione completata:")
+        logger.info(f"HTML indicizzazione completata:")
         logger.info(f"     Nuovi: {html_stats.get('indexed', 0)}")
         logger.info(f"     Aggiornati: {html_stats.get('updated', 0)}")
         logger.info(f"     Saltati (invariati): {html_stats.get('skipped', 0)}")
@@ -237,19 +183,18 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         if routing:
             logger.info("     Routing breakdown:")
             for coll_name, count in routing.items():
-                logger.info(f"       📁 {coll_name}: {count} documenti")
+                logger.info(f"{coll_name}: {count} documenti")
 
     except Exception as e:
-        logger.error(f"  ❌ Errore indicizzazione HTML: {e}", exc_info=True)
+        logger.error(f"Errore indicizzazione HTML: {e}", exc_info=True)
         report["html_indexing"] = {"error": str(e)}
-        
-    # --- STEP 2.5: Indicizzazione Markdown (File Statici) ---
+
     logger.info("\n[STEP 2.5] Indicizzazione file Markdown (Info generali e statiche)...")
     try:
         md_stats = indexer.index_markdown_directory()
         report["md_indexing"] = md_stats
 
-        logger.info(f"  ✅ MD indicizzazione completata:")
+        logger.info(f"MD indicizzazione completata:")
         logger.info(f"     Nuovi: {md_stats.get('indexed', 0)}")
         logger.info(f"     Aggiornati: {md_stats.get('updated', 0)}")
         logger.info(f"     Saltati (invariati): {md_stats.get('skipped', 0)}")
@@ -257,16 +202,15 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         logger.info(f"     Errori: {md_stats.get('errors', 0)}")
 
     except Exception as e:
-        logger.error(f"  ❌ Errore indicizzazione MD: {e}", exc_info=True)
+        logger.error(f"Errore indicizzazione MD: {e}", exc_info=True)
         report["md_indexing"] = {"error": str(e)}
 
-    # --- STEP 3: Indicizzazione PDF ---
     logger.info("\n[STEP 3/4] Indicizzazione PDF con chunking differenziato...")
     try:
         pdf_stats = indexer.index_pdf_list()
         report["pdf_indexing"] = pdf_stats
 
-        logger.info(f"  ✅ PDF indicizzazione completata:")
+        logger.info(f"PDF indicizzazione completata:")
         logger.info(f"     Nuovi: {pdf_stats.get('indexed', 0)}")
         logger.info(f"     Aggiornati: {pdf_stats.get('updated', 0)}")
         logger.info(f"     Saltati (invariati): {pdf_stats.get('skipped', 0)}")
@@ -280,45 +224,37 @@ def run_ingestion(settings: AppSettings, skip_crawl: bool = True) -> Dict[str, A
         if routing:
             logger.info("     Routing breakdown:")
             for coll_name, count in routing.items():
-                logger.info(f"       📁 {coll_name}: {count} documenti")
+                logger.info(f"{coll_name}: {count} documenti")
 
     except Exception as e:
-        logger.error(f"  ❌ Errore indicizzazione PDF: {e}", exc_info=True)
+        logger.error(f"Errore indicizzazione PDF: {e}", exc_info=True)
         report["pdf_indexing"] = {"error": str(e)}
 
-    # --- STEP 4: Verifica post-ingestion ---
     logger.info("\n[STEP 4/4] Verifica post-ingestion...")
     verification = verify_collections(indexer, settings)
     report["verification"] = verification
 
     log_sample_documents(indexer, max_per_collection=3)
 
-    # --- REPORT FINALE ---
     report["duration_seconds"] = round(time.time() - start_time, 2)
     report["success"] = verification.get("ok", False) and _no_critical_errors(report)
 
     logger.info("\n" + "=" * 70)
-    logger.info("📊 REPORT FINALE T6.4 — RE-INDICIZZAZIONE 3 VECTOR STORE")
+    logger.info("REPORT FINALE T6.4 — RE-INDICIZZAZIONE 3 VECTOR STORE")
     logger.info("=" * 70)
     logger.info(f"   Durata totale: {report['duration_seconds']}s")
     logger.info(f"   Chunks totali indicizzati: {verification.get('total_chunks', 0)}")
-    logger.info(f"   Stato: {'✅ SUCCESSO' if report['success'] else '⚠️  CON PROBLEMI'}")
+    logger.info(f"   Stato: {'SUCCESSO' if report['success'] else '⚠️  CON PROBLEMI'}")
 
     for coll_name, count in verification.get("collections", {}).items():
-        status = "✅" if count > 0 else "⚠️ "
+        status = "" if count > 0 else ""
         logger.info(f"   {status} {coll_name}: {count} chunks")
 
     logger.info("=" * 70)
 
     return report
 
-
-# ============================================================
-# HELPERS
-# ============================================================
-
 def _no_critical_errors(report: Dict[str, Any]) -> bool:
-    """Controlla che non ci siano errori critici nel report."""
     for key in ("html_indexing", "pdf_indexing", "md_indexing"):
         section = report.get(key)
         if isinstance(section, dict) and "error" in section:
@@ -327,9 +263,8 @@ def _no_critical_errors(report: Dict[str, Any]) -> bool:
 
 
 def _load_html_cleaning_rules(settings: AppSettings):
-    """Carica le regole di pulizia HTML dal modulo transform."""
     try:
-        from transform.rules import get_all_html_rules
+        from src.scraping.rules import get_all_html_rules
         rules = get_all_html_rules(
             directory=settings.ingestion.html_raw_dir,
             cutoff_year=settings.ingestion.cutoff_year,
@@ -343,9 +278,8 @@ def _load_html_cleaning_rules(settings: AppSettings):
 
 
 def _load_pdf_filter_rules(settings: AppSettings):
-    """Carica le regole di filtro PDF dal modulo transform."""
     try:
-        from transform.rules import get_all_pdf_rules
+        from src.scraping.rules import get_all_pdf_rules
         rules = get_all_pdf_rules(cutoff_year=settings.ingestion.cutoff_year)
         logger.info(f"  Caricate {len(rules)} regole PDF filter")
         return rules
@@ -355,18 +289,12 @@ def _load_pdf_filter_rules(settings: AppSettings):
 
 
 def save_report(report: Dict[str, Any], output_path: str = "t6_4_report.json") -> None:
-    """Salva il report su file JSON."""
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False, default=str)
-        logger.info(f"💾 Report salvato in: {output_path}")
+        logger.info(f"Report salvato in: {output_path}")
     except Exception as e:
         logger.error(f"Errore salvataggio report: {e}")
-
-
-# ============================================================
-# CLI
-# ============================================================
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -419,12 +347,7 @@ Esempi:
     return parser.parse_args()
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 def setup_file_logger(log_level: str, log_dir: str = "logs") -> str:
-    """Configura il logging su file .txt con nome timestampato."""
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -452,21 +375,21 @@ def main() -> None:
     args = parse_args()
 
     log_filepath = setup_file_logger(args.log_level, log_dir=args.log_dir)
-    print(f"📝 Log di esecuzione: {log_filepath}")
+    print(f"Log di esecuzione: {log_filepath}")
 
     settings = load_settings()
 
     if args.verify_only:
-        print("🔎 Modalità VERIFY-ONLY: verifica delle collection senza indicizzazione")
-        logger.info("🔎 Modalità VERIFY-ONLY")
+        print("Modalità VERIFY-ONLY: verifica delle collection senza indicizzazione")
+        logger.info("Modalità VERIFY-ONLY")
         indexer = KnowledgeBaseIndexer(settings)
         verification = verify_collections(indexer, settings)
         log_sample_documents(indexer, max_per_collection=5)
         print(json.dumps(verification, indent=2, ensure_ascii=False))
-        print(f"\n📝 Dettagli completi nel log: {log_filepath}")
+        print(f"\nDettagli completi nel log: {log_filepath}")
         return
 
-    print("🚀 Avvio ingestion T6.4... (l'output dettagliato è nel file di log)")
+    print("Avvio ingestion T6.4... (l'output dettagliato è nel file di log)")
     skip_crawl = not args.crawl
     report = run_ingestion(settings, skip_crawl=skip_crawl)
 
@@ -476,16 +399,16 @@ def main() -> None:
     duration = report.get("duration_seconds", 0)
 
     if not report.get("success"):
-        logger.warning("⚠️  L'ingestion è terminata con problemi.")
-        print(f"\n⚠️  Ingestion terminata CON PROBLEMI in {duration}s ({total_chunks} chunks)")
-        print(f"   📝 Log completo: {log_filepath}")
-        print(f"   📊 Report JSON: {args.report_path}")
+        logger.warning("L'ingestion è terminata con problemi.")
+        print(f"\nIngestion terminata CON PROBLEMI in {duration}s ({total_chunks} chunks)")
+        print(f"Log completo: {log_filepath}")
+        print(f"Report JSON: {args.report_path}")
         sys.exit(1)
     else:
-        logger.info("✅ T6.4 completato con successo!")
-        print(f"\n✅ T6.4 completato con SUCCESSO in {duration}s ({total_chunks} chunks)")
-        print(f"   📝 Log completo: {log_filepath}")
-        print(f"   📊 Report JSON: {args.report_path}")
+        logger.info("T6.4 completato con successo!")
+        print(f"\nT6.4 completato con SUCCESSO in {duration}s ({total_chunks} chunks)")
+        print(f"Log completo: {log_filepath}")
+        print(f"Report JSON: {args.report_path}")
         sys.exit(0)
 
 
