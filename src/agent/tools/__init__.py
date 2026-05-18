@@ -1,12 +1,34 @@
 """
 agent/tools/__init__.py — Tool con schema Pydantic rigoroso per Qwen2.5 7B/14B.
 
-REFACTORING v3.3 — Allineamento con spostamento Query Rewriting:
-  - _search_collection() NON passa più chat_history a engine.retrieve()
-    (il rewriting avviene ora in agent.py prima dell'invocazione dell'agente)
-  - set_chat_history() mantenuto per retrocompatibilità ma non più usato
-    nel flusso di retrieval
-  - Tutto il resto invariato: Pydantic schemas, fallback signals, validazione
+REFACTORING v3.4 — Fallback search_all INTERNO a _search_collection:
+
+  CAMBIAMENTO CHIAVE:
+    Quando un tool specifico (persone/offerta_formativa/dipartimento)
+    non trova risultati, _search_collection() ora esegue AUTOMATICAMENTE
+    una ricerca trasversale via retrieve_from_all() PRIMA di restituire
+    il risultato al modello. Questo impedisce al modello di invocare
+    inutilmente gli altri tool specifici uno dopo l'altro.
+
+  FLUSSO PRECEDENTE (v3.3):
+    search_persone → 0 docs → fallback signal al modello
+    → modello chiama search_offerta_formativa → 0 docs → fallback signal
+    → modello chiama search_dipartimento → 0 docs → fallback signal
+    → modello risponde "non trovato"
+    → agent.py intercetta → reinvoca con search_all
+    TOTALE: 4 ricerche + 1 reinvocazione agente (~4-5 minuti)
+
+  FLUSSO NUOVO (v3.4):
+    search_persone → 0 docs → FALLBACK INTERNO retrieve_from_all()
+    → se trova risultati: restituisce quelli al modello → FINE
+    → se non trova: restituisce messaggio definitivo → FINE
+    TOTALE: 1 ricerca + 1 fallback interno (~1-2 minuti)
+
+  INVARIATI:
+    - Pydantic schemas, validazione sotto_area, inferenza automatica
+    - Formato output documenti
+    - Metadati per logging
+    - search_all come tool esplicito (invariato, usabile dal modello)
 """
 
 from __future__ import annotations
@@ -24,7 +46,6 @@ logger = logging.getLogger(__name__)
 _retrieval_engine: "RetrievalEngine | None" = None
 
 # Chat history globale — mantenuto per retrocompatibilità
-# NOTA v3.3: non più passato a engine.retrieve() (rewriting spostato in agent.py)
 _chat_history: list = []
 
 # Metadati dell'ultima ricerca per il sistema di logging
@@ -82,26 +103,94 @@ _tool_error_counts: Dict[str, int] = {}
 _MAX_TOOL_RETRIES = 2
 
 
-# ── Segnali di FALLBACK ──
-_FALLBACK_SIGNAL_PERSONE = (
-    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store PERSONE. "
-    "SUGGERIMENTO: prova search_offerta_formativa o search_dipartimento."
+# ── Messaggio DEFINITIVO di "non trovato" (v3.4) ──
+# Questo messaggio viene restituito SOLO dopo che anche il fallback
+# su search_all non ha trovato risultati. È formulato in modo DEFINITIVO
+# per impedire al modello di invocare altri tool.
+_DEFINITIVE_NOT_FOUND = (
+    "La ricerca su TUTTE le collection (persone, offerta formativa, "
+    "dipartimento) non ha prodotto risultati per: '{query}'. "
+    "L'informazione richiesta non è presente nella knowledge base del DIEM. "
+    "NON invocare altri tool di ricerca: rispondi all'utente che "
+    "l'informazione non è disponibile e suggerisci di consultare "
+    "direttamente il sito web del DIEM o contattare la segreteria."
 )
 
-_FALLBACK_SIGNAL_OFFERTA = (
-    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store OFFERTA_FORMATIVA. "
-    "SUGGERIMENTO: prova search_persone per docenti/insegnamenti, o search_dipartimento."
-)
 
-_FALLBACK_SIGNAL_DIPARTIMENTO = (
-    "Non ho trovato informazioni pertinenti per: '{query}' nel Vector Store DIPARTIMENTO. "
-    "SUGGERIMENTO: prova search_persone o search_offerta_formativa."
-)
+def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
+    """
+    Fallback interno: esegue una ricerca trasversale su tutte le collection.
 
-_FALLBACK_SIGNAL_GENERIC = (
-    "Non ho trovato informazioni pertinenti per: '{query}'. "
-    "Prova a riformulare la domanda."
-)
+    Viene chiamato da _search_collection() quando il tool specifico non
+    trova risultati. Restituisce i documenti formattati se trovati,
+    oppure None se anche la ricerca trasversale fallisce.
+
+    NOTA: Aggiorna _last_search_meta per riflettere il fallback.
+
+    Args:
+        query: la query di ricerca originale
+        original_tool_name: il nome del tool che ha invocato il fallback
+            (per logging)
+
+    Returns:
+        Stringa formattata con i risultati, oppure None se nessun risultato.
+    """
+    global _last_search_meta
+
+    if _retrieval_engine is None:
+        return None
+
+    logger.info(
+        f"🔄 FALLBACK INTERNO search_all attivato da {original_tool_name} "
+        f"per query: '{query[:80]}'"
+    )
+    print(
+        f"🔄 FALLBACK INTERNO: {original_tool_name} → 0 risultati. "
+        f"Eseguo ricerca trasversale per: {query}"
+    )
+
+    try:
+        documents, used_query = _retrieval_engine.retrieve_from_all(query)
+
+        if not documents:
+            logger.info(
+                f"   ⚠️ Anche il fallback search_all non ha trovato risultati "
+                f"per: '{query[:80]}'"
+            )
+            print(f"   ⚠️ Fallback search_all: nessun risultato per: {query}")
+            return None
+
+        # Aggiorna i metadati per il logging — riflette il fallback
+        top_links = []
+        for doc in documents[:5]:
+            link = doc.metadata.get("url_originale",
+                   doc.metadata.get("source_url", "N/D"))
+            if link not in top_links:
+                top_links.append(link)
+
+        _last_search_meta = {
+            "rewritten_query": used_query,
+            "multi_queries": [used_query],
+            "tool_name": f"{original_tool_name} → fallback:search_all",
+            "collection": "ALL (cross-collection, fallback)",
+            "metadata_filter": None,
+            "top_links": top_links[:5],
+        }
+
+        logger.info(
+            f"   ✅ Fallback search_all ha trovato {len(documents)} documenti "
+            f"per: '{query[:80]}'"
+        )
+        print(
+            f"   ✅ Fallback search_all: {len(documents)} documenti trovati "
+            f"per: {query}"
+        )
+
+        return _format_results(documents)
+
+    except Exception as e:
+        logger.error(f"Errore nel fallback search_all: {e}", exc_info=True)
+        return None
 
 
 def _search_collection(
@@ -113,8 +202,14 @@ def _search_collection(
     """
     Helper condiviso per la ricerca in una singola collection.
 
-    v3.3: NON passa più chat_history a engine.retrieve().
-    La query arriva già riscritta (il rewriting è avvenuto in agent.py).
+    v3.4: FALLBACK AUTOMATICO SU search_all
+      Quando la ricerca nella collection specifica non trova risultati,
+      questa funzione esegue AUTOMATICAMENTE una ricerca trasversale
+      su tutte le collection (via _fallback_search_all). Solo se anche
+      quella fallisce, restituisce il messaggio definitivo di "non trovato".
+
+      Questo impedisce al modello di invocare uno dopo l'altro tutti i
+      tool specifici prima di arrendersi.
     """
     global _last_search_meta
 
@@ -126,7 +221,6 @@ def _search_collection(
     print(f"SEARCH COLLECTION: {query}")
 
     try:
-        # v3.3: rimosso chat_history=_chat_history
         result = _retrieval_engine.retrieve(
             query,
             collection=collection.value,
@@ -158,14 +252,33 @@ def _search_collection(
 
         _tool_error_counts.pop(tool_key, None)
 
+        # ==============================================================
+        # v3.4: INTERCETTAZIONE "NESSUN RISULTATO" → FALLBACK search_all
+        #
+        # Se la collection specifica non ha trovato documenti, NON
+        # restituiamo il vecchio segnale di fallback (che il modello
+        # interpreterebbe come "prova un altro tool"). Invece, eseguiamo
+        # immediatamente una ricerca trasversale su tutte le collection.
+        #
+        # Solo se anche la ricerca trasversale fallisce, restituiamo un
+        # messaggio DEFINITIVO che blocca il modello dal tentare altri tool.
+        # ==============================================================
         if not documents:
-            fallback_map = {
-                CollectionTarget.PERSONE: _FALLBACK_SIGNAL_PERSONE,
-                CollectionTarget.OFFERTA_FORMATIVA: _FALLBACK_SIGNAL_OFFERTA,
-                CollectionTarget.DIPARTIMENTO: _FALLBACK_SIGNAL_DIPARTIMENTO,
-            }
-            signal = fallback_map.get(collection, _FALLBACK_SIGNAL_GENERIC)
-            return signal.format(query=query)
+            logger.info(
+                f"0 risultati da {tool_name} (collection={collection.value}). "
+                f"Attivo fallback interno su search_all."
+            )
+
+            # Tentativo di fallback trasversale
+            fallback_result = _fallback_search_all(query, tool_name)
+
+            if fallback_result:
+                # Il fallback ha trovato risultati: restituiscili al modello
+                return fallback_result
+            else:
+                # Anche il fallback è vuoto: messaggio DEFINITIVO
+                # (formulato per impedire al modello di invocare altri tool)
+                return _DEFINITIVE_NOT_FOUND.format(query=query)
 
         return _format_results(documents)
 
@@ -322,7 +435,7 @@ class SearchDipartimentoInput(BaseModel):
             "'terza_missione' (terza missione, impatto sociale), "
             "'internazionale' (Erasmus, mobilità, accordi internazionali), "
             "'organizzazione' (organigramma, commissioni, personale), "
-            "'generale' (informazioni generiche dipartimento, contatti istituzionali, indirizzo, dove si trova il dipartimento, come raggiungerci, P.IVA). "
+            "'generale' (informazioni generiche dipartimento). "
             "ATTENZIONE: 'strutture' NON esiste. Usa 'aule', 'laboratori' o 'sedi'. "
             "Lascia vuoto se non sei sicuro."
         )
@@ -474,7 +587,7 @@ def search_dipartimento(
     sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
-    """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione, contatti, informazioni generali, indirizzo, come raggiungerci.
+    """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione.
 
 ATTENZIONE: sotto_area="strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
 
@@ -515,10 +628,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
             "erasmus", "internazionale", "international", "mobilità"
         ]):
             sotto_area = "internazionale"
-        elif any(kw in query_lower for kw in [
-            "contatt", "indirizzo", "dove si trova", "raggiung", "telefono", "email", "p.iva", "posizione"
-        ]):
-            sotto_area = "generale"
 
     # Costruzione metadata_filter
     metadata_filter = {}
