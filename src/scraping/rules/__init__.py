@@ -2,11 +2,7 @@
 
 from pathlib import Path
 from typing import List
-
 from scraping.core.base_rule import CleaningRule, PdfFilterRule
-from scraping.factory.cleaner_factory import RuleFactory
-from scraping.factory.pdf_factory import PdfRuleFactory
-
 
 def get_all_html_rules(**kwargs) -> List[CleaningRule]:
     """Crea e restituisce tutte le regole di pulizia HTML con parametri configurabili.
@@ -17,6 +13,8 @@ def get_all_html_rules(**kwargs) -> List[CleaningRule]:
     Returns:
         Lista completa delle CleaningRule.
     """
+    from scraping.factory.cleaner_factory import RuleFactory
+
     directory = Path(kwargs.get("directory", "data/raw/html_samples"))
     cutoff_year = kwargs.get("cutoff_year", 2020)
     target_department = kwargs.get("target_department", "300638")
@@ -48,6 +46,8 @@ def get_all_pdf_rules(**kwargs) -> List[PdfFilterRule]:
     Returns:
         Lista completa delle PdfFilterRule.
     """
+    from scraping.factory.pdf_factory import PdfRuleFactory
+
     cutoff_year = kwargs.get("cutoff_year", 2020)
     factory = PdfRuleFactory(cutoff_year=cutoff_year)
     return factory.create_rules([
