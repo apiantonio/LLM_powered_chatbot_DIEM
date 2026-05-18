@@ -1,0 +1,28 @@
+# ==============================================================
+# NeMo Guardrails — Configurazione per Agente RAG DIEM
+#
+# NOTA: Questo file viene usato come TEMPLATE. Il factory Python
+# (guardrails.py) lo carica e inietta la API key Groq dedicata
+# prima di istanziare il GuardrailsMiddleware.
+#
+# LLM per i guardrail check: Llama 3.3 70B via Groq
+# Rail attive:
+#   INPUT:  self check input (injection + tossicità + OOD)
+#   OUTPUT: self check output (contenuto inappropriato, codice)
+# ==============================================================
+
+models:
+  - type: main
+    engine: groq
+    model: llama-3.3-70b-versatile
+    parameters:
+      temperature: 0.0
+      max_tokens: 50
+
+rails:
+  input:
+    flows:
+      - self check input
+  output:
+    flows:
+      - self check output

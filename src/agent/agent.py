@@ -510,15 +510,12 @@ class RAGAgentFactory:
         # --- 6. GUARDRAILS VIA MIDDLEWARE ---
         logger.info("   📋 Assemblaggio middleware guardrails...")
         guardrail_middleware = build_guardrail_middleware(
-            classifier_llm=chat_model if enable_scope_guardrail else None,
             enable_pii=settings.guardrails.enable_pii_filter,
             enable_topical=enable_scope_guardrail,
             enable_injection=True,
             enable_toxicity=True,
             enable_hallucination=True,
-            enable_code_guard=True,
-            max_model_calls_per_run=settings.guardrails.max_agent_iterations,
-            max_tool_calls_per_run=12,
+            enable_code_guard=True
         )
 
         # --- 7. Assembla l'agente CON middleware ---

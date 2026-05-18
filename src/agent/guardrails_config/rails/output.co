@@ -1,0 +1,9 @@
+define flow self check output
+  $allowed = execute self_check_output
+
+  if not $allowed
+    bot refuse to respond
+    stop
+
+define bot refuse to respond
+  "Mi dispiace, non posso elaborare questa richiesta. Sono l'assistente virtuale del Dipartimento DIEM dell'Università degli Studi di Salerno. Posso aiutarti con informazioni su corsi, docenti, esami, regolamenti, laboratori e servizi universitari."
