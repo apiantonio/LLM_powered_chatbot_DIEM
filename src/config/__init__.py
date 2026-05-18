@@ -1,0 +1,1 @@
+"""Modulo di configurazione dell'applicazione."""

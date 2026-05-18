@@ -1,15 +1,33 @@
-"""
-Configurazione centralizzata del sistema RAG DIEM.
+"""Configurazione centralizzata del sistema RAG DIEM.
 
-v4: aggiunto groq_api_key in LLMConfig per il provider Groq.
-    REWRITER_PROVIDER e REWRITER_MODEL vengono letti direttamente
-    dall'ambiente in llm_providers.py.
+Contiene tutti i dataclass di configurazione dell'applicazione e la
+funzione di caricamento da variabili d'ambiente.
+
+La sezione LoggingConfig e' stata aggiunta per consentire la configurazione
+centralizzata di livello, destinazione e formato del logging prima
+dell'avvio di qualsiasi componente applicativo.
 """
 
 import os
 from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urlparse
+
+
+@dataclass(frozen=True)
+class LoggingConfig:
+    """Configurazione del sistema di logging centralizzato.
+
+    Permette di controllare livello di verbosita, destinazione (console,
+    file o entrambi) e formato delle righe di log tramite variabili
+    d'ambiente o valori di default.
+    """
+
+    level: str = "INFO"
+    log_file: Optional[str] = None
+    log_to_console: bool = True
+    log_format: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format: str = "%Y-%m-%d %H:%M:%S"
 
 
 @dataclass(frozen=True)
@@ -66,6 +84,7 @@ class IngestionConfig:
     index_registry_path: str = "data/vectorstore/index_registry.json"
 
     def get_allowed_domains(self) -> set[str]:
+        """Deriva i domini autorizzati a partire dai seed URL."""
         domains = set()
         for url in self.seed_urls:
             parsed = urlparse(url)
@@ -75,12 +94,22 @@ class IngestionConfig:
         return domains
 
     def get_allowed_prefixes(self) -> tuple[str, ...]:
+        """Restituisce i prefissi URL autorizzati, escludendo easycourse."""
         return tuple(
             url for url in self.seed_urls
             if "easycourse" not in url
         )
 
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
+        """Restituisce chunk_size e chunk_overlap specifici per la collezione indicata.
+
+        Args:
+            collection_name: Nome della collezione (persone, offerta_formativa, dipartimento).
+
+        Returns:
+            Tupla (chunk_size, chunk_overlap) per la collezione richiesta,
+            oppure i valori di default se la collezione non e' mappata.
+        """
         mapping = {
             "persone": (self.persone_html_chunk_size, self.persone_html_chunk_overlap),
             "offerta_formativa": (self.offerta_html_chunk_size, self.offerta_html_chunk_overlap),
@@ -91,12 +120,18 @@ class IngestionConfig:
 
 @dataclass(frozen=True)
 class CrawlerConfig:
+    """Parametri operativi del crawler (thread, fattori di scala)."""
+
     thread_cpu_factor: float = 0.75
     thread_min_workers: int = 2
     thread_max_workers: int = 16
     write_buffer_size: int = 0
 
     def compute_max_workers(self) -> int:
+        """Calcola il numero di worker in base alle CPU disponibili.
+
+        Il valore e' limitato tra thread_min_workers e thread_max_workers.
+        """
         cpu = os.cpu_count() or 4
         computed = max(self.thread_min_workers, int(cpu * self.thread_cpu_factor))
         return min(computed, self.thread_max_workers)
@@ -104,6 +139,8 @@ class CrawlerConfig:
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
+    """Configurazione del modello di embedding."""
+
     model_name: str = "BAAI/bge-m3"
     normalize_embeddings: bool = True
     expected_dim: int = 1024
@@ -111,6 +148,8 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class VectorStoreConfig:
+    """Configurazione del vector store (Chroma) e del parent store."""
+
     persist_directory: str = "data/vectorstore/chroma"
     collection_name: str = "diem_knowledge_base"
     parent_store_directory: str = "data/vectorstore/parent_docstore"
@@ -121,6 +160,8 @@ class VectorStoreConfig:
 
 @dataclass(frozen=True)
 class RerankerConfig:
+    """Configurazione del reranker per il riordinamento dei risultati."""
+
     score_treshold: float = 0.0
     model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     top_n: int = 5
@@ -128,6 +169,8 @@ class RerankerConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
+    """Configurazione del modello linguistico (provider, credenziali, parametri)."""
+
     provider: str = "huggingface"
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     temperature: float = 0.1
@@ -140,6 +183,8 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class EasyCourseConfig:
+    """Configurazione per l'integrazione con EasyCourse UNISA."""
+
     base_url: str = "https://easycourse.unisa.it"
     timeout: int = 30
     user_agent: str = "DIEM-RAG-Bot/1.0 (Università di Salerno)"
@@ -147,6 +192,8 @@ class EasyCourseConfig:
 
 @dataclass(frozen=True)
 class GuardrailsConfig:
+    """Configurazione dei guardrail per la validazione delle richieste."""
+
     allowed_scope_description: str = (
         "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
@@ -158,6 +205,8 @@ class GuardrailsConfig:
 
 @dataclass(frozen=True)
 class ObservabilityConfig:
+    """Configurazione per l'osservabilita e il debug dell'applicazione."""
+
     enable_verbose_callbacks: bool = True
     log_retrieved_chunks: bool = True
     log_tool_invocations: bool = True
@@ -166,6 +215,8 @@ class ObservabilityConfig:
 
 @dataclass(frozen=True)
 class AppSettings:
+    """Aggregatore di tutte le sezioni di configurazione dell'applicazione."""
+
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     crawler: CrawlerConfig = field(default_factory=CrawlerConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
@@ -175,9 +226,16 @@ class AppSettings:
     easycourse: EasyCourseConfig = field(default_factory=EasyCourseConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 def load_settings() -> AppSettings:
+    """Carica e restituisce la configurazione completa dell'applicazione.
+
+    Le variabili d'ambiente sovrascrivono i valori di default. Se il
+    pacchetto python-dotenv e' disponibile, il file .env viene caricato
+    automaticamente prima della lettura delle variabili.
+    """
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -228,5 +286,15 @@ def load_settings() -> AppSettings:
         ),
         guardrails=GuardrailsConfig(
             max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", 50))
-        )
+        ),
+        logging=LoggingConfig(
+            level=os.getenv("LOG_LEVEL", "INFO"),
+            log_file=os.getenv("LOG_FILE"),
+            log_to_console=os.getenv("LOG_TO_CONSOLE", "true").lower() == "true",
+            log_format=os.getenv(
+                "LOG_FORMAT",
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            ),
+            date_format=os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
+        ),
     )
