@@ -1,28 +1,3 @@
-"""
-retrieval/engine.py — RetrievalEngine RIVISTO per 3 Vector Store.
-
-REFACTORING v4.1 — QUERY REWRITING SPOSTATO A LIVELLO AGENTE:
-
-  CAMBIAMENTO CHIAVE:
-    Il Query Rewriting (risoluzione coreferenze) NON avviene più in
-    questo file. È stato spostato in agent/agent.py → RAGAgent.chat().
-    Quando retrieve() viene invocato, la query è GIÀ riscritta.
-
-  INVARIATI:
-    - QueryOptimizer.rewrite() esiste ancora come metodo (usato da agent.py)
-    - QueryOptimizer.expand() usato per multiquery expansion
-    - CrossEncoderReranker
-    - Parent-Child retrieval per offerta_formativa
-
-  RIMOSSO DA retrieve():
-    - Parametro chat_history (non più necessario)
-    - Chiamata a self._optimizer.rewrite() dentro retrieve()
-    - Metodo _extract_last_turn() (non più necessario qui)
-
-  FLUSSO:
-    query (già riscritta) → expand (multiquery) → retrieval parallelo → merge → rerank
-"""
-
 import re
 import logging
 from typing import List, Optional, Set
@@ -38,16 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class QueryOptimizer:
-    """
-    Pre-Retrieval: Query Rewriting + Multiquery Expansion.
-
-    Usa un LLM dedicato (Llama 3.3 70B via Groq) per:
-      1. REWRITE — risoluzione coreferenze basata su ultimo turno
-         (ora invocato da agent.py, non più da retrieve())
-      2. EXPAND — generazione varianti semantiche per retrieval
-         (ancora invocato da retrieve())
-    """
-
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You are a coreference resolver for an Italian university Q&A system. "
@@ -156,7 +121,6 @@ class QueryOptimizer:
             return question
 
     def expand(self, question: str) -> List[str]:
-        """Genera varianti semantiche della query per multiquery retrieval."""
         try:
             variants = self._multi_query_chain.invoke({"question": question})
             seen: Set[str] = {question.strip().lower()}
@@ -174,7 +138,6 @@ class QueryOptimizer:
 
     @staticmethod
     def _extract_proper_nouns(text: str) -> list:
-        """Estrae probabili nomi propri da un testo italiano."""
         skip_words = {
             "chi", "cosa", "come", "dove", "quando", "quale", "quali",
             "parlami", "dimmi", "spiegami", "cercami", "trovami",
@@ -191,14 +154,7 @@ class QueryOptimizer:
                 entities.append(clean)
         return entities
 
-
-# ============================================================
-# CROSS-ENCODER RERANKER (invariato)
-# ============================================================
-
 class CrossEncoderReranker:
-    """Post-Retrieval: ri-ordina i documenti candidati con Cross-Encoder."""
-
     def __init__(self, config: RerankerConfig):
         from sentence_transformers import CrossEncoder
         self._model = CrossEncoder(config.model_name)
@@ -243,21 +199,7 @@ class CrossEncoderReranker:
 
         return result
 
-
-# ============================================================
-# RETRIEVAL ENGINE
-# ============================================================
-
 class RetrievalEngine:
-    """
-    Orchestratore retrieval per 3 Vector Store (audit §8).
-
-    v4.1: Il rewriting NON avviene più qui. La query arriva già riscritta
-    da agent.py. Il flusso è ora:
-      query (già riscritta) → expand (multiquery) → retrieval parallelo → merge → rerank
-
-    Il parametro chat_history è stato rimosso da retrieve().
-    """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
         self._indexer = indexer
@@ -278,29 +220,8 @@ class RetrievalEngine:
         collection: Optional[str] = None,
         metadata_filter: Optional[dict] = None,
     ) -> tuple:
-        """
-        Retrieval completo: multiquery expansion → retrieval → rerank.
-
-        v4.1: Il parametro chat_history è stato RIMOSSO. La query arriva
-        già riscritta da agent.py. Questo metodo si occupa solo di:
-          1. Multiquery expansion
-          2. Retrieval parallelo
-          3. Reranking
-
-        Args:
-            query: La query (già riscritta se necessario da agent.py).
-            collection: Nome della collection target (opzionale).
-            metadata_filter: Filtro metadata per Chroma (opzionale).
-
-        Returns:
-            (documents, effective_query, multi_queries) — tupla con:
-              - documents: lista di Document reranked
-              - effective_query: la query usata (uguale all'input)
-              - multi_queries: lista delle varianti generate
-        """
         effective_query = query
 
-        # ── STEP 1: MULTIQUERY EXPANSION ──
         multi_queries = [effective_query]
         if self._optimizer:
             multi_queries = self._optimizer.expand(effective_query)
@@ -309,7 +230,6 @@ class RetrievalEngine:
             docs, _ = self.retrieve_from_all(effective_query)
             return docs, effective_query, multi_queries
 
-        # ── STEP 2: RETRIEVAL PARALLELO PER OGNI VARIANTE ──
         all_candidates = []
         seen_hashes: Set[int] = set()
 
@@ -349,12 +269,10 @@ class RetrievalEngine:
             f"(collection={collection}, filter={metadata_filter})"
         )
 
-        # ── STEP 3: RERANKING ──
         final_docs = self._reranker.rerank(effective_query, all_candidates)
         return final_docs, effective_query, multi_queries
 
     def retrieve_from_all(self, query: str, metadata_filter: Optional[dict] = None) -> tuple:
-        """Retrieval cross-collection con multiquery e filtro opzionale."""
         multi_queries = [query]
         if self._optimizer:
             multi_queries = self._optimizer.expand(query)
@@ -393,16 +311,11 @@ class RetrievalEngine:
         final_docs = self._reranker.rerank(query, all_candidates)
         return final_docs, query
 
-    # ================================================================
-    # PARENT-CHILD RETRIEVAL
-    # ================================================================
-
     def _retrieve_from_parent_child(
         self,
         query: str,
         metadata_filter: Optional[dict] = None,
     ) -> List[Document]:
-        """Recupera documenti dal Parent-Child vectorstore."""
         if metadata_filter:
             chroma_where = self._build_chroma_filter(metadata_filter)
             try:
@@ -432,12 +345,7 @@ class RetrievalEngine:
         else:
             return self._pc_retriever.invoke(query)
 
-    # ================================================================
-    # FILTERED RETRIEVER FACTORY
-    # ================================================================
-
     def _get_filtered_retriever(self, collection_name: str, metadata_filter: dict):
-        """Crea un retriever Chroma con filtro metadata."""
         try:
             target = CollectionTarget(collection_name)
         except ValueError:
@@ -456,7 +364,6 @@ class RetrievalEngine:
 
     @staticmethod
     def _build_chroma_filter(metadata_filter: dict) -> dict:
-        """Converte un dict in formato filtro Chroma."""
         conditions = []
 
         for key, value in metadata_filter.items():

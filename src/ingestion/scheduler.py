@@ -30,28 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 class IngestionScheduler:
-    """
-    Facade che orchestra l'intero ciclo di aggiornamento della KB.
-    
-    Responsabilità: coordinare crawler, cleaner e indexer in sequenza.
-    NON contiene logica di business — la delega ai moduli specializzati.
-    """
     
     def __init__(self, settings: Optional[AppSettings] = None):
         self._settings = settings or load_settings()
         self._indexer = KnowledgeBaseIndexer(self._settings)
     
     def run_full_pipeline(self, skip_crawl: bool = False) -> dict:
-        """
-        Esegue il ciclo completo di aggiornamento.
-        
-        Args:
-            skip_crawl: Se True, salta lo scraping e indicizza solo i file esistenti.
-                        Utile per re-indicizzare dopo aver modificato i parametri di chunking.
-        
-        Returns:
-            Report completo dell'esecuzione.
-        """
         start_time = time.time()
         report = {
             "timestamp": datetime.now().isoformat(),
@@ -65,9 +49,6 @@ class IngestionScheduler:
         logger.info(f"INGESTION PIPELINE — Avvio: {report['timestamp']}")
         logger.info("=" * 60)
         
-        # ==============================
-        # FASE 1: Crawling (opzionale)
-        # ==============================
         if not skip_crawl:
             try:
                 logger.info("[FASE 1/3] Avvio crawling...")
@@ -94,9 +75,6 @@ class IngestionScheduler:
         else:
             logger.info("[FASE 1/3] Crawling saltato (skip_crawl=True)")
         
-        # ==============================
-        # FASE 2: Indicizzazione HTML
-        # ==============================
         try:
             logger.info("[FASE 2/3] Indicizzazione HTML (incrementale)...")
             html_stats = self._indexer.index_html_directory()
@@ -105,9 +83,6 @@ class IngestionScheduler:
             logger.error(f"Errore indicizzazione HTML: {e}")
             report["html_indexing"] = {"error": str(e)}
         
-        # ==============================
-        # FASE 3: Indicizzazione PDF (Parent-Child)
-        # ==============================
         try:
             logger.info("[FASE 3/3] Indicizzazione PDF Parent-Child (incrementale)...")
             pdf_stats = self._indexer.index_pdf_list()
@@ -116,9 +91,6 @@ class IngestionScheduler:
             logger.error(f"Errore indicizzazione PDF: {e}")
             report["pdf_indexing"] = {"error": str(e)}
         
-        # ==============================
-        # REPORT FINALE
-        # ==============================
         report["duration_seconds"] = round(time.time() - start_time, 2)
         
         logger.info("=" * 60)
@@ -131,13 +103,9 @@ class IngestionScheduler:
     
     @property
     def indexer(self) -> KnowledgeBaseIndexer:
-        """Accesso all'indexer per il wiring con il RetrievalEngine."""
         return self._indexer
 
 
-# ==========================================================
-# ENTRY POINT per esecuzione diretta o cron job
-# ==========================================================
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -148,7 +116,6 @@ if __name__ == "__main__":
     settings = load_settings()
     scheduler = IngestionScheduler(settings)
     
-    # Per la prima esecuzione con file già presenti:
     report = scheduler.run_full_pipeline(skip_crawl=True)
     
     # Per esecuzione completa (crawl + index):
