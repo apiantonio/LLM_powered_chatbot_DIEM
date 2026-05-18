@@ -1,13 +1,3 @@
-# src/transform/rules/pdf_rules.py
-"""
-Regole di filtraggio per i link PDF.
-
-AGGIORNAMENTO (Sprint Filtri v2):
-  ObsoleteYearRule — aggiunti due nuovi pattern:
-    - Caso A: date GGMMAAAA (es. bando_18072018_02082018_5tit.pdf)
-    - Caso B: doc + 6 cifre ID + 4 cifre anno (es. doc02070720180306150618.pdf)
-"""
-
 import re
 import requests
 import logging
@@ -23,41 +13,22 @@ class ObsoleteYearRule(PdfFilterRule):
     def __init__(self, cutoff_year: int = 2020):
         self.cutoff_year = cutoff_year
 
-        # Pattern 1: Anno Accademico (es. 2019-2020, 2010_2011)
-        # Cattura il primo anno in group(1) e il secondo in group(2)
         self.academic_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})[-_](19\d{2}|20\d{2})(?!\d)')
-
-        # Pattern 2: Anno_Mese (es. 2017_09, 2018-01)
-        # Cattura l'anno in group(1)
         self.year_month_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})[-_](0[1-9]|1[0-2])(?!\d)')
 
-        # Pattern 3: Anno singolo (es. 2019, 2020, bandotesi2019)
         self.single_year_pattern = re.compile(r'(?<!\d)(19\d{2}|20\d{2})(?!\d)')
 
-        # ============================================================
-        # NUOVI PATTERN (Sprint Filtri v2)
-        # ============================================================
-
-        # Pattern 4 — Caso B: "doc" + 6 cifre ID + 4 cifre ANNO
-        # Esempio: doc02070720180306150618.pdf → ID=020707, ANNO=2018
-        # Cattura l'anno (4 cifre) subito dopo "doc" + 6 cifre di ID.
-        # Deve essere processato PRIMA dei pattern generici per evitare
-        # che le 8 cifre vengano intercettate come data GGMMAAAA.
         self.doc_id_year_pattern = re.compile(
             r'doc\d{6}(\d{4})',
             re.IGNORECASE,
         )
 
-        # Pattern 5 — Caso A: Data GGMMAAAA (es. 18072018, 04022019)
-        # Struttura: GG (01-31) + MM (01-12) + AAAA (19xx/20xx)
-        # Cattura l'anno nelle ultime 4 cifre della sequenza di 8.
-        # Lookbehind/lookahead evitano match su sequenze più lunghe di 8 cifre.
         self.ddmmyyyy_pattern = re.compile(
-            r'(?<!\d)'                   # non preceduto da cifra
-            r'(?:0[1-9]|[12]\d|3[01])'   # GG: 01-31
-            r'(?:0[1-9]|1[0-2])'         # MM: 01-12
-            r'(19\d{2}|20\d{2})'         # AAAA: cattura l'anno
-            r'(?!\d)',                    # non seguito da cifra
+            r'(?<!\d)'
+            r'(?:0[1-9]|[12]\d|3[01])'
+            r'(?:0[1-9]|1[0-2])'
+            r'(19\d{2}|20\d{2})'
+            r'(?!\d)',
         )
 
     @property
@@ -68,63 +39,39 @@ class ObsoleteYearRule(PdfFilterRule):
         logical_years = []
         working_url = pdf_url
 
-        # --- STEP 1: Estrazione Anni Accademici ---
-        # Es. "2019-2020" appartiene al ciclo 2019. Estraiamo 2019.
         for match in self.academic_pattern.finditer(working_url):
             y1 = int(match.group(1))
             logical_years.append(y1)
-        # Sostituiamo il match con XXX per "bruciarlo", così il pattern degli anni
-        # singoli non intercetterà erroneamente il "2020" dal "2019-2020"
         working_url = self.academic_pattern.sub('XXX', working_url)
 
-        # --- STEP 2: Estrazione Anno_Mese ---
         for match in self.year_month_pattern.finditer(working_url):
             y1 = int(match.group(1))
             logical_years.append(y1)
         working_url = self.year_month_pattern.sub('XXX', working_url)
 
-        # ============================================================
-        # STEP 3 (NUOVO): Caso B — doc + 6 cifre ID + 4 cifre ANNO
-        # Processato prima del pattern GGMMAAAA e degli anni singoli
-        # per evitare che le cifre del blocco "doc..." vengano
-        # intercettate erroneamente dai pattern successivi.
-        # Esempio: doc02070720180306150618.pdf → anno=2018
-        # ============================================================
         for match in self.doc_id_year_pattern.finditer(working_url):
             year = int(match.group(1))
             logical_years.append(year)
         working_url = self.doc_id_year_pattern.sub('XXX', working_url)
 
-        # ============================================================
-        # STEP 4 (NUOVO): Caso A — Date GGMMAAAA
-        # Intercetta sequenze di 8 cifre che rappresentano date valide
-        # ed estrae le ultime 4 cifre come anno.
-        # Esempio: bando_18072018_02082018_5tit.pdf → anni 2018, 2018
-        # Esempio: bando-1802-04022019.pdf → anno 2019
-        # ============================================================
         for match in self.ddmmyyyy_pattern.finditer(working_url):
             year = int(match.group(1))
             logical_years.append(year)
         working_url = self.ddmmyyyy_pattern.sub('XXX', working_url)
 
-        # --- STEP 5: Estrazione Anni Singoli Rimanenti ---
-        # (era STEP 3 nel codice originale)
         for match in self.single_year_pattern.finditer(working_url):
             y1 = int(match.group(1))
             logical_years.append(y1)
 
-        # Se non ci sono anni nell'URL, per sicurezza non scartiamo
         if not logical_years:
             return False
 
-        # Valutiamo in base all'anno PIÙ RECENTE trovato nell'URL.
-        # Es: se la cartella è /2019/ ma il file è bando_2020.pdf, prevarrà il 2020.
         max_year = max(logical_years)
         return max_year < self.cutoff_year
 
 
 class SemanticTrapRule(PdfFilterRule):
-    """Scarta i PDF puramente burocratici o contenenti dati sensibili in base a keyword."""
+
     def __init__(self):
         self.traps = [
             "grad_", "graduatori", "esit", "risultat", "ammess", "verbale", "verbali",
@@ -141,7 +88,7 @@ class SemanticTrapRule(PdfFilterRule):
 
 
 class DomainWhitelistRule(PdfFilterRule):
-    """Assicura che il PDF non esca dal perimetro dei domini dell'Ateneo o da docenti estranei."""
+
     def __init__(self):
         self.allowed_domains = {"www.diem.unisa.it", "docenti.unisa.it", "corsi.unisa.it"}
         self.allowed_prefixes = (
@@ -197,12 +144,9 @@ class DomainWhitelistRule(PdfFilterRule):
 
 
 class EnglishPdfFilterRule(PdfFilterRule):
-    """Filtra e scarta tutti i link PDF che terminano con '-eng.pdf'."""
-
     @property
     def name(self) -> str:
         return "Filtro PDF Inglese (-eng.pdf)"
 
     def should_discard(self, pdf_url: str) -> bool:
-        # Usiamo .lower() per essere sicuri di intercettare anche -ENG.pdf o -Eng.pdf
         return pdf_url.lower().endswith('-eng.pdf')

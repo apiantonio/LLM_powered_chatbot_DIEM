@@ -1,10 +1,3 @@
-"""
-Package delle regole di filtraggio e pulizia.
-
-Espone le factory function per caricare le regole HTML e PDF
-utilizzate dal crawler e dalla pipeline di ingestion.
-"""
-
 from typing import List
 from scraping.core.base_rule import CleaningRule, PdfFilterRule
 from scraping.factory.pdf_factory import PdfRuleFactory
@@ -12,13 +5,6 @@ from pathlib import Path
 from scraping.factory.cleaner_factory import RuleFactory
 
 def get_all_html_rules(**kwargs) -> List[CleaningRule]:
-    """
-    Costruisce e restituisce tutte le regole di pulizia HTML attive.
-
-    Delega alla RuleFactory per la creazione delle istanze.
-    Chiamata da ingestion_main.py quando il modulo transform è disponibile.
-    """
-    
 
     directory = Path(kwargs.get("directory", "data/raw/html_samples"))
     cutoff_year = kwargs.get("cutoff_year", 2020)
@@ -37,10 +23,7 @@ def get_all_html_rules(**kwargs) -> List[CleaningRule]:
 
 
 def get_all_pdf_rules(**kwargs) -> List[PdfFilterRule]:
-    """
-    Costruisce e restituisce tutte le regole di filtro PDF attive.
-    """
-
+    
     cutoff_year = kwargs.get("cutoff_year", 2020)
     factory = PdfRuleFactory(cutoff_year=cutoff_year)
     return factory.create_rules([

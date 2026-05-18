@@ -1,13 +1,3 @@
-"""
-Regole di pulizia basate su metadati (filename/URL).
-
-CODICE RIMOSSO (Sprint Filtri Docenti):
-  - ObsoleteUrlRule: logica errata che scartava anno=0 e anno<2020 a livello filename.
-    Sostituita da PubblicazioniUrlClassifier in docenti_url_rules.py (Req 2).
-  - DidatticaFilterRule: causava race condition tentando di eliminare file
-    durante il crawling. Sostituita dal post-processing nel crawler (Req 5).
-"""
-
 import re
 from pathlib import Path
 from typing import Optional
@@ -15,7 +5,6 @@ from scraping.core.base_rule import CleaningRule
 
 
 class FilenameRule(CleaningRule):
-    """Scarta file con indicatori di lingua straniera nel filename (-en-, -zh-)."""
 
     @property
     def name(self) -> str:
@@ -31,7 +20,6 @@ class FilenameRule(CleaningRule):
 
 
 class PublicationTipRule(CleaningRule):
-    """Scarta le pagine pubblicazioni filtrate per attributo 'tip='."""
 
     def __init__(self):
         self.target_pattern = re.compile(r'-\d+-ricerca-pubblicazioni?.*tip=')
@@ -49,7 +37,6 @@ class PublicationTipRule(CleaningRule):
 
 
 class ExactPublicationsBaseRule(CleaningRule):
-    """Scarta la pagina base delle pubblicazioni (senza parametri anno)."""
 
     @property
     def name(self) -> str:
@@ -64,7 +51,6 @@ class ExactPublicationsBaseRule(CleaningRule):
 
 
 class DepartmentBandiRule(CleaningRule):
-    """Scarta i bandi di dipartimenti diversi dal target."""
 
     def __init__(self, target_department: str = "300638"):
         self.target_department = target_department
@@ -100,7 +86,6 @@ class DepartmentBandiRule(CleaningRule):
 
 
 class CalendarRule(CleaningRule):
-    """Scarta file relativi a calendari."""
 
     @property
     def name(self) -> str:
@@ -115,8 +100,7 @@ class CalendarRule(CleaningRule):
 
 
 class NewsRule(CleaningRule):
-    """Scarta file relativi a news/notizie."""
-
+    
     @property
     def name(self) -> str:
         return "File relativo a news/notizie (contiene 'news')"
