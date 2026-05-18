@@ -1,10 +1,3 @@
-"""
-Factory per l'istanziazione del Chat Model LangChain.
-
-v4: Aggiunto provider "groq" e factory create_rewriter_llm().
-Provider supportati: 'huggingface', 'ollama', 'groq'
-"""
-
 import os
 import logging
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -15,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 def create_chat_model(config: LLMConfig) -> BaseChatModel:
-    """Factory che costruisce il ChatModel LangChain in base al provider."""
     provider = config.provider.lower()
     logger.info(f"Inizializzazione ChatModel. Provider: {provider.upper()}")
 
@@ -79,14 +71,6 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
 
 
 def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
-    """
-    Crea il LLM dedicato per il QueryOptimizer (rewrite + multiquery).
-
-    Legge REWRITER_PROVIDER e REWRITER_MODEL dall'ambiente.
-    Se non configurati, usa il LLM principale con temperature=0.0.
-
-    Il rewriter usa SEMPRE temperature=0.0 e max_tokens=256.
-    """
     provider = os.getenv("REWRITER_PROVIDER", "").strip().lower()
 
     if not provider:

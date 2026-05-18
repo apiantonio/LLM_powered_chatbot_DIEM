@@ -1,26 +1,3 @@
-"""
-RAG Observability — Callback system.
-
-REFACTORING per 3 Vector Store (audit_fattibilita_metadati.md §8):
-  - _TOOL_COLLECTION_MAP aggiornato per nuovi nomi tool/collection:
-    search_persone → persone
-    search_offerta_formativa → offerta_formativa
-    search_dipartimento → dipartimento
-    search_all → ALL (cross-collection)
-  - Rimossi: search_docenti, search_bandi, search_strutture_fisiche,
-    get_course_schedule
-
-Formato del file di log per ogni interazione:
-  === SYSTEM PROMPT ===
-  === HISTORY ===
-  === USER QUERY ===
-  === REWRITTEN QUERY ===
-  === MULTIQUERIES ===
-  === TOOL CALLED & METADATA ===
-  === TOP 5 RETRIEVED LINKS ===
-  === FINAL RESPONSE ===
-"""
-
 import logging
 import json
 import os
@@ -33,11 +10,6 @@ from enum import Enum, auto
 from langchain_core.callbacks import BaseCallbackHandler
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# ENUMS & DATA CLASSES
-# ============================================================
 
 class PipelinePhase(Enum):
     USER_INPUT = auto()
@@ -86,19 +58,8 @@ class PipelineTrace:
     conversation_turn: int = 0
 
 
-# ============================================================
-# RAGObservabilityHandler
-# ============================================================
 
 class RAGObservabilityHandler(BaseCallbackHandler):
-    """
-    Callback handler per tracciamento della pipeline.
-
-    Traccia i dati internamente per il trace dict e per l'output a
-    terminale leggero. NON genera file. La generazione del file unico
-    è delegata a InteractionLogHandler.
-    """
-
     name = "RAGObservabilityHandler"
 
     def __init__(
@@ -118,10 +79,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         self._react_iteration: int = 0
         self._header_printed: bool = False
         self._system_prompt: str = ""
-
-    # ==============================
-    # CHAT MODEL TRACKING
-    # ==============================
 
     def on_chat_model_start(
         self, serialized: Dict[str, Any], messages: List, **kwargs: Any
@@ -161,10 +118,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
                 print(f"  TURNO #{turn}")
                 print(f"{'═' * 70}")
                 print(f"  INPUT │ \"{self._trace.user_input}\"")
-
-    # ==============================
-    # TOOL TRACKING
-    # ==============================
 
     def on_tool_start(
         self, serialized: Dict[str, Any], input_str: str, **kwargs: Any
@@ -238,10 +191,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
     ) -> None:
         pass
 
-    # ==============================
-    # PUBLIC API
-    # ==============================
-
     def get_system_prompt(self) -> str:
         """Restituisce il system prompt catturato."""
         return self._system_prompt
@@ -311,10 +260,6 @@ class RAGObservabilityHandler(BaseCallbackHandler):
     def print_summary(self) -> None:
         """Noop — output già stampato inline."""
         pass
-
-    # ==============================
-    # PRIVATE HELPERS
-    # ==============================
 
     @staticmethod
     def _extract_tool_input(input_str: str) -> dict:
@@ -388,17 +333,7 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         return docs
 
 
-# ============================================================
-# InteractionLogHandler — 1 unico file per interazione
-# ============================================================
-
 class InteractionLogHandler:
-    """
-    Genera UN UNICO FILE di log per ogni interazione (domanda → risposta).
-
-    Naming convention: interaction_turn{N}_{timestamp}.txt
-    """
-
     def __init__(self, output_dir: str = "logs/interactions"):
         self._output_dir = output_dir
         os.makedirs(self._output_dir, exist_ok=True)
@@ -416,12 +351,6 @@ class InteractionLogHandler:
         top_links: List[str],
         final_response: str,
     ) -> str:
-        """
-        Salva l'interazione completa su un unico file.
-
-        Returns:
-            Il path del file salvato.
-        """
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         lines = []
@@ -477,10 +406,6 @@ class InteractionLogHandler:
             logger.error(f"Errore salvataggio log interazione: {e}")
             return ""
 
-
-# ============================================================
-# FACTORY
-# ============================================================
 
 def create_observability_handler(
     settings: "ObservabilityConfig",

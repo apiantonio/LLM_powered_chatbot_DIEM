@@ -53,13 +53,10 @@ Key rules:
 ABSOLUTE PROHIBITION: DO NOT compress, reduce, or paraphrase the user query when invoking a tool.
 - CORRECT: query="Chi è il Professore Y?"
 - FORBIDDEN: query="Y"
--CORRECT: query="Qual è il programma del corso Z?"
--FORBIDDEN: query="corso Z"
+- CORRECT: query="Qual è il programma del corso Z?"
+- FORBIDDEN: query="corso Z"
 </query_integrity>"""
 
 
 def get_agent_system_prompt() -> SystemMessage:
-    """
-    Restituisce il SystemMessage SENZA data/ora (iniettata dal middleware).
-    """
     return SystemMessage(content=SYSTEM_PROMPT_TEMPLATE)

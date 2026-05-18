@@ -1,14 +1,3 @@
-"""
-Gestione della memoria conversazionale per l'Agente RAG DIEM.
-
-REFACTORING v4.1:
-  - Aggiunto get_last_completed_turn() che restituisce l'ultimo turno
-    completato come tupla (user_message, assistant_message). Usato da
-    agent.py per il Query Rewriting a livello agente.
-  - get_langchain_history() restituisce SOLO l'ultimo turno (invariato)
-  - Architettura a due stadi (similarità + summarization) invariata
-"""
-
 import logging
 import re
 import numpy as np
@@ -25,14 +14,11 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 logger = logging.getLogger(__name__)
 
-
-# Reminder compatto per 7B (meno token = meno confusione)
 _RETRIEVAL_REMINDER = (
     "\n\n[SISTEMA: invoke a search tool. "
     "Pass the user's query INTACT to the tool, without abbreviating it.]"
 )
 
-# Query che NON necessitano di retrieval
 _META_PATTERNS = [
     r"^(ciao|salve|buongiorno|buonasera|hey|hi|hello)\b",
     r"^grazie",
@@ -41,14 +27,12 @@ _META_PATTERNS = [
 
 
 def _is_meta_query(query: str) -> bool:
-    """Rileva saluti e meta-domande che non richiedono retrieval."""
     q = query.strip().lower()
     return any(re.match(p, q) for p in _META_PATTERNS)
 
 
 @dataclass
 class ConversationTurn:
-    """Singolo turno di conversazione (domanda + risposta)."""
     user_message: str
     assistant_message: str
     turn_number: int
@@ -56,13 +40,6 @@ class ConversationTurn:
 
 
 class SmartConversationMemory:
-    """
-    Memoria conversazionale intelligente a due stadi.
-
-    Stadio 1 — Filtraggio per Similarità coseno
-    Stadio 2 — Summarization con Token Budget
-    """
-
     def __init__(
         self,
         llm_for_summary,
@@ -95,13 +72,11 @@ class SmartConversationMemory:
         return self._turn_counter == 0
 
     def add_user_message(self, message: str) -> int:
-        """Registra il messaggio utente e avanza il contatore turno."""
         self._turn_counter += 1
         self._pending_user_message = message
         return self._turn_counter
 
     def add_assistant_message(self, message: str) -> None:
-        """Registra la risposta, completa il turno, calcola embedding."""
         user_msg = getattr(self, '_pending_user_message', '')
 
         turn_text = f"{user_msg} {message}"
@@ -121,7 +96,6 @@ class SmartConversationMemory:
         ))
         self._pending_user_message = ""
 
-        # Sliding window
         if len(self._turns) > self._max_turns:
             excess = len(self._turns) - self._max_turns
             self._turns = self._turns[excess:]
@@ -129,7 +103,6 @@ class SmartConversationMemory:
         logger.debug(f"Memoria aggiornata: {len(self._turns)} turni")
 
     def _filter_turns_by_similarity(self, query: str) -> List[ConversationTurn]:
-        """STADIO 1: Filtra i turni per similarità coseno."""
         if not self._turns:
             return []
 
@@ -173,7 +146,6 @@ class SmartConversationMemory:
     def _summarize_if_needed(
         self, filtered_turns: List[ConversationTurn]
     ) -> List[BaseMessage]:
-        """STADIO 2: Summarization con ConversationSummaryBufferMemory."""
         if not filtered_turns:
             return []
 
@@ -202,10 +174,6 @@ class SmartConversationMemory:
         return messages
 
     def find_exact_match(self, query: str) -> Optional[str]:
-        """
-        Cerca se la query è già stata posta in questa sessione calcolando
-        una "fingerprint" normalizzata.
-        """
         if not self._turns:
             return None
 
@@ -227,11 +195,6 @@ class SmartConversationMemory:
         return None
 
     def get_messages_for_agent(self, current_query: str) -> list:
-        """
-        Costruisce la lista messaggi per create_agent.invoke().
-
-        Flusso a due stadi + iniezione RETRIEVAL_REMINDER per query non-meta.
-        """
         messages = []
 
         if self._turns:
@@ -253,7 +216,6 @@ class SmartConversationMemory:
                         elif msg.type == 'system':
                             messages.append({"role": "assistant", "content": msg.content})
 
-        # Aggiungi la query corrente
         if _is_meta_query(current_query):
             messages.append({"role": "user", "content": current_query})
         else:
@@ -265,17 +227,6 @@ class SmartConversationMemory:
         return messages
 
     def get_last_completed_turn(self) -> Tuple[str, str]:
-        """
-        Restituisce l'ultimo turno COMPLETATO (con risposta dell'assistente).
-
-        v4.1: Metodo aggiunto per supportare il Query Rewriting a livello
-        agente. Restituisce (user_message, assistant_message) dell'ultimo
-        turno completato, oppure ("", "") se non ci sono turni.
-
-        NOTA: Il turno corrente (in cui _pending_user_message è valorizzato
-        ma add_assistant_message non è ancora stato chiamato) NON viene
-        restituito — serve il turno PRECEDENTE per risolvere coreferenze.
-        """
         if not self._turns:
             return ("", "")
 
@@ -283,13 +234,6 @@ class SmartConversationMemory:
         return (last_turn.user_message, last_turn.assistant_message)
 
     def get_langchain_history(self) -> List[BaseMessage]:
-        """
-        Restituisce lo storico come lista di BaseMessage LangChain.
-
-        v4: Restituisce SOLO l'ultimo turno completato (1 coppia
-        HumanMessage + AIMessage). Il rewriter ha bisogno esclusivamente
-        dell'ultima interazione per risolvere le coreferenze.
-        """
         if not self._turns:
             return []
 
@@ -302,7 +246,6 @@ class SmartConversationMemory:
         return history
 
     def get_history_summary(self) -> str:
-        """Restituisce un riepilogo testuale dello storico completo."""
         if not self._turns:
             return "(nessuno storico)"
 
@@ -320,16 +263,11 @@ class SmartConversationMemory:
         return "\n".join(lines)
 
     def clear(self) -> None:
-        """Resetta la memoria conversazionale."""
         self._turns.clear()
         self._pending_user_message = ""
         self._turn_counter = 0
         logger.info("SmartConversationMemory resettata")
 
-
-# ============================================================
-# FACTORY
-# ============================================================
 
 def create_conversation_memory(
     max_turns: int = 10,
@@ -339,7 +277,6 @@ def create_conversation_memory(
     similarity_threshold: float = 0.55,
     max_token_limit: int = 1500,
 ) -> SmartConversationMemory:
-    """Factory Method: crea la SmartConversationMemory."""
     if llm_for_summary is None:
         from config.settings import load_settings
         from agent.llm_providers import create_chat_model

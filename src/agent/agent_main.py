@@ -1,10 +1,3 @@
-"""
-Entry point per l'esecuzione interattiva dell'Agente RAG DIEM.
-
-v4: Il QueryOptimizer usa un LLM dedicato (Groq Llama 70B)
-    configurabile via REWRITER_PROVIDER / REWRITER_MODEL / GROQ_API_KEY.
-"""
-
 import sys
 import os
 import json
@@ -88,7 +81,7 @@ def build_agent(
 
 WELCOME_BANNER = """
 ╔══════════════════════════════════════════════════════════════╗
-║           🎓  AGENTE RAG DIEM — UniSA                      ║
+║             AGENTE RAG DIEM — UniSA                          ║
 ║                                                              ║
 ║  Assistente virtuale del Dipartimento DIEM                   ║
 ║  Università degli Studi di Salerno                           ║
@@ -109,9 +102,9 @@ def run_repl(agent: RAGAgent) -> None:
 
     while True:
         try:
-            user_input = input("\n🧑 Tu: ").strip()
+            user_input = input("\n Tu: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n\n👋 Alla prossima!")
+            print("\n\n Alla prossima!")
             break
 
         if not user_input:
@@ -121,37 +114,37 @@ def run_repl(agent: RAGAgent) -> None:
             command = user_input.lower()
 
             if command in ("/quit", "/exit"):
-                print("\n👋 Alla prossima!")
+                print("\n Alla prossima!")
                 break
             elif command == "/reset":
                 agent.reset_memory()
-                print("🔄 Memoria resettata. Nuova sessione avviata.")
+                print(" Memoria resettata. Nuova sessione avviata.")
                 continue
             elif command == "/memory":
                 summary = agent.memory.get_history_summary()
-                print(f"\n📜 Storico conversazione:\n{summary}")
+                print(f"\n Storico conversazione:\n{summary}")
                 continue
             elif command == "/traces":
                 traces = agent.get_all_traces()
                 if not traces:
-                    print("📭 Nessuna trace disponibile.")
+                    print(" Nessuna trace disponibile.")
                 else:
                     filename = "traces_export.json"
                     with open(filename, "w", encoding="utf-8") as f:
                         json.dump(traces, f, indent=2, ensure_ascii=False)
-                    print(f"💾 {len(traces)} trace esportate in '{filename}'")
+                    print(f" {len(traces)} trace esportate in '{filename}'")
                 continue
             else:
-                print(f"⚠️  Comando sconosciuto: {command}")
+                print(f"  Comando sconosciuto: {command}")
                 print("   Comandi disponibili: /reset, /memory, /traces, /quit")
                 continue
 
         result = agent.chat(user_input)
 
         if result.get("blocked"):
-            print(f"\n🚫 [{result['block_reason']}] {result['response']}")
+            print(f"\n [{result['block_reason']}] {result['response']}")
         else:
-            print(f"\n🤖 Agente (turno #{result['turn']}):\n{result['response']}")
+            print(f"\n Agente (turno #{result['turn']}):\n{result['response']}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -177,7 +170,7 @@ def main() -> None:
     settings = load_settings()
 
     logger.info("=" * 60)
-    logger.info("🚀 AVVIO AGENTE RAG DIEM (v4)")
+    logger.info(" AVVIO AGENTE RAG DIEM (v4)")
     logger.info("=" * 60)
 
     engine = build_retrieval_engine(settings)

@@ -1,36 +1,3 @@
-"""
-agent/tools/__init__.py — Tool con schema Pydantic rigoroso per Qwen2.5 7B/14B.
-
-REFACTORING v3.4 — Fallback search_all INTERNO a _search_collection:
-
-  CAMBIAMENTO CHIAVE:
-    Quando un tool specifico (persone/offerta_formativa/dipartimento)
-    non trova risultati, _search_collection() ora esegue AUTOMATICAMENTE
-    una ricerca trasversale via retrieve_from_all() PRIMA di restituire
-    il risultato al modello. Questo impedisce al modello di invocare
-    inutilmente gli altri tool specifici uno dopo l'altro.
-
-  FLUSSO PRECEDENTE (v3.3):
-    search_persone → 0 docs → fallback signal al modello
-    → modello chiama search_offerta_formativa → 0 docs → fallback signal
-    → modello chiama search_dipartimento → 0 docs → fallback signal
-    → modello risponde "non trovato"
-    → agent.py intercetta → reinvoca con search_all
-    TOTALE: 4 ricerche + 1 reinvocazione agente (~4-5 minuti)
-
-  FLUSSO NUOVO (v3.4):
-    search_persone → 0 docs → FALLBACK INTERNO retrieve_from_all()
-    → se trova risultati: restituisce quelli al modello → FINE
-    → se non trova: restituisce messaggio definitivo → FINE
-    TOTALE: 1 ricerca + 1 fallback interno (~1-2 minuti)
-
-  INVARIATI:
-    - Pydantic schemas, validazione sotto_area, inferenza automatica
-    - Formato output documenti
-    - Metadati per logging
-    - search_all come tool esplicito (invariato, usabile dal modello)
-"""
-
 from __future__ import annotations
 import logging
 from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
@@ -45,10 +12,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _retrieval_engine: "RetrievalEngine | None" = None
 
-# Chat history globale — mantenuto per retrocompatibilità
 _chat_history: list = []
 
-# Metadati dell'ultima ricerca per il sistema di logging
 _last_search_meta: Dict[str, Any] = {
     "rewritten_query": "",
     "multi_queries": [],
@@ -82,7 +47,6 @@ def get_last_search_meta() -> Dict[str, Any]:
     return _last_search_meta.copy()
 
 
-# ── Valori ammessi per sotto_area ──
 _VALID_SOTTO_AREA_PERSONE = frozenset({
     "profilo", "didattica", "ricerca", "internazionale", "risorse"
 })
@@ -98,15 +62,10 @@ _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
     "alternanza", "eccellenza", "monitoraggio", "personale", "generale",
 })
 
-# Contatore errori per tool (anti-loop)
 _tool_error_counts: Dict[str, int] = {}
 _MAX_TOOL_RETRIES = 2
 
 
-# ── Messaggio DEFINITIVO di "non trovato" (v3.4) ──
-# Questo messaggio viene restituito SOLO dopo che anche il fallback
-# su search_all non ha trovato risultati. È formulato in modo DEFINITIVO
-# per impedire al modello di invocare altri tool.
 _DEFINITIVE_NOT_FOUND = (
     "La ricerca su TUTTE le collection (persone, offerta formativa, "
     "dipartimento) non ha prodotto risultati per: '{query}'. "
@@ -118,34 +77,17 @@ _DEFINITIVE_NOT_FOUND = (
 
 
 def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
-    """
-    Fallback interno: esegue una ricerca trasversale su tutte le collection.
-
-    Viene chiamato da _search_collection() quando il tool specifico non
-    trova risultati. Restituisce i documenti formattati se trovati,
-    oppure None se anche la ricerca trasversale fallisce.
-
-    NOTA: Aggiorna _last_search_meta per riflettere il fallback.
-
-    Args:
-        query: la query di ricerca originale
-        original_tool_name: il nome del tool che ha invocato il fallback
-            (per logging)
-
-    Returns:
-        Stringa formattata con i risultati, oppure None se nessun risultato.
-    """
     global _last_search_meta
 
     if _retrieval_engine is None:
         return None
 
     logger.info(
-        f"🔄 FALLBACK INTERNO search_all attivato da {original_tool_name} "
+        f" FALLBACK INTERNO search_all attivato da {original_tool_name} "
         f"per query: '{query[:80]}'"
     )
     print(
-        f"🔄 FALLBACK INTERNO: {original_tool_name} → 0 risultati. "
+        f" FALLBACK INTERNO: {original_tool_name} → 0 risultati. "
         f"Eseguo ricerca trasversale per: {query}"
     )
 
@@ -154,13 +96,12 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
 
         if not documents:
             logger.info(
-                f"   ⚠️ Anche il fallback search_all non ha trovato risultati "
+                f"    Anche il fallback search_all non ha trovato risultati "
                 f"per: '{query[:80]}'"
             )
-            print(f"   ⚠️ Fallback search_all: nessun risultato per: {query}")
+            print(f"    Fallback search_all: nessun risultato per: {query}")
             return None
 
-        # Aggiorna i metadati per il logging — riflette il fallback
         top_links = []
         for doc in documents[:5]:
             link = doc.metadata.get("url_originale",
@@ -178,11 +119,11 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
         }
 
         logger.info(
-            f"   ✅ Fallback search_all ha trovato {len(documents)} documenti "
+            f"    Fallback search_all ha trovato {len(documents)} documenti "
             f"per: '{query[:80]}'"
         )
         print(
-            f"   ✅ Fallback search_all: {len(documents)} documenti trovati "
+            f"    Fallback search_all: {len(documents)} documenti trovati "
             f"per: {query}"
         )
 
@@ -199,18 +140,6 @@ def _search_collection(
     tool_name: str,
     metadata_filter: Optional[dict] = None,
 ) -> str:
-    """
-    Helper condiviso per la ricerca in una singola collection.
-
-    v3.4: FALLBACK AUTOMATICO SU search_all
-      Quando la ricerca nella collection specifica non trova risultati,
-      questa funzione esegue AUTOMATICAMENTE una ricerca trasversale
-      su tutte le collection (via _fallback_search_all). Solo se anche
-      quella fallisce, restituisce il messaggio definitivo di "non trovato".
-
-      Questo impedisce al modello di invocare uno dopo l'altro tutti i
-      tool specifici prima di arrendersi.
-    """
     global _last_search_meta
 
     if _retrieval_engine is None:
@@ -233,7 +162,6 @@ def _search_collection(
             documents, rewritten_query = result
             multi_queries = [rewritten_query]
 
-        # Aggiorna i metadati per il logging
         top_links = []
         for doc in documents[:5]:
             link = doc.metadata.get("url_originale",
@@ -252,32 +180,17 @@ def _search_collection(
 
         _tool_error_counts.pop(tool_key, None)
 
-        # ==============================================================
-        # v3.4: INTERCETTAZIONE "NESSUN RISULTATO" → FALLBACK search_all
-        #
-        # Se la collection specifica non ha trovato documenti, NON
-        # restituiamo il vecchio segnale di fallback (che il modello
-        # interpreterebbe come "prova un altro tool"). Invece, eseguiamo
-        # immediatamente una ricerca trasversale su tutte le collection.
-        #
-        # Solo se anche la ricerca trasversale fallisce, restituiamo un
-        # messaggio DEFINITIVO che blocca il modello dal tentare altri tool.
-        # ==============================================================
         if not documents:
             logger.info(
                 f"0 risultati da {tool_name} (collection={collection.value}). "
                 f"Attivo fallback interno su search_all."
             )
 
-            # Tentativo di fallback trasversale
             fallback_result = _fallback_search_all(query, tool_name)
 
             if fallback_result:
-                # Il fallback ha trovato risultati: restituiscili al modello
                 return fallback_result
             else:
-                # Anche il fallback è vuoto: messaggio DEFINITIVO
-                # (formulato per impedire al modello di invocare altri tool)
                 return _DEFINITIVE_NOT_FOUND.format(query=query)
 
         return _format_results(documents)
@@ -304,7 +217,6 @@ def _search_collection(
 
 
 def _format_results(documents) -> str:
-    """Formatta i documenti recuperati per l'output del tool."""
     context_parts = []
     for i, doc in enumerate(documents, 1):
         source = doc.metadata.get("url_originale",
@@ -336,12 +248,8 @@ def _format_results(documents) -> str:
     return "\n\n---\n\n".join(context_parts)
 
 
-# ============================================================
-# PYDANTIC SCHEMAS — args_schema per ogni tool
-# ============================================================
 
 class SearchPersoneInput(BaseModel):
-    """Schema input per il tool search_persone."""
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -376,7 +284,6 @@ class SearchPersoneInput(BaseModel):
 
 
 class SearchOffertaFormativaInput(BaseModel):
-    """Schema input per il tool search_offerta_formativa."""
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -412,7 +319,6 @@ class SearchOffertaFormativaInput(BaseModel):
 
 
 class SearchDipartimentoInput(BaseModel):
-    """Schema input per il tool search_dipartimento."""
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -451,7 +357,6 @@ class SearchDipartimentoInput(BaseModel):
 
 
 class SearchAllInput(BaseModel):
-    """Schema input per il tool search_all."""
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -460,9 +365,6 @@ class SearchAllInput(BaseModel):
     )
 
 
-# ============================================================
-# TOOL 1: PERSONE — con Pydantic schema
-# ============================================================
 
 @tool("search_persone", args_schema=SearchPersoneInput)
 def search_persone(
@@ -481,14 +383,12 @@ USA QUESTO TOOL per:
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
-    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
         logger.warning(f"sotto_area non valido per PERSONE: '{sotto_area}'. Ignoro.")
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    # Costruzione metadata_filter
     metadata_filter = {}
     if sotto_area:
         metadata_filter["sotto_area"] = sotto_area
@@ -505,10 +405,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
         "search_persone", metadata_filter
     )
 
-
-# ============================================================
-# TOOL 2: OFFERTA FORMATIVA — con Pydantic schema + sotto_area
-# ============================================================
 
 @tool("search_offerta_formativa", args_schema=SearchOffertaFormativaInput)
 def search_offerta_formativa(
@@ -529,14 +425,12 @@ NON contiene info su chi insegna o syllabus di insegnamenti specifici → usa se
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
-    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
         logger.warning(f"sotto_area non valido per OFFERTA_FORMATIVA: '{sotto_area}'. Ignoro.")
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    # Inferenza automatica sotto_area dalla query (se non specificato dal modello)
     if sotto_area is None:
         query_lower = query.lower()
         if any(kw in query_lower for kw in [
@@ -559,7 +453,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
         ]):
             sotto_area = "aule"
 
-    # Costruzione metadata_filter
     metadata_filter = {}
     if sotto_area:
         metadata_filter["sotto_area"] = sotto_area
@@ -576,10 +469,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
         "search_offerta_formativa", metadata_filter
     )
 
-
-# ============================================================
-# TOOL 3: DIPARTIMENTO — con Pydantic schema
-# ============================================================
 
 @tool("search_dipartimento", args_schema=SearchDipartimentoInput)
 def search_dipartimento(
@@ -600,7 +489,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
 
-    # Inferenza automatica sotto_area dalla query (se non specificato dal modello)
     if sotto_area is None:
         query_lower = query.lower()
         if any(kw in query_lower for kw in [
@@ -629,7 +517,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
         ]):
             sotto_area = "internazionale"
 
-    # Costruzione metadata_filter
     metadata_filter = {}
     if sotto_area:
         metadata_filter["sotto_area"] = sotto_area
@@ -647,9 +534,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
     )
 
 
-# ============================================================
-# TOOL 4: Ricerca Trasversale — con Pydantic schema
-# ============================================================
 
 @tool("search_all", args_schema=SearchAllInput)
 def search_all(query: str) -> str:
@@ -687,9 +571,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`."""
         return f"Errore durante la ricerca: {str(e)}"
 
 
-# ============================================================
-# REGISTRY
-# ============================================================
 
 def get_all_tools() -> list:
     """Restituisce tutti i tool disponibili per l'agente."""
