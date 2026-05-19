@@ -146,6 +146,33 @@ class SmartConversationMemory:
 
         logger.debug("Memoria aggiornata: %d turni", len(self._turns))
 
+    def rollback_last_turn(self) -> None:
+        """Annulla l'ultimo turno pendente o completato.
+
+        Se esiste un messaggio utente pendente (add_user_message chiamato
+        ma add_assistant_message non ancora), decrementa il contatore e
+        resetta il messaggio pendente. Questo viene utilizzato quando un
+        guardrail blocca la risposta e l'interazione non deve essere
+        salvata in memoria.
+        """
+        if self._pending_user_message:
+            self._pending_user_message = ""
+            self._turn_counter = max(0, self._turn_counter - 1)
+            logger.info(
+                "Rollback turno pendente. Contatore turni: %d",
+                self._turn_counter,
+            )
+            return
+
+        if self._turns:
+            removed_turn = self._turns.pop()
+            self._turn_counter = max(0, self._turn_counter - 1)
+            logger.info(
+                "Rollback turno completato #%d. Contatore turni: %d",
+                removed_turn.turn_number,
+                self._turn_counter,
+            )
+
     def _filter_turns_by_similarity(self, query: str) -> List[ConversationTurn]:
         """Filtra i turni in memoria in base alla similarita con la query corrente.
 

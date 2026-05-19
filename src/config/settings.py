@@ -159,14 +159,15 @@ class RerankerConfig:
 class LLMConfig:
     """Configurazione del modello linguistico (provider, credenziali, parametri)."""
 
-    provider: str = "huggingface"
-    model_name: str = "Qwen/Qwen2.5-7B-Instruct"
+    provider: str = "groq"
+    model_name: str = "llama-3.3-70b-versatile"
     temperature: float = 0.1
     max_tokens: int = 1024
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
     ollama_base_url: str = "http://localhost:11434"
     groq_api_key: Optional[str] = field(default=None)
+    groq_chat_api_key: Optional[str] = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -237,12 +238,13 @@ def load_settings() -> AppSettings:
             thread_max_workers=int(os.getenv("CRAWLER_MAX_WORKERS", "16")),
         ),
         llm=LLMConfig(
-            provider=os.getenv("LLM_PROVIDER", "ollama"),
-            model_name=os.getenv("LLM_MODEL", "qwen2.5"),
+            provider=os.getenv("LLM_PROVIDER", "groq"),
+            model_name=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             groq_api_key=os.getenv("GROQ_API_KEY"),
+            groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
         ),
         embedding=EmbeddingConfig(
             model_name=os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),

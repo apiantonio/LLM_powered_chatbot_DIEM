@@ -297,10 +297,9 @@ class SearchPersoneInput(BaseModel):
 
     query: str = Field(
         description=(
-            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
-            "NON ridurre a keyword, NON parafrasare. "
-            "Esempio corretto: 'Chi è il Professore Rossi?' "
-            "Esempio VIETATO: 'Rossi'"
+            "The user's complete question, passed verbatim without any "
+            "simplification or keyword extraction. "
+            "Example: 'Chi e' il Professore Rossi e quali corsi insegna?'"
         )
     )
     sotto_area: Optional[Literal[
@@ -308,22 +307,22 @@ class SearchPersoneInput(BaseModel):
     ]] = Field(
         default=None,
         description=(
-            "Filtro sulla sezione della pagina docente. Valori ammessi: "
-            "'profilo' (bio, CV, contatti, email, ricevimento), "
-            "'didattica' (corsi insegnati, syllabus, programmi), "
-            "'ricerca' (pubblicazioni, progetti, laboratori), "
-            "'internazionale' (attività internazionali, Erasmus docente), "
-            "'risorse' (materiale didattico). "
-            "Lascia vuoto se non sei sicuro."
+            "Optional filter on the faculty page section. "
+            "Use 'profilo' for bio, CV, contacts, email, office hours. "
+            "Use 'didattica' for courses taught, syllabus, course programs. "
+            "Use 'ricerca' for publications, research projects, labs. "
+            "Use 'internazionale' for international activities, Erasmus. "
+            "Use 'risorse' for teaching materials. "
+            "Leave empty when uncertain."
         )
     )
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno di riferimento come numero intero (es. 2024, 2025). "
-            "Usa il contesto temporale fornito nel messaggio per risolvere "
-            "espressioni come 'quest'anno' o 'anno scorso' in un numero. "
-            "Lascia vuoto se l'utente non specifica alcun periodo temporale."
+            "Reference year as integer (e.g. 2024, 2025). "
+            "Resolve relative expressions like 'this year' or 'last year' "
+            "using the temporal context provided in the conversation. "
+            "Leave empty if the user does not mention any time reference."
         )
     )
 
@@ -333,8 +332,8 @@ class SearchOffertaFormativaInput(BaseModel):
 
     query: str = Field(
         description=(
-            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
-            "NON ridurre a keyword, NON parafrasare."
+            "The user's complete question, passed verbatim without any "
+            "simplification or keyword extraction."
         )
     )
     sotto_area: Optional[Literal[
@@ -343,24 +342,24 @@ class SearchOffertaFormativaInput(BaseModel):
     ]] = Field(
         default=None,
         description=(
-            "Filtro sulla sezione dell'offerta formativa. Valori ammessi: "
-            "'informazioni_corso' (info generali sul corso di laurea, presentazione, obiettivi), "
-            "'didattica' (piano di studi, insegnamenti del corso, CFU), "
-            "'aule' (aule e strutture didattiche del corso), "
-            "'terza_missione' (attività di terza missione del corso), "
-            "'statistiche' (statistiche sul corso: iscritti, laureati, occupazione), "
-            "'regolamenti' (regolamento didattico del CdS, norme, propedeuticità), "
-            "'piani_di_studio' (piano di studi ufficiale, curriculum, percorsi), "
-            "'documentazione_corso' (altri documenti PDF del corso). "
-            "Lascia vuoto se non sei sicuro."
+            "Optional filter on the degree program section. "
+            "Use 'informazioni_corso' for general course info, objectives. "
+            "Use 'didattica' for study plan, course list, CFU. "
+            "Use 'aule' for classrooms and teaching facilities. "
+            "Use 'terza_missione' for third mission activities. "
+            "Use 'statistiche' for enrollment, employment, graduate stats. "
+            "Use 'regolamenti' for academic regulations, prerequisites. "
+            "Use 'piani_di_studio' for official study plans, curricula. "
+            "Use 'documentazione_corso' for other course PDF documents. "
+            "Leave empty when uncertain."
         )
     )
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno di riferimento come numero intero (es. 2024, 2025). "
-            "Usa il contesto temporale fornito nel messaggio per risolvere "
-            "espressioni relative. Lascia vuoto se non specificato."
+            "Reference year as integer (e.g. 2024, 2025). "
+            "Resolve relative time expressions using the temporal context. "
+            "Leave empty if no time reference is specified."
         )
     )
 
@@ -370,8 +369,8 @@ class SearchDipartimentoInput(BaseModel):
 
     query: str = Field(
         description=(
-            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
-            "NON ridurre a keyword, NON parafrasare."
+            "The user's complete question, passed verbatim without any "
+            "simplification or keyword extraction."
         )
     )
     sotto_area: Optional[Literal[
@@ -381,25 +380,25 @@ class SearchDipartimentoInput(BaseModel):
     ]] = Field(
         default=None,
         description=(
-            "Filtro sulla sezione del dipartimento. Valori ammessi: "
-            "'aule' (aule, strutture didattiche, capienza), "
-            "'laboratori' (laboratori di ricerca), "
-            "'bandi' (bandi, borse, concorsi, dottorato, avvisi), "
-            "'ricerca_dipartimentale' (ricerca del dipartimento), "
-            "'terza_missione' (terza missione, impatto sociale), "
-            "'internazionale' (Erasmus, mobilita, accordi internazionali), "
-            "'organizzazione' (organigramma, commissioni, personale), "
-            "'generale' (informazioni generiche dipartimento). "
-            "ATTENZIONE: 'strutture' NON esiste. Usa 'aule' o 'laboratori'. "
-            "Lascia vuoto se non sei sicuro."
+            "Optional filter on the department section. "
+            "Use 'aule' for classrooms, lecture halls, capacity. "
+            "Use 'laboratori' for research laboratories. "
+            "Use 'bandi' for calls, scholarships, competitions, PhD, notices. "
+            "Use 'ricerca_dipartimentale' for departmental research. "
+            "Use 'terza_missione' for third mission, social impact. "
+            "Use 'internazionale' for Erasmus, mobility, international agreements. "
+            "Use 'organizzazione' for org chart, committees, staff. "
+            "Use 'generale' for general department info, contacts, directions. "
+            "Note: 'strutture' is not a valid value; use 'aule' or 'laboratori'. "
+            "Leave empty when uncertain."
         )
     )
     anno: Optional[int] = Field(
         default=None,
         description=(
-            "Anno di riferimento come numero intero (es. 2024, 2025). "
-            "Utile per filtrare bandi per anno. "
-            "Lascia vuoto se non specificato."
+            "Reference year as integer (e.g. 2024, 2025). "
+            "Useful for filtering calls by year. "
+            "Leave empty if no time reference is specified."
         )
     )
 
@@ -409,8 +408,8 @@ class SearchAllInput(BaseModel):
 
     query: str = Field(
         description=(
-            "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
-            "NON ridurre a keyword, NON parafrasare."
+            "The user's complete question, passed verbatim without any "
+            "simplification or keyword extraction."
         )
     )
 
@@ -421,16 +420,18 @@ def search_persone(
     sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
-    """Cerca informazioni su DOCENTI del DIEM: profilo, email, ricevimento, corsi insegnati, syllabus/insegnamenti, ricerca, attività internazionali.
+    """Search faculty and staff information in the DIEM department knowledge base.
 
-USA QUESTO TOOL per:
-- "Chi è il prof. X?" → profilo docente
-- "Cosa insegna il prof. X?" → corsi del docente
-- "Chi insegna Machine Learning?"
-- "Syllabus/programma di Algoritmi" → didattica dell'insegnamento (sotto_area="didattica")
-- "Email/ricevimento del prof. X"  → contatti del docente (sotto_area="profilo")
+Covers: professor profiles, contact details (email, office hours), courses taught by a professor,
+course syllabus and programs, research activities, publications, and international work.
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
+Use this tool when the user asks about:
+- A specific professor's profile, email, or office hours -> sotto_area="profilo"
+- What courses a professor teaches, or who teaches a given course
+- The syllabus or program of a specific course -> sotto_area="didattica"
+- A professor's research, publications, or projects -> sotto_area="ricerca"
+
+Pass the user's full question in the query parameter without abbreviation."""
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
         logger.warning("sotto_area non valido per PERSONE: '%s'. Ignoro.", sotto_area)
         sotto_area = None
@@ -459,18 +460,22 @@ def search_offerta_formativa(
     sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
-    """Cerca informazioni su CORSI DI LAUREA del DIEM: piani di studio, regolamenti, requisiti ammissione, CFU, OFA, tesi, statistiche.
+    """Search degree program and academic offering information in the DIEM knowledge base.
 
-USA QUESTO TOOL per:
-- "Piano di studi Informatica triennale" → sotto_area="piani_di_studio"
-- "Regolamento Ingegneria Informatica magistrale" → sotto_area="regolamenti"
-- "Quali esami ci sono al primo anno?" → sotto_area="didattica"
-- "Statistiche occupazionali del corso" → sotto_area="statistiche"
-- "Informazioni sul corso di Informatica" → sotto_area="informazioni_corso"
+Covers: study plans, curricula, academic regulations, admission requirements, CFU, OFA,
+thesis rules, graduation procedures, enrollment and employment statistics.
 
-NON contiene info su chi insegna o syllabus di insegnamenti specifici → usa search_persone.
+Use this tool when the user asks about:
+- A degree program's study plan or curriculum -> sotto_area="piani_di_studio"
+- Academic regulations or prerequisites -> sotto_area="regolamenti"
+- Courses and exams within a degree program -> sotto_area="didattica"
+- General degree program information -> sotto_area="informazioni_corso"
+- Statistics on graduates or employment -> sotto_area="statistiche"
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
+This tool does NOT contain information about who teaches a course or course syllabus details.
+For those queries, use search_persone instead.
+
+Pass the user's full question in the query parameter without abbreviation."""
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
         logger.warning("sotto_area non valido per OFFERTA_FORMATIVA: '%s'. Ignoro.", sotto_area)
         sotto_area = None
@@ -521,11 +526,24 @@ def search_dipartimento(
     sotto_area: Optional[str] = None,
     anno: Optional[int] = None,
 ) -> str:
-    """Cerca informazioni istituzionali del DIEM: bandi, borse, dottorato, aule, laboratori, sedi, Erasmus, ricerca dipartimentale, terza missione.
+    """Search departmental and institutional information in the DIEM knowledge base.
 
-ATTENZIONE: sotto_area="strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
+Covers: calls for applications, scholarships, PhD programs, classrooms, research laboratories,
+Erasmus and international mobility, departmental research, third mission, organization,
+general department info, contacts, and directions.
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
+Use this tool when the user asks about:
+- Calls, scholarships, PhD notices -> sotto_area="bandi"
+- Classrooms or lecture hall capacity -> sotto_area="aule"
+- Research laboratories -> sotto_area="laboratori"
+- Erasmus or international mobility -> sotto_area="internazionale"
+- Department contacts, address, directions -> sotto_area="generale"
+- Departmental research -> sotto_area="ricerca_dipartimentale"
+- Organization, committees -> sotto_area="organizzazione"
+
+Note: sotto_area="strutture" does not exist. Use "aule" or "laboratori" instead.
+
+Pass the user's full question in the query parameter without abbreviation."""
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
         logger.warning("sotto_area non valido per DIPARTIMENTO: '%s'. Ignoro.", sotto_area)
         sotto_area = None
@@ -574,9 +592,13 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
 @tool("search_all", args_schema=SearchAllInput)
 def search_all(query: str) -> str:
-    """Ricerca trasversale su TUTTA la knowledge base del DIEM. Usa SOLO quando gli altri tool falliscono o la domanda è ambigua/cross-dominio.
+    """Cross-collection search across the entire DIEM knowledge base.
 
-DIRETTIVA: Passa la query INTEGRA nel campo `query`."""
+Use this tool only as a fallback when the specific search tools (search_persone,
+search_offerta_formativa, search_dipartimento) returned no results, or when the
+query is ambiguous and does not clearly belong to a single collection.
+
+Never use this as a first choice. Pass the user's full question in the query parameter."""
     global _last_search_meta
 
     if _retrieval_engine is None:

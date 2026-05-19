@@ -64,6 +64,7 @@ class RAGAgent:
     I guardrails sono integrati direttamente in chat():
     check_input() sulla query originale prima del rewriting,
     check_output() sulla risposta finale dopo l'agente.
+    Le interazioni bloccate dai guardrails non vengono salvate in memoria.
     """
 
     def __init__(
@@ -97,8 +98,8 @@ class RAGAgent:
         """Punto di ingresso principale per l'interazione con l'agente.
 
         Flusso lineare con guardrails:
-        1. Memory: costruzione messaggi con storico
-        2. Input guardrail check (query originale, prima del rewriting)
+        1. Input guardrail check (query originale, prima del rewriting)
+        2. Memory: costruzione messaggi con storico
         3. Query rewriting: risoluzione coreferenze
         4. Cache: corto circuito se match esatto
         5. Memory: salvataggio query
@@ -106,7 +107,10 @@ class RAGAgent:
         7. Chat history injection per tool
         8. Agent: singola invocazione
         9. Output guardrail check (risposta finale)
-        10. Logging e memory update
+        10. Logging e memory update (solo se non bloccato)
+
+        Le interazioni bloccate dai guardrails (input o output) non
+        vengono salvate in memoria per evitare inquinamento.
 
         Args:
             user_query: Domanda dell'utente.
@@ -116,14 +120,10 @@ class RAGAgent:
         """
         logger.info("USER QUERY (pulita): %s", user_query)
 
-        messages = self._memory.get_messages_for_agent(user_query)
-
         if self._guardrails_checker:
             input_allowed, block_message = self._guardrails_checker.check_input(user_query)
             if not input_allowed:
                 logger.warning("INPUT BLOCCATO dal guardrail: '%s...'", user_query[:80])
-                turn_number = self._memory.add_user_message(user_query)
-                self._memory.add_assistant_message(block_message)
 
                 return {
                     "response": block_message,
@@ -138,8 +138,10 @@ class RAGAgent:
                         "metadata_filter": None,
                         "top_links": [],
                     },
-                    "turn": turn_number,
+                    "turn": self._memory.turn_count,
                 }
+
+        messages = self._memory.get_messages_for_agent(user_query)
 
         rewritten_query = user_query
         if self._query_optimizer and not _is_meta_query(user_query):
@@ -218,13 +220,24 @@ class RAGAgent:
                     "Riprova tra qualche istante."
                 )
 
-        blocked_by_output = False
         if self._guardrails_checker and response_text:
             output_allowed, block_message = self._guardrails_checker.check_output(response_text)
             if not output_allowed:
                 logger.warning("OUTPUT BLOCCATO dal guardrail al turno #%d", turn_number)
-                response_text = block_message
-                blocked_by_output = True
+
+                self._memory.rollback_last_turn()
+
+                obs_handler.set_final_output(block_message)
+                trace_dict = obs_handler.get_trace_dict()
+                self._traces.append(trace_dict)
+
+                return {
+                    "response": block_message,
+                    "blocked": True,
+                    "block_reason": "output_guardrail",
+                    "trace": trace_dict,
+                    "turn": turn_number,
+                }
 
         obs_handler.set_final_output(response_text)
         self._memory.add_assistant_message(response_text)
@@ -245,8 +258,8 @@ class RAGAgent:
 
         return {
             "response": response_text,
-            "blocked": blocked_by_output,
-            "block_reason": "output_guardrail" if blocked_by_output else None,
+            "blocked": False,
+            "block_reason": None,
             "trace": trace_dict,
             "turn": turn_number,
         }
