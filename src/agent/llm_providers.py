@@ -70,7 +70,7 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
 
     Per il provider Groq, viene utilizzata prioritariamente la chiave API
     dedicata al chat (groq_chat_api_key). Se non disponibile, si ricade
-    sulla chiave generica (groq_api_key). Se nessuna chiave Groq e'
+    sulla chiave generica (groq_rewriter_api_key). Se nessuna chiave Groq e'
     configurata, il sistema ricade automaticamente su Ollama con Qwen.
 
     Args:
@@ -122,10 +122,10 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
     if provider == "groq":
         from langchain_groq import ChatGroq
 
-        api_key = config.groq_chat_api_key or config.groq_api_key
+        api_key = config.groq_chat_api_key or config.groq_rewriter_api_key
         if not api_key:
             logger.warning(
-                "Nessuna API key Groq configurata (GROQ_CHAT_API_KEY / GROQ_API_KEY). "
+                "Nessuna API key Groq configurata (GROQ_CHAT_API_KEY / GROQ_REWRITER_API_KEY). "
                 "Attivazione fallback su Ollama/%s.",
                 _FALLBACK_MODEL,
             )
@@ -141,7 +141,7 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
             logger.info(
                 "ChatGroq istanziato: %s (api_key: %s)",
                 config.model_name,
-                "GROQ_CHAT_API_KEY" if config.groq_chat_api_key else "GROQ_API_KEY",
+                "GROQ_CHAT_API_KEY" if config.groq_chat_api_key else "GROQ_REWRITER_API_KEY",
             )
             return chat_model
         except Exception as e:
@@ -227,10 +227,10 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
         if main_provider == "groq":
             from langchain_groq import ChatGroq
 
-            api_key = fallback_config.groq_api_key
+            api_key = fallback_config.groq_rewriter_api_key
             if not api_key:
                 logger.warning(
-                    "GROQ_API_KEY mancante per rewriter. "
+                    "GROQ_REWRITER_API_KEY mancante per rewriter. "
                     "Attivazione fallback su Ollama/%s.",
                     _FALLBACK_MODEL,
                 )
@@ -277,11 +277,11 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
         from langchain_groq import ChatGroq
 
         model = os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile").strip()
-        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        api_key = os.getenv("GROQ_REWRITER_API_KEY", "").strip()
 
         if not api_key:
             logger.warning(
-                "GROQ_API_KEY mancante per rewriter esplicito. "
+                "GROQ_REWRITER_API_KEY mancante per rewriter esplicito. "
                 "Attivazione fallback su Ollama/%s.",
                 _FALLBACK_MODEL,
             )
