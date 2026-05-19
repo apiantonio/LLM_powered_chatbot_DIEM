@@ -166,7 +166,7 @@ class LLMConfig:
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
     ollama_base_url: str = "http://localhost:11434"
-    groq_api_key: Optional[str] = field(default=None)
+    groq_rewriter_api_key: Optional[str] = field(default=None)
     groq_chat_api_key: Optional[str] = field(default=None)
 
 
@@ -243,7 +243,7 @@ def load_settings() -> AppSettings:
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            groq_api_key=os.getenv("GROQ_API_KEY"),
+            groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
             groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
         ),
         embedding=EmbeddingConfig(
