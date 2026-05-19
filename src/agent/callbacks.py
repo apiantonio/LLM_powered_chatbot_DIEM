@@ -1,3 +1,10 @@
+"""Callback di osservabilita e logging delle interazioni per l'agente RAG DIEM.
+
+Fornisce handler per il tracciamento della pipeline RAG (tool invocati,
+documenti recuperati, tempi di esecuzione) e per il salvataggio su file
+dei log delle interazioni.
+"""
+
 import logging
 import json
 import os
@@ -11,7 +18,10 @@ from langchain_core.callbacks import BaseCallbackHandler
 
 logger = logging.getLogger(__name__)
 
+
 class PipelinePhase(Enum):
+    """Fasi della pipeline RAG tracciate dall'handler di osservabilita."""
+
     USER_INPUT = auto()
     QUERY_OPTIMIZATION = auto()
     TOOL_INVOCATION = auto()
@@ -34,6 +44,8 @@ _TOOL_COLLECTION_MAP = {
 
 @dataclass
 class ToolInvocation:
+    """Dati relativi a una singola invocazione di tool."""
+
     tool_name: str
     tool_input: str
     tool_params: Dict[str, Any] = field(default_factory=dict)
@@ -46,6 +58,8 @@ class ToolInvocation:
 
 @dataclass
 class PipelineTrace:
+    """Traccia completa di una singola esecuzione della pipeline RAG."""
+
     user_input: str = ""
     query_rewritten: str = ""
     tools_invoked: List[ToolInvocation] = field(default_factory=list)
@@ -58,8 +72,13 @@ class PipelineTrace:
     conversation_turn: int = 0
 
 
-
 class RAGObservabilityHandler(BaseCallbackHandler):
+    """Handler LangChain per il tracciamento della pipeline RAG.
+
+    Cattura invocazioni LLM, tool, documenti recuperati e tempi
+    di esecuzione per ogni turno di conversazione.
+    """
+
     name = "RAGObservabilityHandler"
 
     def __init__(
@@ -68,6 +87,13 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         max_preview_chars: int = 200,
         conversation_turn: int = 1,
     ):
+        """Inizializza l'handler di osservabilita.
+
+        Args:
+            verbose: Se True, stampa informazioni di debug su stdout.
+            max_preview_chars: Lunghezza massima delle anteprime testuali.
+            conversation_turn: Numero del turno di conversazione corrente.
+        """
         super().__init__()
         self._verbose = verbose
         self._max_preview = max_preview_chars
@@ -83,6 +109,13 @@ class RAGObservabilityHandler(BaseCallbackHandler):
     def on_chat_model_start(
         self, serialized: Dict[str, Any], messages: List, **kwargs: Any
     ) -> None:
+        """Callback invocato all'avvio di una chiamata al chat model.
+
+        Args:
+            serialized: Dati serializzati del modello.
+            messages: Lista di messaggi inviati al modello.
+            **kwargs: Argomenti aggiuntivi.
+        """
         self._llm_call_index += 1
         self._trace.llm_calls_count = self._llm_call_index
 
@@ -114,14 +147,21 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             if self._verbose and self._trace.user_input:
                 self._header_printed = True
                 turn = self._trace.conversation_turn
-                print(f"\n{'═' * 70}")
-                print(f"  TURNO #{turn}")
-                print(f"{'═' * 70}")
-                print(f"  INPUT │ \"{self._trace.user_input}\"")
+                logger.info("=" * 70)
+                logger.info("  TURNO #%d", turn)
+                logger.info("=" * 70)
+                logger.info("  INPUT | \"%s\"", self._trace.user_input)
 
     def on_tool_start(
         self, serialized: Dict[str, Any], input_str: str, **kwargs: Any
     ) -> None:
+        """Callback invocato all'avvio di un tool.
+
+        Args:
+            serialized: Dati serializzati del tool.
+            input_str: Stringa di input passata al tool.
+            **kwargs: Argomenti aggiuntivi.
+        """
         tool_name = serialized.get("name", "unknown_tool")
         self._tool_start_time = time.time()
         self._react_iteration += 1
@@ -129,7 +169,7 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         tool_params = self._extract_tool_input(input_str)
         clean_query = tool_params.get(
             "query",
-            str(next(iter(tool_params.values()), ""))
+            str(next(iter(tool_params.values()), "")),
         )
 
         collection_queried = _TOOL_COLLECTION_MAP.get(tool_name, "")
@@ -143,9 +183,15 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         )
 
         if self._verbose:
-            print(f"  TOOL  │ {tool_name} → {collection_queried}")
+            logger.info("  TOOL  | %s -> %s", tool_name, collection_queried)
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
+        """Callback invocato al termine di un tool.
+
+        Args:
+            output: Output prodotto dal tool.
+            **kwargs: Argomenti aggiuntivi.
+        """
         if self._current_tool is None:
             return
 
@@ -166,36 +212,57 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         if self._verbose:
             docs = self._current_tool.documents_retrieved
             if docs:
-                print(
-                    f"  DOCS  │ {len(docs)} documenti recuperati "
-                    f"({self._current_tool.duration_ms}ms)"
+                logger.info(
+                    "  DOCS  | %d documenti recuperati (%.1fms)",
+                    len(docs),
+                    self._current_tool.duration_ms,
                 )
             elif "Errore" in output_str:
-                print(f"  ERR   │ Errore tool ({self._current_tool.duration_ms}ms)")
+                logger.info("  ERR   | Errore tool (%.1fms)", self._current_tool.duration_ms)
             else:
-                print(f"  DOCS  │ Nessun documento trovato ({self._current_tool.duration_ms}ms)")
+                logger.info(
+                    "  DOCS  | Nessun documento trovato (%.1fms)",
+                    self._current_tool.duration_ms,
+                )
 
         self._trace.tools_invoked.append(self._current_tool)
         self._current_tool = None
 
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        """Callback invocato in caso di errore di un tool.
+
+        Args:
+            error: Eccezione sollevata dal tool.
+            **kwargs: Argomenti aggiuntivi.
+        """
         if self._current_tool:
             self._current_tool.tool_output = f"ERRORE: {error}"
             self._trace.tools_invoked.append(self._current_tool)
             self._current_tool = None
         if self._verbose:
-            print(f"  ERR   │ ❌ {error}")
+            logger.error("  ERR   | %s", error)
 
     def on_llm_start(
         self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any
     ) -> None:
-        pass
+        """Callback invocato all'avvio di una chiamata LLM non-chat.
+
+        Args:
+            serialized: Dati serializzati del modello.
+            prompts: Lista di prompt inviati al modello.
+            **kwargs: Argomenti aggiuntivi.
+        """
 
     def get_system_prompt(self) -> str:
-        """Restituisce il system prompt catturato."""
+        """Restituisce il system prompt catturato durante l'esecuzione."""
         return self._system_prompt
 
     def set_final_output(self, output: str) -> None:
+        """Registra la risposta finale e calcola la durata totale.
+
+        Args:
+            output: Testo della risposta finale dell'agente.
+        """
         self._trace.final_output = output
         self._trace.total_duration_ms = round(
             (time.time() - self._pipeline_start_time) * 1000, 1
@@ -207,20 +274,28 @@ class RAGObservabilityHandler(BaseCallbackHandler):
             duration = self._trace.total_duration_ms
             tools_count = len(self._trace.tools_invoked)
             preview = output[:200] + "..." if len(output) > 200 else output
-            print(f"  RESP  │ {preview}")
-            print(f"{'═' * 70}")
-            print(
-                f"  FINE #{turn}  │  "
-                f"{tools_count} tool  │  "
-                f"{llm_calls} LLM calls  │  "
-                f"{duration:.0f}ms"
+            logger.info("  RESP  | %s", preview)
+            logger.info("=" * 70)
+            logger.info(
+                "  FINE #%d  |  %d tool  |  %d LLM calls  |  %.0fms",
+                turn,
+                tools_count,
+                llm_calls,
+                duration,
             )
-            print(f"{'═' * 70}")
+            logger.info("=" * 70)
 
     def get_trace(self) -> PipelineTrace:
+        """Restituisce la traccia completa della pipeline."""
         return self._trace
 
     def get_trace_dict(self) -> Dict[str, Any]:
+        """Restituisce la traccia come dizionario serializzabile.
+
+        Returns:
+            Dizionario con tutti i dati della pipeline inclusi contesti
+            recuperati, URL sorgente e metriche di esecuzione.
+        """
         all_contexts = []
         all_sources = []
 
@@ -258,11 +333,18 @@ class RAGObservabilityHandler(BaseCallbackHandler):
         }
 
     def print_summary(self) -> None:
-        """Noop — output già stampato inline."""
-        pass
+        """Noop: l'output e' gia stampato inline durante l'esecuzione."""
 
     @staticmethod
     def _extract_tool_input(input_str: str) -> dict:
+        """Estrae i parametri di input di un tool da una stringa.
+
+        Args:
+            input_str: Stringa di input del tool (JSON o testo libero).
+
+        Returns:
+            Dizionario con i parametri estratti.
+        """
         if not input_str:
             return {"query": ""}
         try:
@@ -282,6 +364,14 @@ class RAGObservabilityHandler(BaseCallbackHandler):
 
     @staticmethod
     def _parse_retrieved_docs(tool_output: str) -> List[Dict[str, Any]]:
+        """Analizza l'output di un tool di ricerca ed estrae i documenti.
+
+        Args:
+            tool_output: Output testuale del tool di ricerca.
+
+        Returns:
+            Lista di dizionari con informazioni sui documenti recuperati.
+        """
         docs = []
         if not tool_output or "Errore" in tool_output or "Non ho trovato" in tool_output:
             return docs
@@ -334,7 +424,14 @@ class RAGObservabilityHandler(BaseCallbackHandler):
 
 
 class InteractionLogHandler:
+    """Handler per il salvataggio su file dei log delle interazioni."""
+
     def __init__(self, output_dir: str = "logs/interactions"):
+        """Inizializza l'handler con la directory di output.
+
+        Args:
+            output_dir: Percorso della directory per i file di log.
+        """
         self._output_dir = output_dir
         os.makedirs(self._output_dir, exist_ok=True)
 
@@ -351,6 +448,23 @@ class InteractionLogHandler:
         top_links: List[str],
         final_response: str,
     ) -> str:
+        """Salva i dati di una interazione completa su file.
+
+        Args:
+            turn_number: Numero del turno.
+            system_prompt: System prompt utilizzato.
+            history: Storico conversazione.
+            user_query: Query originale dell'utente.
+            rewritten_query: Query riscritta.
+            multi_queries: Query multiple generate.
+            tool_name: Nome del tool invocato.
+            metadata_info: Informazioni sui metadati utilizzati.
+            top_links: Link principali recuperati.
+            final_response: Risposta finale dell'agente.
+
+        Returns:
+            Percorso del file salvato, oppure stringa vuota in caso di errore.
+        """
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         lines = []
@@ -400,10 +514,10 @@ class InteractionLogHandler:
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
-            logger.info(f"Log interazione salvato: {filepath}")
+            logger.info("Log interazione salvato: %s", filepath)
             return filepath
         except Exception as e:
-            logger.error(f"Errore salvataggio log interazione: {e}")
+            logger.error("Errore salvataggio log interazione: %s", e)
             return ""
 
 
@@ -411,7 +525,15 @@ def create_observability_handler(
     settings: "ObservabilityConfig",
     conversation_turn: int = 1,
 ) -> RAGObservabilityHandler:
-    """Factory Method: crea un RAGObservabilityHandler configurato."""
+    """Factory per la creazione di un RAGObservabilityHandler configurato.
+
+    Args:
+        settings: Configurazione di osservabilita.
+        conversation_turn: Numero del turno di conversazione.
+
+    Returns:
+        Istanza di RAGObservabilityHandler configurata.
+    """
     return RAGObservabilityHandler(
         verbose=settings.enable_verbose_callbacks,
         max_preview_chars=settings.max_chunk_preview_chars,
@@ -422,5 +544,12 @@ def create_observability_handler(
 def create_interaction_log_handler(
     output_dir: str = "logs/interactions",
 ) -> InteractionLogHandler:
-    """Factory Method: crea un InteractionLogHandler."""
+    """Factory per la creazione di un InteractionLogHandler.
+
+    Args:
+        output_dir: Directory di output per i file di log.
+
+    Returns:
+        Istanza di InteractionLogHandler configurata.
+    """
     return InteractionLogHandler(output_dir=output_dir)

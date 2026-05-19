@@ -1,18 +1,28 @@
+"""Indicizzatore multi-collezione per la Knowledge Base.
+
+Gestisce il chunking, l'embedding e l'inserimento nel vector store Chroma
+di documenti HTML, PDF e Markdown, con supporto alla strategia
+Parent-Child per PDF regolamentari.
+"""
+
 import os
 import re
 import logging
-import requests
 from typing import List, Optional, Dict
 from pathlib import Path
 
+import requests
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter, HTMLSectionSplitter
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter,
+    HTMLSectionSplitter,
+    MarkdownHeaderTextSplitter,
+)
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_classic.retrievers import ParentDocumentRetriever
 from langchain_classic.storage import LocalFileStore, create_kv_docstore
-from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 from config.settings import AppSettings
 from ingestion.registry import IndexRegistry, IndexEntry
@@ -22,40 +32,115 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseIndexer:
-    def __init__(self, settings: AppSettings):
-        self._settings = settings
+    """Indicizzatore multi-collezione per documenti HTML, PDF e Markdown.
 
-        self._embedding_model = HuggingFaceEmbeddings(
+    Coordina il ciclo di vita completo dell'indicizzazione: caricamento,
+    chunking, arricchimento con metadati contestuali, embedding e
+    persistenza nel vector store Chroma. Supporta indicizzazione
+    incrementale tramite IndexRegistry.
+    """
+
+    def __init__(self, settings: AppSettings):
+        """Inizializza l'indicizzatore con tutte le componenti necessarie.
+
+        Args:
+            settings: Configurazione completa dell'applicazione.
+        """
+        self._settings = settings
+        self._embedding_model = self._build_embedding_model(settings)
+        self._collections = self._build_collections(settings)
+        self._pc_child_vectorstore, self._pc_parent_docstore = (
+            self._build_parent_child_stores(settings)
+        )
+        self._parent_child_retriever = self._build_parent_child_retriever(settings)
+        self._html_section_splitter = self._build_html_section_splitter()
+        self._html_splitters = self._build_html_splitters(settings)
+        self._pdf_direct_splitter = self._build_pdf_direct_splitter(settings)
+        self._md_header_splitter, self._md_text_splitter = (
+            self._build_md_splitters(settings)
+        )
+        self._registry = IndexRegistry(settings.ingestion.index_registry_path)
+
+        logger.info(
+            "Indexer multi-collection inizializzato: %s",
+            [t.value for t in CollectionTarget],
+        )
+
+    def _build_embedding_model(self, settings: AppSettings) -> HuggingFaceEmbeddings:
+        """Costruisce il modello di embedding HuggingFace.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Istanza di HuggingFaceEmbeddings configurata.
+        """
+        return HuggingFaceEmbeddings(
             model_name=settings.embedding.model_name,
             encode_kwargs={
-                "normalize_embeddings": settings.embedding.normalize_embeddings
+                "normalize_embeddings": settings.embedding.normalize_embeddings,
             },
         )
 
+    def _build_collections(
+        self, settings: AppSettings
+    ) -> Dict[CollectionTarget, Chroma]:
+        """Costruisce le collezioni Chroma per ciascun CollectionTarget.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Dizionario CollectionTarget -> Chroma.
+        """
         persist_dir = settings.vectorstore.persist_directory
         os.makedirs(persist_dir, exist_ok=True)
 
-        self._collections: Dict[CollectionTarget, Chroma] = {}
+        collections: Dict[CollectionTarget, Chroma] = {}
         for target in CollectionTarget:
-            self._collections[target] = Chroma(
+            collections[target] = Chroma(
                 collection_name=target.value,
                 embedding_function=self._embedding_model,
                 persist_directory=persist_dir,
             )
-            logger.info(f"  Collection Chroma inizializzata: {target.value}")
+            logger.info("Collection Chroma inizializzata: %s", target.value)
+        return collections
 
+    def _build_parent_child_stores(
+        self, settings: AppSettings
+    ) -> tuple[Chroma, object]:
+        """Costruisce il vector store child e il docstore parent per Parent-Child.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Tupla (child_vectorstore, parent_docstore).
+        """
+        persist_dir = settings.vectorstore.persist_directory
         parent_dir = settings.vectorstore.parent_store_directory
         os.makedirs(parent_dir, exist_ok=True)
 
-        self._pc_child_vectorstore = Chroma(
+        child_vectorstore = Chroma(
             collection_name=settings.vectorstore.parent_child_collection_name,
             embedding_function=self._embedding_model,
             persist_directory=persist_dir,
         )
-        self._pc_parent_docstore = create_kv_docstore(
-            LocalFileStore(parent_dir)
-        )
-        self._parent_child_retriever = ParentDocumentRetriever(
+        parent_docstore = create_kv_docstore(LocalFileStore(parent_dir))
+        return child_vectorstore, parent_docstore
+
+    def _build_parent_child_retriever(
+        self, settings: AppSettings
+    ) -> ParentDocumentRetriever:
+        """Costruisce il ParentDocumentRetriever con gli splitter configurati.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Istanza di ParentDocumentRetriever.
+        """
+        retriever = ParentDocumentRetriever(
             vectorstore=self._pc_child_vectorstore,
             docstore=self._pc_parent_docstore,
             child_splitter=RecursiveCharacterTextSplitter(
@@ -69,11 +154,19 @@ class KnowledgeBaseIndexer:
             ),
         )
         logger.info(
-            f"  Parent-Child Retriever: child={settings.ingestion.pdf_child_chunk_size}, "
-            f"parent={settings.ingestion.pdf_parent_chunk_size}"
+            "Parent-Child Retriever: child=%d, parent=%d",
+            settings.ingestion.pdf_child_chunk_size,
+            settings.ingestion.pdf_parent_chunk_size,
         )
+        return retriever
 
-        self._html_section_splitter = HTMLSectionSplitter(
+    def _build_html_section_splitter(self) -> HTMLSectionSplitter:
+        """Costruisce lo splitter per sezioni HTML basato su header h1-h3.
+
+        Returns:
+            Istanza di HTMLSectionSplitter.
+        """
+        return HTMLSectionSplitter(
             headers_to_split_on=[
                 ("h1", "Titolo"),
                 ("h2", "Sezione"),
@@ -81,57 +174,96 @@ class KnowledgeBaseIndexer:
             ]
         )
 
-        self._html_splitters: Dict[CollectionTarget, RecursiveCharacterTextSplitter] = {}
+    def _build_html_splitters(
+        self, settings: AppSettings
+    ) -> Dict[CollectionTarget, RecursiveCharacterTextSplitter]:
+        """Costruisce gli splitter di testo HTML per ciascuna collezione.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Dizionario CollectionTarget -> RecursiveCharacterTextSplitter.
+        """
+        splitters: Dict[CollectionTarget, RecursiveCharacterTextSplitter] = {}
         for target in CollectionTarget:
             chunk_size, chunk_overlap = settings.ingestion.get_collection_html_params(
                 target.value
             )
-            self._html_splitters[target] = RecursiveCharacterTextSplitter(
+            splitters[target] = RecursiveCharacterTextSplitter(
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 add_start_index=True,
             )
             logger.info(
-                f"  HTML splitter [{target.value}]: {chunk_size}/{chunk_overlap}"
+                "HTML splitter [%s]: %d/%d", target.value, chunk_size, chunk_overlap
             )
+        return splitters
 
-        self._pdf_direct_splitter = RecursiveCharacterTextSplitter(
+    def _build_pdf_direct_splitter(
+        self, settings: AppSettings
+    ) -> RecursiveCharacterTextSplitter:
+        """Costruisce lo splitter per il chunking diretto dei PDF.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Istanza di RecursiveCharacterTextSplitter.
+        """
+        splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.ingestion.pdf_direct_chunk_size,
             chunk_overlap=settings.ingestion.pdf_direct_chunk_overlap,
             add_start_index=True,
         )
         logger.info(
-            f"  PDF direct splitter: {settings.ingestion.pdf_direct_chunk_size}/"
-            f"{settings.ingestion.pdf_direct_chunk_overlap}"
+            "PDF direct splitter: %d/%d",
+            settings.ingestion.pdf_direct_chunk_size,
+            settings.ingestion.pdf_direct_chunk_overlap,
         )
-        
-        self._md_header_splitter = MarkdownHeaderTextSplitter(
+        return splitter
+
+    def _build_md_splitters(
+        self, settings: AppSettings
+    ) -> tuple[MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter]:
+        """Costruisce gli splitter per documenti Markdown.
+
+        Args:
+            settings: Configurazione dell'applicazione.
+
+        Returns:
+            Tupla (header_splitter, text_splitter).
+        """
+        header_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=[
                 ("#", "Header 1"),
                 ("##", "Header 2"),
                 ("###", "Header 3"),
             ]
         )
-        self._md_text_splitter = RecursiveCharacterTextSplitter(
+        text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.ingestion.md_chunk_size,
             chunk_overlap=settings.ingestion.md_chunk_overlap,
             add_start_index=True,
         )
-
-        self._registry = IndexRegistry(settings.ingestion.index_registry_path)
-
-        logger.info(
-            f"Indexer multi-collection inizializzato: "
-            f"{[t.value for t in CollectionTarget]}"
-        )
+        return header_splitter, text_splitter
 
     @staticmethod
-    def _build_context_prefix(content_metadata: dict, collection: CollectionTarget) -> str:
-        parts = []
+    def _build_context_prefix(
+        content_metadata: dict, collection: CollectionTarget
+    ) -> str:
+        """Costruisce il prefisso contestuale da anteporre al contenuto dei chunk.
 
+        Args:
+            content_metadata: Metadati del documento sorgente.
+            collection: Collezione target del documento.
+
+        Returns:
+            Stringa di prefisso contestuale o stringa vuota.
+        """
         clean_metadata = {
-        k: v.lower() if isinstance(v, str) else v 
-        for k, v in content_metadata.items()
+            k: v.lower() if isinstance(v, str) else v
+            for k, v in content_metadata.items()
         }
 
         parts = []
@@ -156,7 +288,7 @@ class KnowledgeBaseIndexer:
             if "progetti" in clean_metadata:
                 parts.append(f"Progetto: {clean_metadata['progetti']}")
             if "nomi_insegnamenti" in clean_metadata:
-                parts.append(f"Insegnamento: {clean_metadata['nomi_insegnamenti']}") 
+                parts.append(f"Insegnamento: {clean_metadata['nomi_insegnamenti']}")
 
         elif collection == CollectionTarget.OFFERTA_FORMATIVA:
             if "nome_corso" in clean_metadata:
@@ -172,13 +304,15 @@ class KnowledgeBaseIndexer:
             if "sotto_area" in clean_metadata:
                 parts.append(f"Sezione: {clean_metadata['sotto_area']}")
             if "titolo_documento" in clean_metadata:
-                parts.append(f"Documento: {clean_metadata['titolo_documento'].title()}")
+                parts.append(
+                    f"Documento: {clean_metadata['titolo_documento'].title()}"
+                )
 
         if "doc_id" in clean_metadata:
             parts.append(f"Codice ID: {clean_metadata['doc_id']}")
         if "anno" in clean_metadata:
-                parts.append(f"Anno: {clean_metadata['anno']}")
-            
+            parts.append(f"Anno: {clean_metadata['anno']}")
+
         if not parts:
             return ""
 
@@ -190,20 +324,37 @@ class KnowledgeBaseIndexer:
         context_prefix: str,
         all_metadata: dict,
     ) -> List[Document]:
+        """Inietta il prefisso contestuale e i metadati in ciascun chunk.
+
+        Args:
+            chunks: Lista di chunk Document da arricchire.
+            context_prefix: Prefisso testuale da anteporre al contenuto.
+            all_metadata: Metadati da aggiungere a ciascun chunk.
+
+        Returns:
+            Lista di chunk arricchiti.
+        """
         for chunk in chunks:
             chunk.metadata.update(all_metadata)
-
             if context_prefix:
                 chunk.page_content = context_prefix + chunk.page_content
-
         return chunks
 
     def index_html_directory(self, directory: Optional[str] = None) -> dict:
+        """Indicizza incrementalmente tutti i file HTML nella directory specificata.
+
+        Args:
+            directory: Percorso della directory contenente i file HTML.
+                       Se None, usa il valore da settings.
+
+        Returns:
+            Dizionario con statistiche di indicizzazione.
+        """
         directory = directory or self._settings.ingestion.html_raw_dir
         html_files = list(Path(directory).glob("*.html"))
 
         if not html_files:
-            logger.warning(f"Nessun file HTML in {directory}")
+            logger.warning("Nessun file HTML in %s", directory)
             return {
                 "indexed": 0, "skipped": 0, "updated": 0,
                 "orphans_removed": 0, "errors": 0,
@@ -246,16 +397,14 @@ class KnowledgeBaseIndexer:
                 url_metadata = DocumentRouter.extract_metadata(
                     source_url, collection_target
                 )
-
                 content_metadata = DocumentRouter.extract_content_metadata(
                     content, source_url, collection_target
                 )
-
                 all_metadata = {**url_metadata, **content_metadata}
 
                 chroma_ids = self._chunk_and_index_html(
                     content, source_url, filepath.name,
-                    vectorstore, collection_target, all_metadata
+                    vectorstore, collection_target, all_metadata,
                 )
 
                 self._registry.upsert(source_id, IndexEntry(
@@ -266,7 +415,7 @@ class KnowledgeBaseIndexer:
                 routing_stats[collection_target.value] += 1
 
             except Exception as e:
-                logger.error(f"Errore HTML {filepath.name}: {e}", exc_info=True)
+                logger.error("Errore HTML %s: %s", filepath.name, e, exc_info=True)
                 stats["errors"] += 1
 
         html_orphans = {
@@ -279,12 +428,14 @@ class KnowledgeBaseIndexer:
                 old_collection = self._resolve_collection_for_cleanup(entry)
                 self._delete_from_vectorstore(old_collection, entry.chroma_ids)
                 stats["orphans_removed"] += 1
-                logger.info(f"Orfano rimosso: {orphan_id} da {entry.collection_name}")
+                logger.info(
+                    "Orfano rimosso: %s da %s", orphan_id, entry.collection_name
+                )
 
         self._registry.save()
         stats["routing"] = routing_stats
-        logger.info(f"HTML indexing completato: {stats}")
-        logger.info(f"HTML routing breakdown: {routing_stats}")
+        logger.info("HTML indexing completato: %s", stats)
+        logger.info("HTML routing breakdown: %s", routing_stats)
         return stats
 
     def _chunk_and_index_html(
@@ -296,6 +447,19 @@ class KnowledgeBaseIndexer:
         collection: CollectionTarget,
         all_metadata: dict,
     ) -> List[str]:
+        """Esegue il chunking e l'indicizzazione di un singolo documento HTML.
+
+        Args:
+            content: Contenuto HTML grezzo.
+            source_url: URL sorgente della pagina.
+            filename: Nome del file su disco.
+            vectorstore: Istanza Chroma di destinazione.
+            collection: CollectionTarget di appartenenza.
+            all_metadata: Metadati completi da iniettare nei chunk.
+
+        Returns:
+            Lista degli ID Chroma generati per i chunk.
+        """
         section_docs = self._html_section_splitter.split_text(content)
 
         normalized = []
@@ -324,17 +488,26 @@ class KnowledgeBaseIndexer:
         vectorstore.add_documents(chunks, ids=chroma_ids)
 
         logger.debug(
-            f"HTML '{filename}': {len(chunks)} chunks → {collection.value} "
-            f"(context prefix: {bool(context_prefix)})"
+            "HTML '%s': %d chunks -> %s (context prefix: %s)",
+            filename, len(chunks), collection.value, bool(context_prefix),
         )
         return chroma_ids
 
     def index_pdf_list(self, pdf_links_file: Optional[str] = None) -> dict:
+        """Indicizza incrementalmente tutti i PDF elencati nel file di link.
+
+        Args:
+            pdf_links_file: Percorso del file contenente gli URL dei PDF.
+                            Se None, usa il valore da settings.
+
+        Returns:
+            Dizionario con statistiche di indicizzazione.
+        """
         pdf_links_file = pdf_links_file or self._settings.ingestion.pdf_links_file
         download_dir = self._settings.ingestion.pdf_download_dir
 
         if not os.path.exists(pdf_links_file):
-            logger.warning(f"File lista PDF non trovato: {pdf_links_file}")
+            logger.warning("File lista PDF non trovato: %s", pdf_links_file)
             return {
                 "indexed": 0, "skipped": 0, "updated": 0, "errors": 0,
                 "parent_child_count": 0, "direct_count": 0,
@@ -378,7 +551,9 @@ class KnowledgeBaseIndexer:
                         )
                     else:
                         old_collection = self._resolve_collection_for_cleanup(existing)
-                        self._delete_from_vectorstore(old_collection, existing.chroma_ids)
+                        self._delete_from_vectorstore(
+                            old_collection, existing.chroma_ids
+                        )
                     stats["updated"] += 1
                 else:
                     stats["indexed"] += 1
@@ -404,48 +579,56 @@ class KnowledgeBaseIndexer:
                 routing_stats[collection_target.value] += 1
 
             except Exception as e:
-                logger.error(f"Errore PDF {url}: {e}", exc_info=True)
+                logger.error("Errore PDF %s: %s", url, e, exc_info=True)
                 stats["errors"] += 1
 
         self._registry.save()
         stats["parent_child_count"] = pc_count
         stats["direct_count"] = direct_count
         stats["routing"] = routing_stats
-        logger.info(f"PDF indexing completato: {stats}")
-        logger.info(f"PDF routing breakdown: {routing_stats}")
-        logger.info(f"PDF chunking: {pc_count} Parent-Child, {direct_count} diretto")
+        logger.info("PDF indexing completato: %s", stats)
+        logger.info("PDF routing breakdown: %s", routing_stats)
+        logger.info(
+            "PDF chunking: %d Parent-Child, %d diretto", pc_count, direct_count
+        )
         return stats
 
     def _index_pdf_parent_child(
         self, local_path: str, source_url: str, extra_meta: dict
     ) -> List[str]:
+        """Indicizza un PDF con strategia Parent-Child.
+
+        Args:
+            local_path: Percorso locale del file PDF.
+            source_url: URL sorgente del PDF.
+            extra_meta: Metadati aggiuntivi da iniettare.
+
+        Returns:
+            Lista degli ID Chroma dei child chunk generati.
+        """
         loader = PyPDFLoader(local_path)
         pages = loader.load()
 
         for page in pages:
-            if "creationdate" in page.metadata:
-                raw_date = str(page.metadata.pop("creationdate"))
-                date_match = re.search(r"(\d{4})", raw_date)
-                
-                if date_match:
-                    anno_estratto = date_match.group(1)
-                else:
-                    anno_estratto = raw_date[:4]
-
-                page.metadata["anno"] = anno_estratto
-
+            self._normalize_pdf_creation_date(page)
             page.metadata.update({
                 "source_url": source_url,
                 "doc_type": "pdf",
                 **extra_meta,
             })
 
-            context_prefix = self._build_context_prefix(page.metadata, CollectionTarget.OFFERTA_FORMATIVA)
+            context_prefix = self._build_context_prefix(
+                page.metadata, CollectionTarget.OFFERTA_FORMATIVA
+            )
             if context_prefix:
                 page.page_content = context_prefix + page.page_content
 
         existing_data = self._pc_child_vectorstore.get()
-        ids_before = set(existing_data["ids"]) if existing_data and existing_data.get("ids") else set()
+        ids_before = (
+            set(existing_data["ids"])
+            if existing_data and existing_data.get("ids")
+            else set()
+        )
 
         self._parent_child_retriever.add_documents(pages)
 
@@ -453,8 +636,8 @@ class KnowledgeBaseIndexer:
         new_ids = list(ids_after - ids_before)
 
         logger.info(
-            f"  PDF Parent-Child: '{os.path.basename(local_path)}' → "
-            f"{len(new_ids)} child chunks"
+            "PDF Parent-Child: '%s' -> %d child chunks",
+            os.path.basename(local_path), len(new_ids),
         )
         return new_ids
 
@@ -465,22 +648,22 @@ class KnowledgeBaseIndexer:
         collection: CollectionTarget,
         extra_meta: dict,
     ) -> List[str]:
+        """Indicizza un PDF con chunking diretto nella collezione specificata.
+
+        Args:
+            local_path: Percorso locale del file PDF.
+            source_url: URL sorgente del PDF.
+            collection: CollectionTarget di destinazione.
+            extra_meta: Metadati aggiuntivi da iniettare.
+
+        Returns:
+            Lista degli ID Chroma generati per i chunk.
+        """
         loader = PyPDFLoader(local_path)
         pages = loader.load()
 
         for page in pages:
-            if "creationdate" in page.metadata:
-                raw_date = str(page.metadata.pop("creationdate"))
-                date_match = re.search(r"(\d{4})", raw_date)
-                
-                if date_match:
-                    anno_estratto = date_match.group(1)
-                else:
-                    anno_estratto = raw_date[:4]
-                
-                
-                page.metadata["anno"] = anno_estratto
-
+            self._normalize_pdf_creation_date(page)
             page.metadata.update({
                 "source_url": source_url,
                 "doc_type": "pdf",
@@ -493,9 +676,7 @@ class KnowledgeBaseIndexer:
 
         for chunk in chunks:
             chunk.metadata.update(extra_meta)
-
             context_prefix = self._build_context_prefix(chunk.metadata, collection)
-
             if context_prefix:
                 chunk.page_content = context_prefix + chunk.page_content
 
@@ -508,19 +689,34 @@ class KnowledgeBaseIndexer:
         vectorstore.add_documents(chunks, ids=chroma_ids)
 
         logger.info(
-            f"  PDF diretto: '{filename}' → "
-            f"{len(chunks)} chunks → {collection.value}"
+            "PDF diretto: '%s' -> %d chunks -> %s",
+            filename, len(chunks), collection.value,
         )
         return chroma_ids
-    
+
     def index_markdown_directory(self, directory: Optional[str] = None) -> dict:
+        """Indicizza incrementalmente tutti i file Markdown nella directory specificata.
+
+        Args:
+            directory: Percorso della directory contenente i file Markdown.
+                       Se None, usa il valore da settings.
+
+        Returns:
+            Dizionario con statistiche di indicizzazione.
+        """
         directory = directory or self._settings.ingestion.md_static_dir
         if not os.path.exists(directory):
-            logger.warning(f"Directory MD non trovata: {directory}")
-            return {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0, "errors": 0}
+            logger.warning("Directory MD non trovata: %s", directory)
+            return {
+                "indexed": 0, "skipped": 0, "updated": 0,
+                "orphans_removed": 0, "errors": 0,
+            }
 
         md_files = list(Path(directory).glob("*.md"))
-        stats = {"indexed": 0, "skipped": 0, "updated": 0, "orphans_removed": 0, "errors": 0}
+        stats = {
+            "indexed": 0, "skipped": 0, "updated": 0,
+            "orphans_removed": 0, "errors": 0,
+        }
         current_sources = set()
 
         for filepath in md_files:
@@ -548,12 +744,17 @@ class KnowledgeBaseIndexer:
                 else:
                     stats["indexed"] += 1
 
-                url_metadata = DocumentRouter.extract_md_metadata(filepath.name, collection_target)
-                content_metadata = DocumentRouter.extract_content_metadata_md(content, filepath.name)
+                url_metadata = DocumentRouter.extract_md_metadata(
+                    filepath.name, collection_target
+                )
+                content_metadata = DocumentRouter.extract_content_metadata_md(
+                    content, filepath.name
+                )
                 all_metadata = {**url_metadata, **content_metadata}
 
                 chroma_ids = self._chunk_and_index_md(
-                    content, filepath.name, vectorstore, collection_target, all_metadata
+                    content, filepath.name, vectorstore,
+                    collection_target, all_metadata,
                 )
 
                 self._registry.upsert(source_id, IndexEntry(
@@ -563,7 +764,7 @@ class KnowledgeBaseIndexer:
                 ))
 
             except Exception as e:
-                logger.error(f"Errore MD {filepath.name}: {e}", exc_info=True)
+                logger.error("Errore MD %s: %s", filepath.name, e, exc_info=True)
                 stats["errors"] += 1
 
         md_orphans = {
@@ -578,9 +779,9 @@ class KnowledgeBaseIndexer:
                 stats["orphans_removed"] += 1
 
         self._registry.save()
-        logger.info(f"MD indexing completato: {stats}")
+        logger.info("MD indexing completato: %s", stats)
         return stats
-    
+
     def _chunk_and_index_md(
         self,
         content: str,
@@ -589,6 +790,18 @@ class KnowledgeBaseIndexer:
         collection: CollectionTarget,
         all_metadata: dict,
     ) -> List[str]:
+        """Esegue il chunking e l'indicizzazione di un singolo documento Markdown.
+
+        Args:
+            content: Contenuto testuale del file Markdown.
+            filename: Nome del file su disco.
+            vectorstore: Istanza Chroma di destinazione.
+            collection: CollectionTarget di appartenenza.
+            all_metadata: Metadati completi da iniettare nei chunk.
+
+        Returns:
+            Lista degli ID Chroma generati per i chunk.
+        """
         header_splits = self._md_header_splitter.split_text(content)
 
         normalized = []
@@ -620,18 +833,41 @@ class KnowledgeBaseIndexer:
         search_type: Optional[str] = None,
         k: Optional[int] = None,
     ):
+        """Restituisce un retriever per la collezione specificata.
+
+        Args:
+            collection: CollectionTarget da interrogare.
+            search_type: Tipo di ricerca (default da settings).
+            k: Numero di risultati (default da settings).
+
+        Returns:
+            Retriever LangChain configurato.
+        """
         return self._collections[collection].as_retriever(
             search_type=search_type or self._settings.vectorstore.search_type,
             search_kwargs={"k": k or self._settings.vectorstore.search_k},
         )
 
     def get_parent_child_retriever(self, k: Optional[int] = None):
+        """Restituisce il retriever Parent-Child configurato.
+
+        Args:
+            k: Numero di risultati (default da settings).
+
+        Returns:
+            ParentDocumentRetriever configurato.
+        """
         self._parent_child_retriever.search_kwargs = {
-            "k": k or self._settings.vectorstore.search_k
+            "k": k or self._settings.vectorstore.search_k,
         }
         return self._parent_child_retriever
 
-    def get_all_retrievers(self):
+    def get_all_retrievers(self) -> dict:
+        """Restituisce tutti i retriever disponibili, incluso il Parent-Child.
+
+        Returns:
+            Dizionario con retriever per ogni collezione e per Parent-Child.
+        """
         retrievers = {}
         for target in CollectionTarget:
             retrievers[target] = self.get_collection_retriever(target)
@@ -639,6 +875,17 @@ class KnowledgeBaseIndexer:
         return retrievers
 
     def _resolve_collection_for_cleanup(self, entry: IndexEntry) -> Chroma:
+        """Risolve la collezione Chroma per la pulizia di un'entry esistente.
+
+        Gestisce anche nomi di collezione legacy con mapping verso le
+        collezioni attuali.
+
+        Args:
+            entry: Voce del registry da cui estrarre il nome collezione.
+
+        Returns:
+            Istanza Chroma corrispondente.
+        """
         if entry.collection_name:
             try:
                 target = CollectionTarget(entry.collection_name)
@@ -653,24 +900,60 @@ class KnowledgeBaseIndexer:
                 if mapped:
                     return self._collections[mapped]
                 logger.warning(
-                    f"collection_name non riconosciuto: '{entry.collection_name}', "
-                    f"fallback a DIPARTIMENTO"
+                    "collection_name non riconosciuto: '%s', fallback a DIPARTIMENTO",
+                    entry.collection_name,
                 )
         return self._collections[CollectionTarget.DIPARTIMENTO]
 
     @staticmethod
+    def _normalize_pdf_creation_date(page: Document) -> None:
+        """Normalizza il campo creationdate di un documento PDF in anno.
+
+        Estrae l'anno dal campo creationdate dei metadati e lo memorizza
+        nel campo 'anno', rimuovendo il campo originale.
+
+        Args:
+            page: Documento LangChain rappresentante una pagina PDF.
+        """
+        if "creationdate" not in page.metadata:
+            return
+
+        raw_date = str(page.metadata.pop("creationdate"))
+        date_match = re.search(r"(\d{4})", raw_date)
+
+        if date_match:
+            page.metadata["anno"] = date_match.group(1)
+        else:
+            page.metadata["anno"] = raw_date[:4]
+
+    @staticmethod
     def _delete_from_vectorstore(vectorstore: Chroma, ids: List[str]) -> None:
-        """Elimina chunk da Chroma per ID, con gestione errori."""
+        """Elimina chunk da Chroma per ID, con gestione errori.
+
+        Args:
+            vectorstore: Istanza Chroma da cui eliminare.
+            ids: Lista degli ID da rimuovere.
+        """
         if not ids:
             return
         try:
             vectorstore.delete(ids=ids)
         except Exception as e:
-            logger.warning(f"Errore eliminazione da Chroma ({len(ids)} ids): {e}")
+            logger.warning(
+                "Errore eliminazione da Chroma (%d ids): %s", len(ids), e
+            )
 
     @staticmethod
     def _download_if_needed(url: str, local_path: str) -> bool:
-        """Scarica un file se non esiste già su disco."""
+        """Scarica un file se non esiste gia su disco.
+
+        Args:
+            url: URL del file da scaricare.
+            local_path: Percorso locale di destinazione.
+
+        Returns:
+            True se il file e' disponibile localmente, False altrimenti.
+        """
         if os.path.exists(local_path):
             return True
         try:
@@ -679,21 +962,37 @@ class KnowledgeBaseIndexer:
                 with open(local_path, "wb") as f:
                     f.write(response.content)
                 return True
-            logger.warning(f"Download fallito ({response.status_code}): {url}")
+            logger.warning("Download fallito (%d): %s", response.status_code, url)
             return False
         except Exception as e:
-            logger.error(f"Errore download {url}: {e}")
+            logger.error("Errore download %s: %s", url, e)
             return False
 
     @staticmethod
     def _extract_source_url(html_content: str) -> Optional[str]:
+        """Estrae l'URL sorgente dal commento HTML embedded nel contenuto.
+
+        Args:
+            html_content: Contenuto HTML in cui cercare il commento SOURCE.
+
+        Returns:
+            URL sorgente o None se non trovato.
+        """
         match = re.search(r"<!--\s*SOURCE:\s*(https?://[^\s]+)\s*-->", html_content)
         return match.group(1).strip() if match else None
 
     @staticmethod
     def _safe_filename(url: str) -> str:
+        """Genera un nome file sicuro a partire da un URL.
+
+        Args:
+            url: URL da convertire in nome file.
+
+        Returns:
+            Stringa sicura per l'uso come nome file, troncata a 120 caratteri.
+        """
         name = re.sub(
             r'[<>:"/\\|?*]', '_',
-            url.replace("https://", "").replace("http://", "")
+            url.replace("https://", "").replace("http://", ""),
         )
         return name[:120]

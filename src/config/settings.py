@@ -2,10 +2,6 @@
 
 Contiene tutti i dataclass di configurazione dell'applicazione e la
 funzione di caricamento da variabili d'ambiente.
-
-La sezione LoggingConfig e' stata aggiunta per consentire la configurazione
-centralizzata di livello, destinazione e formato del logging prima
-dell'avvio di qualsiasi componente applicativo.
 """
 
 import os
@@ -16,12 +12,7 @@ from urllib.parse import urlparse
 
 @dataclass(frozen=True)
 class LoggingConfig:
-    """Configurazione del sistema di logging centralizzato.
-
-    Permette di controllare livello di verbosita, destinazione (console,
-    file o entrambi) e formato delle righe di log tramite variabili
-    d'ambiente o valori di default.
-    """
+    """Configurazione del sistema di logging centralizzato."""
 
     level: str = "INFO"
     log_file: Optional[str] = None
@@ -94,11 +85,8 @@ class IngestionConfig:
         return domains
 
     def get_allowed_prefixes(self) -> tuple[str, ...]:
-        """Restituisce i prefissi URL autorizzati, escludendo easycourse."""
-        return tuple(
-            url for url in self.seed_urls
-            if "easycourse" not in url
-        )
+        """Restituisce i prefissi URL autorizzati."""
+        return tuple(self.seed_urls)
 
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
         """Restituisce chunk_size e chunk_overlap specifici per la collezione indicata.
@@ -182,20 +170,11 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
-class EasyCourseConfig:
-    """Configurazione per l'integrazione con EasyCourse UNISA."""
-
-    base_url: str = "https://easycourse.unisa.it"
-    timeout: int = 30
-    user_agent: str = "DIEM-RAG-Bot/1.0 (Università di Salerno)"
-
-
-@dataclass(frozen=True)
 class GuardrailsConfig:
     """Configurazione dei guardrail per la validazione delle richieste."""
 
     allowed_scope_description: str = (
-        "Domande relative al Dipartimento DIEM dell'Università degli Studi di Salerno: "
+        "Domande relative al Dipartimento DIEM dell'Universita degli Studi di Salerno: "
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
         "laboratori, servizi dipartimentali, dottorato di ricerca."
     )
@@ -223,7 +202,6 @@ class AppSettings:
     vectorstore: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
-    easycourse: EasyCourseConfig = field(default_factory=EasyCourseConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -252,7 +230,7 @@ def load_settings() -> AppSettings:
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
             index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json"),
             max_depth=int(os.getenv("MAX_DEPTH", "5")),
-            batch_size=int(os.getenv("BATCH_SIZE", "1024"))
+            batch_size=int(os.getenv("BATCH_SIZE", "1024")),
         ),
         crawler=CrawlerConfig(
             thread_cpu_factor=float(os.getenv("CRAWLER_THREAD_FACTOR", "0.75")),
@@ -273,19 +251,15 @@ def load_settings() -> AppSettings:
             persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore_qwen/chroma"),
             parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore_qwen/parent_docstore"),
         ),
-        easycourse=EasyCourseConfig(
-            base_url=os.getenv("EASYCOURSE_BASE_URL", "https://easycourse.unisa.it"),
-            timeout=int(os.getenv("EASYCOURSE_TIMEOUT", "30")),
-        ),
         observability=ObservabilityConfig(
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
         ),
         reranker=RerankerConfig(
             model_name=os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-0.6B"),
-            score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0"))
+            score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0")),
         ),
         guardrails=GuardrailsConfig(
-            max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", 50))
+            max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", "50")),
         ),
         logging=LoggingConfig(
             level=os.getenv("LOG_LEVEL", "INFO"),

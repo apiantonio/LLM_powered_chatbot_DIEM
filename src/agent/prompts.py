@@ -1,14 +1,4 @@
-"""
-agent/prompts.py — System prompt OTTIMIZZATO per Qwen2.5 7B.
-
-REFACTORING v2 — Ottimizzazioni per modelli 7B:
-  1. System prompt ridotto drasticamente (~60% più corto)
-  2. Data/ora RIMOSSA dal system prompt (iniettata dinamicamente dal middleware)
-  3. Enforcement lingua hardened con direttiva compatta
-  4. Anti-verbosità: rispondi SOLO alla domanda posta
-  5. Tool routing fix: "syllabus" → search_persone (non offerta_formativa)
-  6. Rimossa ridondanza nelle sezioni (una sola istruzione per concetto)
-"""
+"""System prompt ottimizzato per il modello Qwen2.5 7B."""
 
 from langchain_core.messages import SystemMessage
 
@@ -38,7 +28,7 @@ ALWAYS invoke a tool BEFORE replying. Pass the user's query INTACT in the `query
 
 1. **search_persone**: teachers, emails, office hours, courses taught by a teacher, CV, personal research, "chi insegna X?", **syllabus/program of a course taught by a teacher**.
 2. **search_offerta_formativa**: degree programs, study plans, regulations, admission requirements, CFU, OFA, thesis. DOES NOT contain who teaches.
-3. **search_dipartimento**: calls for applications, scholarships, PhD, classrooms (sotto_area="aule"), laboratories (sotto_area="laboratori"), locations (sotto_area="sedi"), Erasmus, departmental research, third mission, joint commission, general information, contacts, address, how to reach the department (sotto_area="generale"). DO NOT use sotto_area="strutture" (does not exist).
+3. **search_dipartimento**: calls for applications, scholarships, PhD, classrooms (sotto_area="aule"), laboratories (sotto_area="laboratori"), Erasmus, departmental research, third mission, joint commission, general information, contacts, address, how to reach the department (sotto_area="generale"). DO NOT use sotto_area="strutture" (does not exist).
 4. **search_all**: ONLY if the others fail or the question is ambiguous.
 
 Key rules:
@@ -59,4 +49,5 @@ ABSOLUTE PROHIBITION: DO NOT compress, reduce, or paraphrase the user query when
 
 
 def get_agent_system_prompt() -> SystemMessage:
+    """Costruisce e restituisce il SystemMessage con il prompt dell'agente."""
     return SystemMessage(content=SYSTEM_PROMPT_TEMPLATE)

@@ -1,17 +1,25 @@
+"""Tool di ricerca per l'agente RAG DIEM.
+
+Definisce i tool LangChain per la ricerca nelle collezioni del knowledge base:
+persone, offerta formativa, dipartimento e ricerca trasversale.
+"""
+
 from __future__ import annotations
+
 import logging
 from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 from langchain.tools import tool
+
 from ingestion.router import CollectionTarget
 
 if TYPE_CHECKING:
     from retrieval.engine import RetrievalEngine
 
 logger = logging.getLogger(__name__)
-_retrieval_engine: "RetrievalEngine | None" = None
 
+_retrieval_engine: "RetrievalEngine | None" = None
 _chat_history: list = []
 
 _last_search_meta: Dict[str, Any] = {
@@ -25,17 +33,16 @@ _last_search_meta: Dict[str, Any] = {
 
 
 def set_retrieval_engine(engine: "RetrievalEngine") -> None:
-    """Inietta il RetrievalEngine nei tool (chiamata dalla Factory)."""
+    """Inietta il RetrievalEngine nei tool."""
     global _retrieval_engine
     _retrieval_engine = engine
 
 
 def set_chat_history(history: list) -> None:
-    """
-    Inietta la chat history corrente nei tool.
+    """Inietta la chat history corrente nei tool.
 
-    NOTA v3.3: Mantenuto per retrocompatibilità. La chat_history NON viene
-    più passata a engine.retrieve() poiché il Query Rewriting è stato
+    Mantenuto per retrocompatibilita. La chat_history non viene
+    passata a engine.retrieve() poiche il Query Rewriting e' stato
     spostato in agent.py.
     """
     global _chat_history
@@ -43,7 +50,7 @@ def set_chat_history(history: list) -> None:
 
 
 def get_last_search_meta() -> Dict[str, Any]:
-    """Restituisce i metadati dell'ultima ricerca (per il logging)."""
+    """Restituisce i metadati dell'ultima ricerca effettuata."""
     return _last_search_meta.copy()
 
 
@@ -57,7 +64,7 @@ _VALID_SOTTO_AREA_OFFERTA_FORMATIVA = frozenset({
 })
 
 _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
-    "aule", "laboratori", "sedi", "bandi", "ricerca_dipartimentale",
+    "aule", "laboratori", "bandi", "ricerca_dipartimentale",
     "terza_missione", "internazionale", "organizzazione",
     "alternanza", "eccellenza", "monitoraggio", "personale", "generale",
 })
@@ -65,30 +72,35 @@ _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
 _tool_error_counts: Dict[str, int] = {}
 _MAX_TOOL_RETRIES = 2
 
-
 _DEFINITIVE_NOT_FOUND = (
     "La ricerca su TUTTE le collection (persone, offerta formativa, "
     "dipartimento) non ha prodotto risultati per: '{query}'. "
-    "L'informazione richiesta non è presente nella knowledge base del DIEM. "
+    "L'informazione richiesta non e' presente nella knowledge base del DIEM. "
     "NON invocare altri tool di ricerca: rispondi all'utente che "
-    "l'informazione non è disponibile e suggerisci di consultare "
+    "l'informazione non e' disponibile e suggerisci di consultare "
     "direttamente il sito web del DIEM o contattare la segreteria."
 )
 
 
 def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
+    """Esegue una ricerca trasversale come fallback quando il tool primario non trova risultati.
+
+    Args:
+        query: Query di ricerca.
+        original_tool_name: Nome del tool che ha originato il fallback.
+
+    Returns:
+        Risultati formattati, oppure None se nessun documento trovato.
+    """
     global _last_search_meta
 
     if _retrieval_engine is None:
         return None
 
     logger.info(
-        f" FALLBACK INTERNO search_all attivato da {original_tool_name} "
-        f"per query: '{query[:80]}'"
-    )
-    print(
-        f" FALLBACK INTERNO: {original_tool_name} → 0 risultati. "
-        f"Eseguo ricerca trasversale per: {query}"
+        "FALLBACK INTERNO search_all attivato da %s per query: '%s'",
+        original_tool_name,
+        query[:80],
     )
 
     try:
@@ -96,41 +108,32 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
 
         if not documents:
             logger.info(
-                f"    Anche il fallback search_all non ha trovato risultati "
-                f"per: '{query[:80]}'"
+                "Anche il fallback search_all non ha trovato risultati per: '%s'",
+                query[:80],
             )
-            print(f"    Fallback search_all: nessun risultato per: {query}")
             return None
 
-        top_links = []
-        for doc in documents[:5]:
-            link = doc.metadata.get("url_originale",
-                   doc.metadata.get("source_url", "N/D"))
-            if link not in top_links:
-                top_links.append(link)
+        top_links = _extract_top_links(documents)
 
         _last_search_meta = {
             "rewritten_query": used_query,
             "multi_queries": [used_query],
-            "tool_name": f"{original_tool_name} → fallback:search_all",
+            "tool_name": f"{original_tool_name} -> fallback:search_all",
             "collection": "ALL (cross-collection, fallback)",
             "metadata_filter": None,
-            "top_links": top_links[:5],
+            "top_links": top_links,
         }
 
         logger.info(
-            f"    Fallback search_all ha trovato {len(documents)} documenti "
-            f"per: '{query[:80]}'"
-        )
-        print(
-            f"    Fallback search_all: {len(documents)} documenti trovati "
-            f"per: {query}"
+            "Fallback search_all ha trovato %d documenti per: '%s'",
+            len(documents),
+            query[:80],
         )
 
         return _format_results(documents)
 
     except Exception as e:
-        logger.error(f"Errore nel fallback search_all: {e}", exc_info=True)
+        logger.error("Errore nel fallback search_all: %s", e, exc_info=True)
         return None
 
 
@@ -140,6 +143,17 @@ def _search_collection(
     tool_name: str,
     metadata_filter: Optional[dict] = None,
 ) -> str:
+    """Esegue una ricerca su una collezione specifica con fallback automatico.
+
+    Args:
+        query: Query di ricerca.
+        collection: Collezione target.
+        tool_name: Nome del tool invocante.
+        metadata_filter: Filtri opzionali sui metadati.
+
+    Returns:
+        Risultati formattati come stringa.
+    """
     global _last_search_meta
 
     if _retrieval_engine is None:
@@ -147,7 +161,7 @@ def _search_collection(
 
     tool_key = f"{collection.value}:{query[:50]}"
 
-    print(f"SEARCH COLLECTION: {query}")
+    logger.debug("Ricerca in collezione %s: %s", collection.value, query)
 
     try:
         result = _retrieval_engine.retrieve(
@@ -162,12 +176,7 @@ def _search_collection(
             documents, rewritten_query = result
             multi_queries = [rewritten_query]
 
-        top_links = []
-        for doc in documents[:5]:
-            link = doc.metadata.get("url_originale",
-                   doc.metadata.get("source_url", "N/D"))
-            if link not in top_links:
-                top_links.append(link)
+        top_links = _extract_top_links(documents)
 
         _last_search_meta = {
             "rewritten_query": rewritten_query,
@@ -175,28 +184,29 @@ def _search_collection(
             "tool_name": tool_name,
             "collection": collection.value,
             "metadata_filter": metadata_filter,
-            "top_links": top_links[:5],
+            "top_links": top_links,
         }
 
         _tool_error_counts.pop(tool_key, None)
 
         if not documents:
             logger.info(
-                f"0 risultati da {tool_name} (collection={collection.value}). "
-                f"Attivo fallback interno su search_all."
+                "0 risultati da %s (collection=%s). Attivo fallback interno su search_all.",
+                tool_name,
+                collection.value,
             )
 
             fallback_result = _fallback_search_all(query, tool_name)
 
             if fallback_result:
                 return fallback_result
-            else:
-                return _DEFINITIVE_NOT_FOUND.format(query=query)
+
+            return _DEFINITIVE_NOT_FOUND.format(query=query)
 
         return _format_results(documents)
 
     except Exception as e:
-        logger.error(f"Errore ricerca {collection.value}: {e}", exc_info=True)
+        logger.error("Errore ricerca %s: %s", collection.value, e, exc_info=True)
 
         _tool_error_counts[tool_key] = _tool_error_counts.get(tool_key, 0) + 1
         error_count = _tool_error_counts[tool_key]
@@ -204,7 +214,7 @@ def _search_collection(
         if error_count >= _MAX_TOOL_RETRIES:
             _tool_error_counts.pop(tool_key, None)
             return (
-                "La ricerca non è disponibile al momento. "
+                "La ricerca non e' disponibile al momento. "
                 "NON riprovare con questo stesso tool. "
                 "Rispondi all'utente che le informazioni non sono al momento "
                 "reperibili e suggerisci di consultare il sito web del DIEM."
@@ -216,22 +226,56 @@ def _search_collection(
         )
 
 
+def _extract_top_links(documents, max_links: int = 5) -> List[str]:
+    """Estrae i link principali dai documenti recuperati.
+
+    Args:
+        documents: Lista di documenti con metadati.
+        max_links: Numero massimo di link da estrarre.
+
+    Returns:
+        Lista di URL univoci.
+    """
+    top_links = []
+    for doc in documents[:max_links]:
+        link = doc.metadata.get(
+            "url_originale",
+            doc.metadata.get("source_url", "N/D"),
+        )
+        if link not in top_links:
+            top_links.append(link)
+    return top_links[:max_links]
+
+
 def _format_results(documents) -> str:
+    """Formatta i documenti recuperati in una stringa leggibile per il LLM.
+
+    Args:
+        documents: Lista di documenti con metadati e contenuto.
+
+    Returns:
+        Stringa formattata con i documenti separati da delimitatori.
+    """
+    standard_keys = {
+        "source_url", "url_originale", "doc_type", "formato_sorgente",
+        "doc_category", "sotto_area", "relevance_score", "start_index",
+        "source_file", "source_domain",
+    }
+
     context_parts = []
     for i, doc in enumerate(documents, 1):
-        source = doc.metadata.get("url_originale",
-                 doc.metadata.get("source_url", "fonte non disponibile"))
-        formato = doc.metadata.get("formato_sorgente",
-                  doc.metadata.get("doc_type", "sconosciuto"))
+        source = doc.metadata.get(
+            "url_originale",
+            doc.metadata.get("source_url", "fonte non disponibile"),
+        )
+        formato = doc.metadata.get(
+            "formato_sorgente",
+            doc.metadata.get("doc_type", "sconosciuto"),
+        )
         sotto_area = doc.metadata.get("sotto_area", "")
         score = doc.metadata.get("relevance_score", None)
-        score_str = f" — score: {score:.4f}" if score is not None else ""
+        score_str = f" -- score: {score:.4f}" if score is not None else ""
 
-        standard_keys = {
-            "source_url", "url_originale", "doc_type", "formato_sorgente",
-            "doc_category", "sotto_area", "relevance_score", "start_index",
-            "source_file", "source_domain",
-        }
         extra_meta = {
             k: v for k, v in doc.metadata.items()
             if k not in standard_keys and v is not None and v != ""
@@ -242,14 +286,15 @@ def _format_results(documents) -> str:
             extra_meta_str = f"\n[meta: {pairs}]"
 
         context_parts.append(
-            f"[Documento {i} — {formato} — {sotto_area} — "
+            f"[Documento {i} -- {formato} -- {sotto_area} -- "
             f"{source}{score_str}]{extra_meta_str}\n{doc.page_content}"
         )
     return "\n\n---\n\n".join(context_parts)
 
 
-
 class SearchPersoneInput(BaseModel):
+    """Schema di input per il tool search_persone."""
+
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -284,6 +329,8 @@ class SearchPersoneInput(BaseModel):
 
 
 class SearchOffertaFormativaInput(BaseModel):
+    """Schema di input per il tool search_offerta_formativa."""
+
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -319,6 +366,8 @@ class SearchOffertaFormativaInput(BaseModel):
 
 
 class SearchDipartimentoInput(BaseModel):
+    """Schema di input per il tool search_dipartimento."""
+
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
@@ -326,7 +375,7 @@ class SearchDipartimentoInput(BaseModel):
         )
     )
     sotto_area: Optional[Literal[
-        "aule", "laboratori", "sedi", "bandi",
+        "aule", "laboratori", "bandi",
         "ricerca_dipartimentale", "terza_missione",
         "internazionale", "organizzazione", "generale"
     ]] = Field(
@@ -335,14 +384,13 @@ class SearchDipartimentoInput(BaseModel):
             "Filtro sulla sezione del dipartimento. Valori ammessi: "
             "'aule' (aule, strutture didattiche, capienza), "
             "'laboratori' (laboratori di ricerca), "
-            "'sedi' (edifici, campus, indirizzi), "
             "'bandi' (bandi, borse, concorsi, dottorato, avvisi), "
             "'ricerca_dipartimentale' (ricerca del dipartimento), "
             "'terza_missione' (terza missione, impatto sociale), "
-            "'internazionale' (Erasmus, mobilità, accordi internazionali), "
+            "'internazionale' (Erasmus, mobilita, accordi internazionali), "
             "'organizzazione' (organigramma, commissioni, personale), "
             "'generale' (informazioni generiche dipartimento). "
-            "ATTENZIONE: 'strutture' NON esiste. Usa 'aule', 'laboratori' o 'sedi'. "
+            "ATTENZIONE: 'strutture' NON esiste. Usa 'aule' o 'laboratori'. "
             "Lascia vuoto se non sei sicuro."
         )
     )
@@ -357,13 +405,14 @@ class SearchDipartimentoInput(BaseModel):
 
 
 class SearchAllInput(BaseModel):
+    """Schema di input per il tool search_all."""
+
     query: str = Field(
         description=(
             "Domanda COMPLETA dell'utente, ESATTAMENTE come formulata. "
             "NON ridurre a keyword, NON parafrasare."
         )
     )
-
 
 
 @tool("search_persone", args_schema=SearchPersoneInput)
@@ -382,9 +431,8 @@ USA QUESTO TOOL per:
 - "Email/ricevimento del prof. X"  → contatti del docente (sotto_area="profilo")
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
-
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_PERSONE:
-        logger.warning(f"sotto_area non valido per PERSONE: '{sotto_area}'. Ignoro.")
+        logger.warning("sotto_area non valido per PERSONE: '%s'. Ignoro.", sotto_area)
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
@@ -397,12 +445,11 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = metadata_filter if metadata_filter else None
 
-    print(f"QUERY ARRIVATA A SEARCH PERSONE: {query}")
-    print(f"  sotto_area={sotto_area}, anno={anno}")
+    logger.debug("search_persone: query='%s', sotto_area=%s, anno=%s", query, sotto_area, anno)
 
     return _search_collection(
         query, CollectionTarget.PERSONE,
-        "search_persone", metadata_filter
+        "search_persone", metadata_filter,
     )
 
 
@@ -424,9 +471,8 @@ USA QUESTO TOOL per:
 NON contiene info su chi insegna o syllabus di insegnamenti specifici → usa search_persone.
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
-
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
-        logger.warning(f"sotto_area non valido per OFFERTA_FORMATIVA: '{sotto_area}'. Ignoro.")
+        logger.warning("sotto_area non valido per OFFERTA_FORMATIVA: '%s'. Ignoro.", sotto_area)
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
@@ -461,12 +507,11 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = metadata_filter if metadata_filter else None
 
-    print(f"QUERY ARRIVATA A SEARCH OFFERTA FORMATIVA: {query}")
-    print(f"  sotto_area={sotto_area}, anno={anno}")
+    logger.debug("search_offerta_formativa: query='%s', sotto_area=%s, anno=%s", query, sotto_area, anno)
 
     return _search_collection(
         query, CollectionTarget.OFFERTA_FORMATIVA,
-        "search_offerta_formativa", metadata_filter
+        "search_offerta_formativa", metadata_filter,
     )
 
 
@@ -481,10 +526,8 @@ def search_dipartimento(
 ATTENZIONE: sotto_area="strutture" NON esiste. Usare "aule", "laboratori" o "sedi".
 
 DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
-
-    # Validazione sotto_area (sicurezza extra oltre Pydantic Literal)
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
-        logger.warning(f"sotto_area non valido per DIPARTIMENTO: '{sotto_area}'. Ignoro.")
+        logger.warning("sotto_area non valido per DIPARTIMENTO: '%s'. Ignoro.", sotto_area)
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
@@ -505,10 +548,6 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
         ]):
             sotto_area = "aule"
         elif any(kw in query_lower for kw in [
-            "sede", "sedi", "edificio", "campus"
-        ]):
-            sotto_area = "sedi"
-        elif any(kw in query_lower for kw in [
             "terza missione", "terza-missione"
         ]):
             sotto_area = "terza_missione"
@@ -525,14 +564,12 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`. NON ridurre a keyword."""
 
     metadata_filter = metadata_filter if metadata_filter else None
 
-    print(f"QUERY ARRIVATA A SEARCH DIPARTIMENTO: {query}")
-    print(f"  sotto_area={sotto_area}, anno={anno}")
+    logger.debug("search_dipartimento: query='%s', sotto_area=%s, anno=%s", query, sotto_area, anno)
 
     return _search_collection(
         query, CollectionTarget.DIPARTIMENTO,
-        "search_dipartimento", metadata_filter
+        "search_dipartimento", metadata_filter,
     )
-
 
 
 @tool("search_all", args_schema=SearchAllInput)
@@ -544,15 +581,11 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`."""
 
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."
+
     try:
         documents, used_query = _retrieval_engine.retrieve_from_all(query)
 
-        top_links = []
-        for doc in documents[:5]:
-            link = doc.metadata.get("url_originale",
-                   doc.metadata.get("source_url", "N/D"))
-            if link not in top_links:
-                top_links.append(link)
+        top_links = _extract_top_links(documents)
 
         _last_search_meta = {
             "rewritten_query": used_query,
@@ -560,16 +593,17 @@ DIRETTIVA: Passa la query INTEGRA nel campo `query`."""
             "tool_name": "search_all",
             "collection": "ALL (cross-collection)",
             "metadata_filter": None,
-            "top_links": top_links[:5],
+            "top_links": top_links,
         }
 
         if not documents:
             return f"Non ho trovato informazioni per: '{query}'."
-        return _format_results(documents)
-    except Exception as e:
-        logger.error(f"Errore ricerca all: {e}")
-        return f"Errore durante la ricerca: {str(e)}"
 
+        return _format_results(documents)
+
+    except Exception as e:
+        logger.error("Errore ricerca all: %s", e)
+        return f"Errore durante la ricerca: {str(e)}"
 
 
 def get_all_tools() -> list:

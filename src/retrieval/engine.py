@@ -1,4 +1,10 @@
-import re
+"""Motore di retrieval multi-collezione con reranking e ottimizzazione query.
+
+Contiene il QueryOptimizer per riscrittura e espansione delle query,
+il CrossEncoderReranker per il riordinamento dei risultati e il
+RetrievalEngine che orchestra il flusso completo di recupero documenti.
+"""
+
 import logging
 from typing import List, Optional, Set
 
@@ -13,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class QueryOptimizer:
+    """Ottimizzatore di query con risoluzione di coreferenze ed espansione multi-query.
+
+    Utilizza un LLM per riscrivere query contenenti riferimenti anaforici
+    e per generare varianti semantiche utili al retrieval.
+    """
+
     REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You are a coreference resolver for an Italian university Q&A system. "
@@ -48,6 +60,11 @@ class QueryOptimizer:
     ])
 
     def __init__(self, llm_chat_model):
+        """Inizializza l'ottimizzatore con il modello LLM fornito.
+
+        Args:
+            llm_chat_model: Modello di chat LangChain per la riscrittura e l'espansione.
+        """
         self._llm = llm_chat_model
 
         self._rewrite_chain = self.REWRITE_PROMPT | self._llm | RunnableLambda(
@@ -64,11 +81,7 @@ class QueryOptimizer:
         last_user_query: str = "",
         last_assistant_answer: str = "",
     ) -> str:
-        """
-        Riscrivi la query risolvendo coreferenze dall'ultimo turno.
-
-        NOTA v4.1: Questo metodo è ora invocato da agent.py (RAGAgent.chat()),
-        NON più da RetrievalEngine.retrieve(). La firma è invariata.
+        """Riscrive la query risolvendo coreferenze dall'ultimo turno di conversazione.
 
         Args:
             question: La query corrente dell'utente.
@@ -77,10 +90,10 @@ class QueryOptimizer:
 
         Returns:
             La query riscritta con coreferenze risolte, oppure
-            la query originale se non c'è contesto o è autosufficiente.
+            la query originale se non c'e' contesto o e' autosufficiente.
         """
         if not last_user_query:
-            logger.info(f"Nessun turno precedente, query invariata: '{question}'")
+            logger.info("Nessun turno precedente, query invariata: '%s'", question)
             return question
 
         truncated_answer = last_assistant_answer[:300]
@@ -95,13 +108,13 @@ class QueryOptimizer:
             })
 
             if not result.strip():
-                logger.warning("Rewriting ha prodotto stringa vuota. Uso l'originale.")
+                logger.warning("Rewriting ha prodotto stringa vuota, uso l'originale")
                 return question
 
             if len(result) > len(question) * 8:
                 logger.warning(
-                    f"Rewriting sospetto ({len(result)} chars vs {len(question)}). "
-                    f"Uso l'originale."
+                    "Rewriting sospetto (%d chars vs %d), uso l'originale",
+                    len(result), len(question),
                 )
                 return question
 
@@ -110,17 +123,27 @@ class QueryOptimizer:
                 result_lower = result.lower()
                 missing = [e for e in original_entities if e.lower() not in result_lower]
                 if missing:
-                    logger.warning(f"Rewriting ha perso entità: {missing}. Uso l'originale.")
+                    logger.warning(
+                        "Rewriting ha perso entita: %s, uso l'originale", missing
+                    )
                     return question
 
-            logger.info(f"Query rewritten: '{question}' → '{result}'")
+            logger.info("Query rewritten: '%s' -> '%s'", question, result)
             return result
 
         except Exception as e:
-            logger.warning(f"Errore rewriting, uso query originale: {e}")
+            logger.warning("Errore rewriting, uso query originale: %s", e)
             return question
 
     def expand(self, question: str) -> List[str]:
+        """Genera varianti semantiche della query per multi-query retrieval.
+
+        Args:
+            question: La query originale dell'utente.
+
+        Returns:
+            Lista contenente la query originale seguita dalle varianti generate.
+        """
         try:
             variants = self._multi_query_chain.invoke({"question": question})
             seen: Set[str] = {question.strip().lower()}
@@ -130,14 +153,24 @@ class QueryOptimizer:
                 if v_clean and v_clean.lower() not in seen:
                     seen.add(v_clean.lower())
                     unique_variants.append(v_clean)
-            logger.info(f"Multiquery expansion: {len(unique_variants)} varianti generate")
+            logger.info(
+                "Multiquery expansion: %d varianti generate", len(unique_variants)
+            )
             return [question] + unique_variants
         except Exception as e:
-            logger.warning(f"Errore multi-query expansion: {e}")
+            logger.warning("Errore multi-query expansion: %s", e)
             return [question]
 
     @staticmethod
     def _extract_proper_nouns(text: str) -> list:
+        """Estrae nomi propri dal testo basandosi sulla capitalizzazione.
+
+        Args:
+            text: Testo da cui estrarre i nomi propri.
+
+        Returns:
+            Lista di stringhe identificate come nomi propri.
+        """
         skip_words = {
             "chi", "cosa", "come", "dove", "quando", "quale", "quali",
             "parlami", "dimmi", "spiegami", "cercami", "trovami",
@@ -150,21 +183,50 @@ class QueryOptimizer:
         entities = []
         for w in words:
             clean = w.strip("?.,!;:'\"()[]")
-            if clean and clean[0].isupper() and len(clean) > 2 and clean.lower() not in skip_words:
+            if (
+                clean
+                and clean[0].isupper()
+                and len(clean) > 2
+                and clean.lower() not in skip_words
+            ):
                 entities.append(clean)
         return entities
 
+
 class CrossEncoderReranker:
+    """Reranker basato su Cross-Encoder per il riordinamento dei documenti candidati.
+
+    Utilizza un modello sentence-transformers CrossEncoder per assegnare
+    uno score di rilevanza a ciascun documento rispetto alla query,
+    filtrando quelli sotto la soglia configurata.
+    """
+
     def __init__(self, config: RerankerConfig):
+        """Inizializza il reranker con il modello e i parametri configurati.
+
+        Args:
+            config: Configurazione del reranker (modello, top_n, soglia).
+        """
         from sentence_transformers import CrossEncoder
+
         self._model = CrossEncoder(config.model_name)
         self._top_n = config.top_n
         self._score_threshold = config.score_treshold
-        logger.info(f"Cross-Encoder Reranker: {config.model_name}")
+        logger.info("Cross-Encoder Reranker: %s", config.model_name)
 
     def rerank(
         self, query: str, documents: List[Document], top_n: Optional[int] = None
     ) -> List[Document]:
+        """Riordina i documenti candidati per rilevanza rispetto alla query.
+
+        Args:
+            query: Query di ricerca dell'utente.
+            documents: Lista di documenti candidati da riordinare.
+            top_n: Numero massimo di risultati da restituire (default da config).
+
+        Returns:
+            Lista di documenti riordinati e filtrati per soglia di rilevanza.
+        """
         if not documents:
             return []
 
@@ -173,19 +235,27 @@ class CrossEncoderReranker:
         scores = self._model.predict(pairs)
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
 
-        print(f"\n--- TOP 5 CLASSIFICA (su {len(ranked)} CANDIDATI) ---")
+        logger.info(
+            "--- TOP 5 CLASSIFICA (su %d CANDIDATI) ---", len(ranked)
+        )
         for i, (doc, score) in enumerate(ranked[:5]):
-            print(f"[{i+1}] Score: {score:.4f} | Fonte: {doc.metadata.get('source_url', 'N/D')}")
-            print(f"    Testo: {doc.page_content[:150]}...")
-        print("-" * 65)
+            logger.info(
+                "[%d] Score: %.4f | Fonte: %s",
+                i + 1, score, doc.metadata.get("source_url", "N/D"),
+            )
+            logger.debug(
+                "    Testo: %s...", doc.page_content[:150]
+            )
 
         result = []
         for doc, score in ranked[:top_n]:
             if score < self._score_threshold:
                 logger.debug(
-                    f"Documento filtrato (score {score:.4f} < threshold "
-                    f"{self._score_threshold}): "
-                    f"{doc.metadata.get('url_originale', doc.metadata.get('source_url', 'N/D'))[:80]}"
+                    "Documento filtrato (score %.4f < threshold %.4f): %s",
+                    score, self._score_threshold,
+                    doc.metadata.get(
+                        "url_originale", doc.metadata.get("source_url", "N/D")
+                    )[:80],
                 )
                 continue
             doc.metadata["relevance_score"] = float(score)
@@ -193,15 +263,28 @@ class CrossEncoderReranker:
 
         if not result and documents:
             logger.warning(
-                f"Tutti i {len(documents)} documenti candidati filtrati "
-                f"(score < {self._score_threshold}). Query: '{query[:80]}'"
+                "Tutti i %d documenti candidati filtrati (score < %.4f). Query: '%s'",
+                len(documents), self._score_threshold, query[:80],
             )
 
         return result
 
+
 class RetrievalEngine:
+    """Motore di retrieval che orchestra ricerca multi-collezione, espansione e reranking.
+
+    Coordina il flusso completo: espansione multi-query, retrieval da
+    collezioni Chroma e Parent-Child, deduplicazione e reranking finale.
+    """
 
     def __init__(self, indexer, reranker, query_optimizer=None):
+        """Inizializza il motore di retrieval con le componenti necessarie.
+
+        Args:
+            indexer: Istanza di KnowledgeBaseIndexer per accesso ai retriever.
+            reranker: Istanza di CrossEncoderReranker per il riordinamento.
+            query_optimizer: Istanza opzionale di QueryOptimizer per l'espansione.
+        """
         self._indexer = indexer
         self._reranker = reranker
         self._optimizer = query_optimizer
@@ -220,6 +303,16 @@ class RetrievalEngine:
         collection: Optional[str] = None,
         metadata_filter: Optional[dict] = None,
     ) -> tuple:
+        """Esegue il retrieval con espansione multi-query e reranking.
+
+        Args:
+            query: Query di ricerca dell'utente.
+            collection: Nome della collezione specifica o None per tutte.
+            metadata_filter: Filtro opzionale sui metadati dei documenti.
+
+        Returns:
+            Tupla (documenti_finali, query_effettiva, multi_queries).
+        """
         effective_query = query
 
         multi_queries = [effective_query]
@@ -240,7 +333,7 @@ class RetrievalEngine:
                 retriever = self._collection_retrievers.get(collection)
 
             if retriever is None:
-                logger.error(f"Collection sconosciuta: {collection}")
+                logger.error("Collection sconosciuta: %s", collection)
                 continue
 
             try:
@@ -251,7 +344,9 @@ class RetrievalEngine:
                         seen_hashes.add(h)
                         all_candidates.append(doc)
             except Exception as e:
-                logger.warning(f"Errore retrieval multiquery '{mq[:60]}': {e}")
+                logger.warning(
+                    "Errore retrieval multiquery '%s': %s", mq[:60], e
+                )
 
             if collection == CollectionTarget.OFFERTA_FORMATIVA.value:
                 try:
@@ -262,17 +357,30 @@ class RetrievalEngine:
                             seen_hashes.add(h)
                             all_candidates.append(doc)
                 except Exception as e:
-                    logger.warning(f"Errore retrieval Parent-Child per '{mq[:60]}': {e}")
+                    logger.warning(
+                        "Errore retrieval Parent-Child per '%s': %s", mq[:60], e
+                    )
 
         logger.info(
-            f"Retrieval completato: {len(all_candidates)} candidati unici "
-            f"(collection={collection}, filter={metadata_filter})"
+            "Retrieval completato: %d candidati unici (collection=%s, filter=%s)",
+            len(all_candidates), collection, metadata_filter,
         )
 
         final_docs = self._reranker.rerank(effective_query, all_candidates)
         return final_docs, effective_query, multi_queries
 
-    def retrieve_from_all(self, query: str, metadata_filter: Optional[dict] = None) -> tuple:
+    def retrieve_from_all(
+        self, query: str, metadata_filter: Optional[dict] = None
+    ) -> tuple:
+        """Esegue il retrieval da tutte le collezioni con reranking.
+
+        Args:
+            query: Query di ricerca dell'utente.
+            metadata_filter: Filtro opzionale sui metadati dei documenti.
+
+        Returns:
+            Tupla (documenti_finali, query).
+        """
         multi_queries = [query]
         if self._optimizer:
             multi_queries = self._optimizer.expand(query)
@@ -285,7 +393,9 @@ class RetrievalEngine:
                 try:
                     retriever = default_retriever
                     if metadata_filter:
-                        filtered = self._get_filtered_retriever(collection_name, metadata_filter)
+                        filtered = self._get_filtered_retriever(
+                            collection_name, metadata_filter
+                        )
                         if filtered:
                             retriever = filtered
 
@@ -296,7 +406,9 @@ class RetrievalEngine:
                             seen_hashes.add(h)
                             all_candidates.append(doc)
                 except Exception as e:
-                    logger.warning(f"Errore retrieval da {collection_name}: {e}")
+                    logger.warning(
+                        "Errore retrieval da %s: %s", collection_name, e
+                    )
 
             try:
                 pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
@@ -306,7 +418,7 @@ class RetrievalEngine:
                         seen_hashes.add(h)
                         all_candidates.append(doc)
             except Exception as e:
-                logger.warning(f"Errore retrieval Parent-Child: {e}")
+                logger.warning("Errore retrieval Parent-Child: %s", e)
 
         final_docs = self._reranker.rerank(query, all_candidates)
         return final_docs, query
@@ -316,6 +428,15 @@ class RetrievalEngine:
         query: str,
         metadata_filter: Optional[dict] = None,
     ) -> List[Document]:
+        """Esegue il retrieval dal vector store Parent-Child.
+
+        Args:
+            query: Query di ricerca.
+            metadata_filter: Filtro opzionale sui metadati.
+
+        Returns:
+            Lista di documenti recuperati dal Parent-Child store.
+        """
         if metadata_filter:
             chroma_where = self._build_chroma_filter(metadata_filter)
             try:
@@ -328,24 +449,36 @@ class RetrievalEngine:
                 )
                 docs = retriever.invoke(query)
                 logger.info(
-                    f"Parent-Child (filtrato): {len(docs)} child chunks "
-                    f"(filter={metadata_filter})"
+                    "Parent-Child (filtrato): %d child chunks (filter=%s)",
+                    len(docs), metadata_filter,
                 )
                 return docs
             except Exception as e:
                 logger.warning(
-                    f"Errore Parent-Child con filtro {metadata_filter}: {e}. "
-                    f"Fallback a retrieval senza filtro."
+                    "Errore Parent-Child con filtro %s: %s. "
+                    "Fallback a retrieval senza filtro.",
+                    metadata_filter, e,
                 )
                 try:
                     return self._pc_retriever.invoke(query)
                 except Exception as e2:
-                    logger.warning(f"Anche il fallback Parent-Child è fallito: {e2}")
+                    logger.warning(
+                        "Anche il fallback Parent-Child e' fallito: %s", e2
+                    )
                     return []
         else:
             return self._pc_retriever.invoke(query)
 
     def _get_filtered_retriever(self, collection_name: str, metadata_filter: dict):
+        """Costruisce un retriever con filtro sui metadati per la collezione indicata.
+
+        Args:
+            collection_name: Nome della collezione target.
+            metadata_filter: Dizionario di filtri sui metadati.
+
+        Returns:
+            Retriever LangChain filtrato o None se la collezione non esiste.
+        """
         try:
             target = CollectionTarget(collection_name)
         except ValueError:
@@ -364,6 +497,14 @@ class RetrievalEngine:
 
     @staticmethod
     def _build_chroma_filter(metadata_filter: dict) -> dict:
+        """Costruisce un filtro Chroma a partire da un dizionario di metadati.
+
+        Args:
+            metadata_filter: Dizionario chiave-valore dei filtri desiderati.
+
+        Returns:
+            Dizionario nel formato atteso da Chroma per il filtraggio.
+        """
         conditions = []
 
         for key, value in metadata_filter.items():

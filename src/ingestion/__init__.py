@@ -1,1 +1,1 @@
-
+"""Modulo di ingestion: crawling, indicizzazione e gestione del registry."""

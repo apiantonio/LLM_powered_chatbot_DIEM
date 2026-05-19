@@ -1,5 +1,11 @@
+"""Provider LLM per il sistema RAG DIEM.
+
+Supporta HuggingFace, Ollama e Groq come backend per i modelli linguistici.
+"""
+
 import os
 import logging
+
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from config.settings import LLMConfig
@@ -8,8 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 def create_chat_model(config: LLMConfig) -> BaseChatModel:
+    """Crea e restituisce un ChatModel in base al provider configurato.
+
+    Args:
+        config: Configurazione LLM con provider, modello e parametri.
+
+    Returns:
+        Istanza di BaseChatModel pronta all'uso.
+
+    Raises:
+        ValueError: Se il provider non e' supportato o mancano le credenziali.
+    """
     provider = config.provider.lower()
-    logger.info(f"Inizializzazione ChatModel. Provider: {provider.upper()}")
+    logger.info("Inizializzazione ChatModel. Provider: %s", provider.upper())
 
     if provider == "huggingface":
         from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
@@ -26,25 +43,25 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_new_tokens=config.max_tokens,
                 huggingfacehub_api_token=config.huggingface_api_token,
-                task="text-generation"
+                task="text-generation",
             )
         )
-        logger.info(f"ChatHuggingFace istanziato: {config.model_name}")
+        logger.info("ChatHuggingFace istanziato: %s", config.model_name)
         return chat_model
 
-    elif provider == "ollama":
+    if provider == "ollama":
         from langchain_ollama import ChatOllama
 
         chat_model = ChatOllama(
             model=config.model_name,
             temperature=config.temperature,
             num_predict=config.max_tokens,
-            base_url=config.ollama_base_url
+            base_url=config.ollama_base_url,
         )
-        logger.info(f"ChatOllama istanziato: {config.model_name} su {config.ollama_base_url}")
+        logger.info("ChatOllama istanziato: %s su %s", config.model_name, config.ollama_base_url)
         return chat_model
 
-    elif provider == "groq":
+    if provider == "groq":
         from langchain_groq import ChatGroq
 
         api_key = config.groq_api_key
@@ -60,36 +77,53 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
             max_tokens=config.max_tokens,
             api_key=api_key,
         )
-        logger.info(f"ChatGroq istanziato: {config.model_name}")
+        logger.info("ChatGroq istanziato: %s", config.model_name)
         return chat_model
 
-    else:
-        raise ValueError(
-            f"Provider LLM non supportato: '{provider}'. "
-            "Scegliere tra 'huggingface', 'ollama' o 'groq'."
-        )
+    raise ValueError(
+        f"Provider LLM non supportato: '{provider}'. "
+        "Scegliere tra 'huggingface', 'ollama' o 'groq'."
+    )
 
 
 def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
+    """Crea un LLM dedicato al query rewriting.
+
+    Se REWRITER_PROVIDER e' configurato, usa un LLM separato (Groq).
+    Altrimenti riutilizza il provider principale con temperature=0.0.
+
+    Args:
+        fallback_config: Configurazione LLM principale usata come fallback.
+
+    Returns:
+        Istanza di BaseChatModel configurata per il rewriting.
+
+    Raises:
+        ValueError: Se il provider del rewriter non e' supportato o mancano le credenziali.
+    """
     provider = os.getenv("REWRITER_PROVIDER", "").strip().lower()
 
     if not provider:
         main_provider = fallback_config.provider.lower()
         logger.info(
-            f"REWRITER_PROVIDER non configurato. "
-            f"Uso LLM principale ({fallback_config.model_name}) con temperature=0.0"
+            "REWRITER_PROVIDER non configurato. "
+            "Uso LLM principale (%s) con temperature=0.0",
+            fallback_config.model_name,
         )
 
         if main_provider == "ollama":
             from langchain_ollama import ChatOllama
+
             return ChatOllama(
                 model=fallback_config.model_name,
                 temperature=0.0,
                 num_predict=256,
                 base_url=fallback_config.ollama_base_url,
             )
-        elif main_provider == "huggingface":
+
+        if main_provider == "huggingface":
             from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
+
             return ChatHuggingFace(
                 llm=HuggingFaceEndpoint(
                     repo_id=fallback_config.model_name,
@@ -99,8 +133,8 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
                     task="text-generation",
                 )
             )
-        else:
-            return create_chat_model(fallback_config)
+
+        return create_chat_model(fallback_config)
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -120,11 +154,10 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
             max_tokens=256,
             api_key=api_key,
         )
-        logger.info(f"Rewriter LLM: ChatGroq ({model}) — temperature=0.0")
+        logger.info("Rewriter LLM: ChatGroq (%s) - temperature=0.0", model)
         return llm
 
-    else:
-        raise ValueError(
-            f"REWRITER_PROVIDER non supportato: '{provider}'. "
-            "Valori ammessi: 'groq' (oppure lasciare vuoto per usare il LLM principale)."
-        )
+    raise ValueError(
+        f"REWRITER_PROVIDER non supportato: '{provider}'. "
+        "Valori ammessi: 'groq' (oppure lasciare vuoto per usare il LLM principale)."
+    )

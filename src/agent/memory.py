@@ -1,14 +1,16 @@
+"""Gestione della memoria conversazionale per l'agente RAG DIEM.
+
+Implementa una memoria intelligente con filtraggio per similarita semantica
+e summarization automatica dei turni precedenti.
+"""
+
 import logging
 import re
-import numpy as np
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
 
-from langchain_core.messages import (
-    BaseMessage,
-    HumanMessage,
-    AIMessage,
-)
+import numpy as np
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_classic.memory import ConversationSummaryBufferMemory
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -27,12 +29,22 @@ _META_PATTERNS = [
 
 
 def _is_meta_query(query: str) -> bool:
+    """Determina se la query e' una meta-domanda (saluto, ringraziamento, ecc.).
+
+    Args:
+        query: Testo della query utente.
+
+    Returns:
+        True se la query corrisponde a un pattern meta.
+    """
     q = query.strip().lower()
     return any(re.match(p, q) for p in _META_PATTERNS)
 
 
 @dataclass
 class ConversationTurn:
+    """Rappresenta un singolo turno di conversazione utente-assistente."""
+
     user_message: str
     assistant_message: str
     turn_number: int
@@ -40,6 +52,12 @@ class ConversationTurn:
 
 
 class SmartConversationMemory:
+    """Memoria conversazionale con filtraggio per similarita e summarization.
+
+    Mantiene una finestra scorrevole di turni, filtra quelli rilevanti
+    tramite cosine similarity e produce un riassunto quando necessario.
+    """
+
     def __init__(
         self,
         llm_for_summary,
@@ -48,6 +66,15 @@ class SmartConversationMemory:
         similarity_threshold: float = 0.3,
         max_token_limit: int = 1500,
     ):
+        """Inizializza la memoria conversazionale.
+
+        Args:
+            llm_for_summary: LLM utilizzato per la summarization dei turni.
+            embedding_model: Modello di embedding per il calcolo della similarita.
+            max_turns: Numero massimo di turni mantenuti in memoria.
+            similarity_threshold: Soglia minima di similarita per includere un turno.
+            max_token_limit: Limite massimo di token per la summarization.
+        """
         self._max_turns = max_turns
         self._similarity_threshold = similarity_threshold
         self._max_token_limit = max_token_limit
@@ -58,26 +85,43 @@ class SmartConversationMemory:
         self._llm_for_summary = llm_for_summary
 
         logger.info(
-            f"SmartConversationMemory inizializzata: "
-            f"max_turns={max_turns}, similarity_threshold={similarity_threshold}, "
-            f"max_token_limit={max_token_limit}"
+            "SmartConversationMemory inizializzata: "
+            "max_turns=%d, similarity_threshold=%.2f, max_token_limit=%d",
+            max_turns,
+            similarity_threshold,
+            max_token_limit,
         )
 
     @property
     def turn_count(self) -> int:
+        """Restituisce il numero totale di turni registrati."""
         return self._turn_counter
 
     @property
     def is_empty(self) -> bool:
+        """Indica se la memoria non contiene alcun turno."""
         return self._turn_counter == 0
 
     def add_user_message(self, message: str) -> int:
+        """Registra un messaggio utente e incrementa il contatore dei turni.
+
+        Args:
+            message: Testo del messaggio utente.
+
+        Returns:
+            Numero del turno corrente.
+        """
         self._turn_counter += 1
         self._pending_user_message = message
         return self._turn_counter
 
     def add_assistant_message(self, message: str) -> None:
-        user_msg = getattr(self, '_pending_user_message', '')
+        """Registra la risposta dell'assistente e completa il turno corrente.
+
+        Args:
+            message: Testo della risposta dell'assistente.
+        """
+        user_msg = self._pending_user_message
 
         turn_text = f"{user_msg} {message}"
         try:
@@ -85,7 +129,7 @@ class SmartConversationMemory:
                 self._embedding_model.embed_query(turn_text)
             )
         except Exception as e:
-            logger.warning(f"Errore embedding turno: {e}. Turno senza embedding.")
+            logger.warning("Errore embedding turno: %s. Turno senza embedding.", e)
             turn_embedding = None
 
         self._turns.append(ConversationTurn(
@@ -100,9 +144,17 @@ class SmartConversationMemory:
             excess = len(self._turns) - self._max_turns
             self._turns = self._turns[excess:]
 
-        logger.debug(f"Memoria aggiornata: {len(self._turns)} turni")
+        logger.debug("Memoria aggiornata: %d turni", len(self._turns))
 
     def _filter_turns_by_similarity(self, query: str) -> List[ConversationTurn]:
+        """Filtra i turni in memoria in base alla similarita con la query corrente.
+
+        Args:
+            query: Testo della query corrente.
+
+        Returns:
+            Lista di turni con similarita sopra soglia.
+        """
         if not self._turns:
             return []
 
@@ -111,7 +163,7 @@ class SmartConversationMemory:
                 self._embedding_model.embed_query(query)
             )
         except Exception as e:
-            logger.warning(f"Errore embedding query: {e}. Restituisco tutti i turni.")
+            logger.warning("Errore embedding query: %s. Restituisco tutti i turni.", e)
             return list(self._turns)
 
         filtered = []
@@ -128,24 +180,38 @@ class SmartConversationMemory:
             if similarity >= self._similarity_threshold:
                 filtered.append(turn)
                 logger.debug(
-                    f"Turno #{turn.turn_number} sopra soglia: "
-                    f"sim={similarity:.4f} >= {self._similarity_threshold}"
+                    "Turno #%d sopra soglia: sim=%.4f >= %.4f",
+                    turn.turn_number,
+                    similarity,
+                    self._similarity_threshold,
                 )
             else:
                 logger.debug(
-                    f"Turno #{turn.turn_number} SCARTATO: "
-                    f"sim={similarity:.4f} < {self._similarity_threshold}"
+                    "Turno #%d SCARTATO: sim=%.4f < %.4f",
+                    turn.turn_number,
+                    similarity,
+                    self._similarity_threshold,
                 )
 
         logger.info(
-            f"Filtraggio similarità: {len(filtered)}/{len(self._turns)} turni "
-            f"sopra soglia ({self._similarity_threshold})"
+            "Filtraggio similarita: %d/%d turni sopra soglia (%.2f)",
+            len(filtered),
+            len(self._turns),
+            self._similarity_threshold,
         )
         return filtered
 
     def _summarize_if_needed(
         self, filtered_turns: List[ConversationTurn]
     ) -> List[BaseMessage]:
+        """Produce un riassunto dei turni filtrati tramite ConversationSummaryBufferMemory.
+
+        Args:
+            filtered_turns: Turni da riassumere.
+
+        Returns:
+            Lista di messaggi LangChain risultanti dalla summarization.
+        """
         if not filtered_turns:
             return []
 
@@ -168,19 +234,28 @@ class SmartConversationMemory:
         messages = memory_variables.get("history", [])
 
         logger.info(
-            f"Summarization: {len(filtered_turns)} turni → "
-            f"{len(messages)} messaggi in output"
+            "Summarization: %d turni -> %d messaggi in output",
+            len(filtered_turns),
+            len(messages),
         )
         return messages
 
     def find_exact_match(self, query: str) -> Optional[str]:
+        """Cerca una corrispondenza esatta nella cache dei turni precedenti.
+
+        Args:
+            query: Testo della query da cercare.
+
+        Returns:
+            Risposta dell'assistente se trovata, None altrimenti.
+        """
         if not self._turns:
             return None
 
         def get_fingerprint(text: str) -> str:
+            """Genera un'impronta normalizzata del testo."""
             text = text.lower()
-            fingerprint = re.sub(r'[\W_]+', '', text)
-            return fingerprint
+            return re.sub(r'[\W_]+', '', text)
 
         query_fingerprint = get_fingerprint(query)
 
@@ -189,12 +264,27 @@ class SmartConversationMemory:
 
         for turn in reversed(self._turns):
             if get_fingerprint(turn.user_message) == query_fingerprint:
-                logger.info(f"🎯 Cache HIT! Impronta '{query_fingerprint}' trovata al Turno #{turn.turn_number}")
+                logger.info(
+                    "Cache HIT! Impronta '%s' trovata al Turno #%d",
+                    query_fingerprint,
+                    turn.turn_number,
+                )
                 return turn.assistant_message
 
         return None
 
     def get_messages_for_agent(self, current_query: str) -> list:
+        """Costruisce la lista di messaggi da inviare all'agente.
+
+        Include lo storico filtrato e riassunto, piu la query corrente
+        con eventuale reminder di retrieval.
+
+        Args:
+            current_query: Query corrente dell'utente.
+
+        Returns:
+            Lista di dizionari con chiavi 'role' e 'content'.
+        """
         messages = []
 
         if self._turns:
@@ -227,6 +317,12 @@ class SmartConversationMemory:
         return messages
 
     def get_last_completed_turn(self) -> Tuple[str, str]:
+        """Restituisce l'ultimo turno completato (utente, assistente).
+
+        Returns:
+            Tupla con messaggio utente e risposta assistente dell'ultimo turno,
+            oppure tuple vuote se non ci sono turni.
+        """
         if not self._turns:
             return ("", "")
 
@@ -234,6 +330,12 @@ class SmartConversationMemory:
         return (last_turn.user_message, last_turn.assistant_message)
 
     def get_langchain_history(self) -> List[BaseMessage]:
+        """Restituisce l'ultimo turno come lista di messaggi LangChain.
+
+        Returns:
+            Lista contenente HumanMessage e AIMessage dell'ultimo turno,
+            oppure lista vuota se non ci sono turni.
+        """
         if not self._turns:
             return []
 
@@ -246,6 +348,11 @@ class SmartConversationMemory:
         return history
 
     def get_history_summary(self) -> str:
+        """Produce un riepilogo testuale dello storico conversazione.
+
+        Returns:
+            Stringa formattata con tutti i turni in memoria.
+        """
         if not self._turns:
             return "(nessuno storico)"
 
@@ -263,6 +370,7 @@ class SmartConversationMemory:
         return "\n".join(lines)
 
     def clear(self) -> None:
+        """Resetta completamente la memoria conversazionale."""
         self._turns.clear()
         self._pending_user_message = ""
         self._turn_counter = 0
@@ -277,21 +385,39 @@ def create_conversation_memory(
     similarity_threshold: float = 0.55,
     max_token_limit: int = 1500,
 ) -> SmartConversationMemory:
+    """Factory per la creazione di una SmartConversationMemory.
+
+    Se llm_for_summary o embedding_model non sono forniti, vengono creati
+    automaticamente a partire dalla configurazione dell'applicazione.
+
+    Args:
+        max_turns: Numero massimo di turni da mantenere.
+        max_tokens: Limite token per summarization (sovrascrive max_token_limit).
+        llm_for_summary: LLM per la summarization. Se None, viene creato automaticamente.
+        embedding_model: Modello di embedding. Se None, viene creato automaticamente.
+        similarity_threshold: Soglia di similarita per il filtraggio dei turni.
+        max_token_limit: Limite token di default per la summarization.
+
+    Returns:
+        Istanza di SmartConversationMemory configurata.
+    """
     if llm_for_summary is None:
         from config.settings import load_settings
         from agent.llm_providers import create_chat_model
+
         settings = load_settings()
         llm_for_summary = create_chat_model(settings.llm)
         logger.info("SmartMemory: LLM per summarization creato da settings")
 
     if embedding_model is None:
         from config.settings import load_settings
+
         settings = load_settings()
         embedding_model = HuggingFaceEmbeddings(
             model_name=settings.embedding.model_name,
             encode_kwargs={"normalize_embeddings": settings.embedding.normalize_embeddings},
         )
-        logger.info(f"SmartMemory: Embedding model creato: {settings.embedding.model_name}")
+        logger.info("SmartMemory: Embedding model creato: %s", settings.embedding.model_name)
 
     effective_token_limit = max_token_limit
     if max_tokens is not None:
@@ -305,8 +431,10 @@ def create_conversation_memory(
         max_token_limit=effective_token_limit,
     )
     logger.info(
-        f"SmartConversationMemory creata: max_turns={max_turns}, "
-        f"similarity_threshold={similarity_threshold}, "
-        f"max_token_limit={effective_token_limit}"
+        "SmartConversationMemory creata: max_turns=%d, "
+        "similarity_threshold=%.2f, max_token_limit=%d",
+        max_turns,
+        similarity_threshold,
+        effective_token_limit,
     )
     return memory
