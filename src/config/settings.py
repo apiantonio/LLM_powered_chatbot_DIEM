@@ -157,17 +157,41 @@ class RerankerConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Configurazione del modello linguistico (provider, credenziali, parametri)."""
+    """Configurazione del modello linguistico (provider, credenziali, parametri).
 
-    provider: str = "groq"
-    model_name: str = "llama-3.3-70b-versatile"
-    temperature: float = 0.1
+    - provider / model_name: provider e modello per il CHAT (es. ollama / nemotron-3-super:cloud).
+    - fallback_model / fallback_base_url: modello Ollama locale usato come fallback universale.
+    - rewriter_provider / rewriter_model / groq_rewriter_api_key: config dedicata al rewriter.
+    - groq_guardrails_api_key: chiave Groq dedicata ai guardrails.
+    - groq_chat_api_key: chiave Groq dedicata al chat (usata solo se provider=groq).
+    """
+
+    # --- Chat Model (primario) ---
+    provider: str = "ollama"
+    model_name: str = "nemotron-3-super:cloud"
+    temperature: float = 0.0
     max_tokens: int = 1024
+    ollama_base_url: str = "http://localhost:11434"
+
+    # --- Fallback locale (Ollama) ---
+    fallback_model: str = "qwen2.5"
+    fallback_base_url: str = "http://localhost:11434"
+
+    # --- Rewriter ---
+    rewriter_provider: str = "groq"
+    rewriter_model: str = "llama-3.3-70b-versatile"
+    groq_rewriter_api_key: Optional[str] = field(default=None)
+
+    # --- Guardrails ---
+    groq_guardrails_api_key: Optional[str] = field(default=None)
+    guardrails_model: str = "llama-3.3-70b-versatile"
+
+    # --- Chat Groq (usata solo se provider=groq) ---
+    groq_chat_api_key: Optional[str] = field(default=None)
+
+    # --- Legacy / altri provider ---
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
-    ollama_base_url: str = "http://localhost:11434"
-    groq_rewriter_api_key: Optional[str] = field(default=None)
-    groq_chat_api_key: Optional[str] = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -229,7 +253,7 @@ def load_settings() -> AppSettings:
             md_static_dir=os.getenv("MD_STATIC_DIR", "data/raw/static_md"),
             cutoff_year=int(os.getenv("CUTOFF_YEAR", "2020")),
             target_department=os.getenv("TARGET_DEPARTMENT", "300638"),
-            index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore_qwen/index_registry.json"),
+            index_registry_path=os.getenv("INDEX_REGISTRY_PATH", "data/vectorstore/index_registry.json"),
             max_depth=int(os.getenv("MAX_DEPTH", "5")),
             batch_size=int(os.getenv("BATCH_SIZE", "1024")),
         ),
@@ -238,20 +262,35 @@ def load_settings() -> AppSettings:
             thread_max_workers=int(os.getenv("CRAWLER_MAX_WORKERS", "16")),
         ),
         llm=LLMConfig(
-            provider=os.getenv("LLM_PROVIDER", "groq"),
-            model_name=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
-            temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
+            # Chat Model
+            provider=os.getenv("LLM_PROVIDER", "ollama"),
+            model_name=os.getenv("LLM_MODEL", "nemotron-3-super:cloud"),
+            temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
+            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            # Fallback locale
+            fallback_model=os.getenv("FALLBACK_MODEL", "qwen2.5"),
+            fallback_base_url=os.getenv("FALLBACK_BASE_URL",
+                                        os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
+            # Rewriter
+            rewriter_provider=os.getenv("REWRITER_PROVIDER", "groq"),
+            rewriter_model=os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
+            groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
+            # Guardrails
+            groq_guardrails_api_key=os.getenv("GROQ_GUARDRAILS_API_KEY"),
+            guardrails_model=os.getenv("GUARDRAILS_MODEL", "llama-3.3-70b-versatile"),
+            # Chat Groq
+            groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
+            # Legacy
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
-            groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
         ),
         embedding=EmbeddingConfig(
             model_name=os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
         ),
         vectorstore=VectorStoreConfig(
-            persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore_qwen/chroma"),
-            parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore_qwen/parent_docstore"),
+            persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
+            parent_store_directory=os.getenv("PARENT_STORE_DIR", "data/vectorstore/parent_docstore"),
         ),
         observability=ObservabilityConfig(
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",

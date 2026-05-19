@@ -27,14 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
-    """Costruisce e restituisce il RetrievalEngine completo.
-
-    Args:
-        settings: Configurazione dell'applicazione.
-
-    Returns:
-        Istanza di RetrievalEngine inizializzata.
-    """
     logger.info("[BOOT] Inizializzazione Indexer...")
     indexer = KnowledgeBaseIndexer(settings)
 
@@ -44,13 +36,14 @@ def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
     rewriter_provider = os.getenv("REWRITER_PROVIDER", "").strip()
     if rewriter_provider:
         logger.info(
-            "[BOOT] QueryOptimizer: LLM dedicato via %s (%s)",
+            "[BOOT] QueryOptimizer: provider dedicato richiesto (%s/%s)",
             rewriter_provider.upper(),
             os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
         )
     else:
         logger.info(
-            "[BOOT] QueryOptimizer: LLM principale (%s) con temperature=0.0",
+            "[BOOT] QueryOptimizer: usa LLM principale (%s/%s) con temperature=0.0",
+            settings.llm.provider.upper(),
             settings.llm.model_name,
         )
 
@@ -70,14 +63,6 @@ def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
 
 
 def build_embedding_model(settings: AppSettings) -> HuggingFaceEmbeddings:
-    """Costruisce e restituisce il modello di embedding.
-
-    Args:
-        settings: Configurazione dell'applicazione.
-
-    Returns:
-        Istanza di HuggingFaceEmbeddings inizializzata.
-    """
     logger.info("[BOOT] Inizializzazione HuggingFaceEmbeddings: %s", settings.embedding.model_name)
     embedding_model = HuggingFaceEmbeddings(
         model_name=settings.embedding.model_name,
@@ -94,18 +79,6 @@ def build_agent(
     max_memory_turns: int = 10,
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
 ) -> RAGAgent:
-    """Costruisce l'agente RAG tramite la factory.
-
-    Args:
-        settings: Configurazione dell'applicazione.
-        engine: Motore di retrieval inizializzato.
-        enable_scope_guardrail: Se True, abilita il guardrail di pertinenza tematica.
-        max_memory_turns: Numero massimo di turni in memoria.
-        embedding_model: Modello di embedding opzionale.
-
-    Returns:
-        Istanza di RAGAgent pronta all'uso.
-    """
     return RAGAgentFactory.create(
         retrieval_engine=engine,
         settings=settings,
@@ -132,11 +105,6 @@ WELCOME_BANNER = """
 
 
 def run_repl(agent: RAGAgent) -> None:
-    """Avvia il ciclo REPL interattivo per l'interazione con l'agente.
-
-    Args:
-        agent: Istanza di RAGAgent inizializzata.
-    """
     print(WELCOME_BANNER)
 
     while True:
@@ -164,15 +132,6 @@ def run_repl(agent: RAGAgent) -> None:
 
 
 def _handle_command(user_input: str, agent: RAGAgent) -> Optional[str]:
-    """Gestisce i comandi speciali del REPL.
-
-    Args:
-        user_input: Input dell'utente che inizia con '/'.
-        agent: Istanza di RAGAgent.
-
-    Returns:
-        'quit' se l'utente vuole uscire, None altrimenti.
-    """
     command = user_input.lower()
 
     if command in ("/quit", "/exit"):
@@ -206,11 +165,6 @@ def _handle_command(user_input: str, agent: RAGAgent) -> Optional[str]:
 
 
 def parse_args() -> argparse.Namespace:
-    """Analizza gli argomenti da riga di comando.
-
-    Returns:
-        Namespace con gli argomenti parsati.
-    """
     parser = argparse.ArgumentParser(
         description="Agente RAG DIEM -- Assistente virtuale DIEM UniSA",
     )
@@ -227,7 +181,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Entry point principale dell'applicazione."""
     args = parse_args()
 
     settings = load_settings()

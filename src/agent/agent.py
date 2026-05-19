@@ -4,6 +4,7 @@ Implementa il facade RAGAgent e la factory RAGAgentFactory per
 l'assemblaggio e l'interazione con l'agente conversazionale.
 """
 
+import re
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -22,21 +23,23 @@ from agent.memory import SmartConversationMemory, create_conversation_memory, _i
 from agent.prompts import get_agent_system_prompt
 from agent.guardrails import GuardrailsChecker, build_guardrails_checker
 from agent.tools import set_retrieval_engine, set_chat_history, get_all_tools, get_last_search_meta
-from agent.llm_providers import create_chat_model
+from agent.llm_providers import create_chat_model, create_rewriter_llm
 from retrieval.engine import RetrievalEngine, QueryOptimizer
 
 logger = logging.getLogger(__name__)
 
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_think_tags(text: str) -> str:
+    """Rimuove i tag <think>...</think> dal testo e restituisce il contenuto pulito."""
+    if not text:
+        return ""
+    cleaned = _THINK_TAG_RE.sub("", text).strip()
+    return cleaned
+
 
 def _get_temporal_system_message() -> dict:
-    """Costruisce un dizionario messaggio di sistema con il contesto temporale.
-
-    Utilizza Negative Prompting per evitare l'uso forzato dell'anno
-    quando l'utente non lo specifica esplicitamente.
-
-    Returns:
-        Dizionario con chiavi 'role' e 'content' per l'iniezione nel contesto.
-    """
     now = datetime.now()
     giorni = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"]
     mesi = [
@@ -76,16 +79,6 @@ class RAGAgent:
         query_optimizer: Optional[QueryOptimizer] = None,
         guardrails_checker: Optional[GuardrailsChecker] = None,
     ):
-        """Inizializza l'agente RAG.
-
-        Args:
-            agent_graph: Grafo dell'agente LangChain compilato.
-            memory: Memoria conversazionale.
-            settings: Configurazione dell'applicazione.
-            interaction_logger: Handler per il logging delle interazioni.
-            query_optimizer: Ottimizzatore per il rewriting delle query.
-            guardrails_checker: Checker per i guardrails input/output.
-        """
         self._agent = agent_graph
         self._memory = memory
         self._settings = settings
@@ -95,29 +88,6 @@ class RAGAgent:
         self._traces: List[Dict[str, Any]] = []
 
     def chat(self, user_query: str) -> dict:
-        """Punto di ingresso principale per l'interazione con l'agente.
-
-        Flusso lineare con guardrails:
-        1. Input guardrail check (query originale, prima del rewriting)
-        2. Memory: costruzione messaggi con storico
-        3. Query rewriting: risoluzione coreferenze
-        4. Cache: corto circuito se match esatto
-        5. Memory: salvataggio query
-        6. Iniezione contesto temporale
-        7. Chat history injection per tool
-        8. Agent: singola invocazione
-        9. Output guardrail check (risposta finale)
-        10. Logging e memory update (solo se non bloccato)
-
-        Le interazioni bloccate dai guardrails (input o output) non
-        vengono salvate in memoria per evitare inquinamento.
-
-        Args:
-            user_query: Domanda dell'utente.
-
-        Returns:
-            Dizionario con response, blocked, block_reason, trace e turn.
-        """
         logger.info("USER QUERY (pulita): %s", user_query)
 
         if self._guardrails_checker:
@@ -265,14 +235,6 @@ class RAGAgent:
         }
 
     def _rewrite_query(self, user_query: str) -> str:
-        """Riscrive la query risolvendo coreferenze con il turno precedente.
-
-        Args:
-            user_query: Query originale dell'utente.
-
-        Returns:
-            Query riscritta, oppure quella originale se il rewriting non e' possibile.
-        """
         if not self._query_optimizer:
             return user_query
 
@@ -297,13 +259,6 @@ class RAGAgent:
     def _replace_query_in_messages(
         messages: list, original_query: str, rewritten_query: str
     ) -> None:
-        """Sostituisce la query originale con quella riscritta nei messaggi.
-
-        Args:
-            messages: Lista di messaggi da aggiornare.
-            original_query: Query originale da sostituire.
-            rewritten_query: Query riscritta sostitutiva.
-        """
         for i in range(len(messages) - 1, -1, -1):
             msg = messages[i]
             if msg.get("role") == "user" and original_query in msg["content"]:
@@ -326,15 +281,6 @@ class RAGAgent:
         final_response: str,
         rewritten_query: str = "",
     ) -> None:
-        """Salva il log dell'interazione corrente su file.
-
-        Args:
-            turn_number: Numero del turno corrente.
-            user_query: Query originale dell'utente.
-            obs_handler: Handler di osservabilita con i dati della pipeline.
-            final_response: Risposta finale dell'agente.
-            rewritten_query: Query riscritta, se diversa dall'originale.
-        """
         try:
             system_prompt = obs_handler.get_system_prompt()
             history_str = self._memory.get_history_summary()
@@ -371,47 +317,71 @@ class RAGAgent:
             logger.error("Errore salvataggio log interazione: %s", e)
 
     def get_all_traces(self) -> List[Dict[str, Any]]:
-        """Restituisce tutte le trace accumulate nella sessione."""
         return self._traces
 
     def reset_memory(self) -> None:
-        """Resetta la memoria e le trace della sessione."""
         self._memory.clear()
         self._traces.clear()
         logger.info("Sessione agente resettata")
 
     @property
     def memory(self) -> SmartConversationMemory:
-        """Restituisce l'istanza di memoria conversazionale."""
         return self._memory
 
     @staticmethod
     def _extract_final_response(result: Dict[str, Any]) -> str:
         """Estrae la risposta finale dai messaggi prodotti dall'agente.
 
-        Args:
-            result: Dizionario risultato dell'invocazione dell'agente.
-
-        Returns:
-            Testo della risposta finale, oppure stringa vuota.
+        Gestisce modelli thinking (Nemotron, Qwen, DeepSeek-R1) che possono:
+        - Mettere la risposta in content con <think>...</think> tags
+        - Mettere la risposta in additional_kwargs["reasoning_content"]
+          lasciando content vuoto
+        - Comportarsi normalmente con content pieno
         """
         messages = result.get("messages", [])
 
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and not msg.tool_calls:
-                return msg.content
+                content = _strip_think_tags(msg.content)
+                if content:
+                    return content
+
+                reasoning = (
+                    getattr(msg, "additional_kwargs", {})
+                    .get("reasoning_content", "")
+                )
+                if reasoning:
+                    logger.warning(
+                        "Risposta trovata in reasoning_content (content era vuoto). "
+                        "Considera di impostare reasoning=False in ChatOllama."
+                    )
+                    return _strip_think_tags(reasoning)
+
             if isinstance(msg, dict) and msg.get("role") == "assistant":
                 if not msg.get("tool_calls"):
-                    return msg.get("content", "")
+                    content = _strip_think_tags(msg.get("content", ""))
+                    if content:
+                        return content
 
         for msg in reversed(messages):
-            content = (
-                getattr(msg, 'content', None)
-                or (msg.get('content', '') if isinstance(msg, dict) else '')
-            )
+            content = ""
+            if isinstance(msg, AIMessage):
+                content = _strip_think_tags(msg.content)
+                if not content:
+                    content = _strip_think_tags(
+                        getattr(msg, "additional_kwargs", {})
+                        .get("reasoning_content", "")
+                    )
+            elif isinstance(msg, dict):
+                content = _strip_think_tags(msg.get("content", ""))
+
             if content:
                 return content
 
+        logger.error(
+            "Impossibile estrarre risposta dai messaggi dell'agente. "
+            "Tutti i content sono vuoti."
+        )
         return ""
 
 
@@ -427,19 +397,6 @@ class RAGAgentFactory:
         log_output_dir: str = "logs/interactions",
         embedding_model: Optional[HuggingFaceEmbeddings] = None,
     ) -> "RAGAgent":
-        """Assembla e restituisce un agente RAG completo.
-
-        Args:
-            retrieval_engine: Motore di retrieval inizializzato.
-            settings: Configurazione dell'applicazione. Se None, viene caricata automaticamente.
-            enable_scope_guardrail: Se True, abilita il guardrail di pertinenza tematica.
-            max_memory_turns: Numero massimo di turni in memoria.
-            log_output_dir: Directory di output per i log delle interazioni.
-            embedding_model: Modello di embedding. Se None, viene usato quello del retrieval engine.
-
-        Returns:
-            Istanza di RAGAgent pronta all'uso.
-        """
         settings = settings or load_settings()
 
         logger.info("=" * 60)
@@ -447,7 +404,6 @@ class RAGAgentFactory:
         logger.info("=" * 60)
 
         chat_model = create_chat_model(settings.llm)
-        logger.info("    ChatModel: %s", settings.llm.model_name)
 
         set_retrieval_engine(retrieval_engine)
         tools = get_all_tools()
@@ -487,11 +443,6 @@ class RAGAgentFactory:
             enable_code_guard=True,
         )
 
-        if guardrails_checker:
-            logger.info("    GuardrailsChecker configurato e attivo")
-        else:
-            logger.warning("    GuardrailsChecker non disponibile - guardrails disabilitati")
-
         from langchain.agents import create_agent
 
         agent_graph = create_agent(
@@ -512,19 +463,26 @@ class RAGAgentFactory:
 
         now = datetime.now()
         anno_acc = now.year if now.month >= 10 else now.year - 1
+
         logger.info("=" * 60)
         logger.info(" Agente RAG DIEM assemblato e pronto!")
+        logger.info("=" * 60)
         logger.info("    Temporale: iniezione SEMPRE attiva (A.A. default: %d/%d)", anno_acc, anno_acc + 1)
-        logger.info("    Memoria: SmartConversationMemory")
+        logger.info("    Memoria: SmartConversationMemory (max_turns=%d)", max_memory_turns)
         logger.info("    Tools: %d tool con Pydantic args_schema", len(tools))
-        logger.info("    Rewriting: %s", "ATTIVO a livello agente" if query_optimizer else "DISABILITATO")
-        logger.info("    Guardrails: CHECKER INTEGRATO IN chat()")
+
+        if query_optimizer:
+            logger.info("    Rewriting: ATTIVO")
+        else:
+            logger.info("    Rewriting: DISABILITATO (QueryOptimizer non disponibile)")
+
         if guardrails_checker:
+            logger.info("    Guardrails: ATTIVI (Groq Llama 3.3 70B)")
             logger.info("      - Input check: PRIMA del rewriting (query originale)")
             logger.info("      - Output check: DOPO la risposta finale")
-            logger.info("      - LLM check: Groq Llama 3.3 70B")
         else:
-            logger.info("      - DISABILITATI (nessuna API key)")
+            logger.info("    Guardrails: DISABILITATI")
+
         logger.info("    Fallback: search_all INTERNO ai tool")
         logger.info("    Chat loop: LINEARE (no retry, no reinvocazione)")
         logger.info("=" * 60)
@@ -538,17 +496,6 @@ def bootstrap_agent(
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
     **kwargs,
 ) -> RAGAgent:
-    """Shortcut per creare un agente RAG completo.
-
-    Args:
-        retrieval_engine: Motore di retrieval inizializzato.
-        settings: Configurazione dell'applicazione.
-        embedding_model: Modello di embedding opzionale.
-        **kwargs: Argomenti aggiuntivi passati a RAGAgentFactory.create().
-
-    Returns:
-        Istanza di RAGAgent pronta all'uso.
-    """
     return RAGAgentFactory.create(
         retrieval_engine=retrieval_engine,
         settings=settings,

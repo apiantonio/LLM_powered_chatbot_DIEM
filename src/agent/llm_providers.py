@@ -2,7 +2,12 @@
 
 Supporta HuggingFace, Ollama e Groq come backend per i modelli linguistici.
 Implementa una logica di fallback: se il provider primario (Groq) non e'
-disponibile, il sistema ricade automaticamente su Ollama con Qwen.
+disponibile o la chiave API non e' valida, il sistema ricade automaticamente
+su Ollama con Qwen.
+
+Per i modelli thinking (Nemotron, Qwen3, DeepSeek-R1) via Ollama,
+reasoning e' disabilitato per evitare che i thinking tokens producano
+risposte vuote quando combinati con tool calling.
 """
 
 import os
@@ -18,12 +23,51 @@ logger = logging.getLogger(__name__)
 _FALLBACK_MODEL = "qwen2.5"
 _FALLBACK_BASE_URL = "http://localhost:11434"
 
+_THINKING_MODEL_PREFIXES = (
+    "nemotron",
+    "deepseek-r1",
+    "qwen3",
+    "qwen3.5",
+    "gpt-oss",
+)
+
+
+def _is_thinking_model(model_name: str) -> bool:
+    """Verifica se il modello e' un modello thinking che richiede reasoning=False."""
+    name_lower = model_name.lower().split(":")[0]
+    return any(name_lower.startswith(prefix) for prefix in _THINKING_MODEL_PREFIXES)
+
+
+def _validate_groq_key(api_key: str, label: str) -> bool:
+    """Verifica che una chiave API Groq sia valida con una chiamata di test.
+
+    Args:
+        api_key: La chiave API da validare.
+        label: Etichetta per il logging (es. 'GROQ_CHAT_API_KEY').
+
+    Returns:
+        True se la chiave e' valida, False altrimenti.
+    """
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import HumanMessage
+
+        test_llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.0,
+            max_tokens=5,
+            api_key=api_key,
+        )
+        test_llm.invoke([HumanMessage(content="test")])
+        logger.info("Validazione %s: OK", label)
+        return True
+    except Exception as e:
+        logger.warning("Validazione %s fallita: %s", label, e)
+        return False
+
 
 def _create_fallback_chat_model(config: LLMConfig) -> BaseChatModel:
     """Crea un ChatModel di fallback su Ollama con Qwen.
-
-    Utilizza i parametri di temperatura e max_tokens dalla configurazione
-    originale, ma forza provider Ollama e modello Qwen.
 
     Args:
         config: Configurazione LLM originale per ereditare temperatura e token limit.
@@ -38,12 +82,6 @@ def _create_fallback_chat_model(config: LLMConfig) -> BaseChatModel:
 
     fallback_base_url = config.ollama_base_url or _FALLBACK_BASE_URL
 
-    logger.warning(
-        "FALLBACK ATTIVO: tentativo di connessione a Ollama (%s) con modello %s",
-        fallback_base_url,
-        _FALLBACK_MODEL,
-    )
-
     try:
         chat_model = ChatOllama(
             model=_FALLBACK_MODEL,
@@ -52,7 +90,7 @@ def _create_fallback_chat_model(config: LLMConfig) -> BaseChatModel:
             base_url=fallback_base_url,
         )
         logger.info(
-            "Fallback ChatOllama istanziato: %s su %s",
+            "CHAT MODEL ATTIVO: Ollama/%s su %s (FALLBACK)",
             _FALLBACK_MODEL,
             fallback_base_url,
         )
@@ -68,10 +106,8 @@ def _create_fallback_chat_model(config: LLMConfig) -> BaseChatModel:
 def create_chat_model(config: LLMConfig) -> BaseChatModel:
     """Crea e restituisce un ChatModel in base al provider configurato.
 
-    Per il provider Groq, viene utilizzata prioritariamente la chiave API
-    dedicata al chat (groq_chat_api_key). Se non disponibile, si ricade
-    sulla chiave generica (groq_rewriter_api_key). Se nessuna chiave Groq e'
-    configurata, il sistema ricade automaticamente su Ollama con Qwen.
+    Per modelli thinking (Nemotron, Qwen3, DeepSeek-R1) via Ollama,
+    imposta reasoning=False per evitare conflitti con il tool calling.
 
     Args:
         config: Configurazione LLM con provider, modello e parametri.
@@ -84,7 +120,7 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
         RuntimeError: Se nessun provider e' disponibile (incluso il fallback).
     """
     provider = config.provider.lower()
-    logger.info("Inizializzazione ChatModel. Provider: %s", provider.upper())
+    logger.info("Inizializzazione ChatModel. Provider richiesto: %s", provider.upper())
 
     if provider == "huggingface":
         from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
@@ -104,19 +140,32 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
                 task="text-generation",
             )
         )
-        logger.info("ChatHuggingFace istanziato: %s", config.model_name)
+        logger.info("CHAT MODEL ATTIVO: HuggingFace/%s", config.model_name)
         return chat_model
 
     if provider == "ollama":
         from langchain_ollama import ChatOllama
 
-        chat_model = ChatOllama(
+        ollama_kwargs = dict(
             model=config.model_name,
             temperature=config.temperature,
             num_predict=config.max_tokens,
             base_url=config.ollama_base_url,
         )
-        logger.info("ChatOllama istanziato: %s su %s", config.model_name, config.ollama_base_url)
+
+        if _is_thinking_model(config.model_name):
+            ollama_kwargs["reasoning"] = False
+            logger.info(
+                "Modello thinking rilevato (%s): reasoning=False per compatibilita tool calling",
+                config.model_name,
+            )
+
+        chat_model = ChatOllama(**ollama_kwargs)
+        logger.info(
+            "CHAT MODEL ATTIVO: Ollama/%s su %s",
+            config.model_name,
+            config.ollama_base_url,
+        )
         return chat_model
 
     if provider == "groq":
@@ -126,8 +175,17 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
         if not api_key:
             logger.warning(
                 "Nessuna API key Groq configurata (GROQ_CHAT_API_KEY / GROQ_REWRITER_API_KEY). "
-                "Attivazione fallback su Ollama/%s.",
-                _FALLBACK_MODEL,
+                "Attivazione fallback."
+            )
+            return _create_fallback_chat_model(config)
+
+        key_label = "GROQ_CHAT_API_KEY" if config.groq_chat_api_key else "GROQ_REWRITER_API_KEY"
+        logger.info("Validazione %s per ChatModel in corso...", key_label)
+
+        if not _validate_groq_key(api_key, key_label):
+            logger.warning(
+                "CHAT MODEL: %s non valida (401 Unauthorized). Attivazione fallback.",
+                key_label,
             )
             return _create_fallback_chat_model(config)
 
@@ -139,17 +197,16 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
                 api_key=api_key,
             )
             logger.info(
-                "ChatGroq istanziato: %s (api_key: %s)",
+                "CHAT MODEL ATTIVO: Groq/%s (api_key: %s)",
                 config.model_name,
-                "GROQ_CHAT_API_KEY" if config.groq_chat_api_key else "GROQ_REWRITER_API_KEY",
+                key_label,
             )
             return chat_model
         except Exception as e:
             logger.error(
-                "Errore istanziazione ChatGroq (%s): %s. Attivazione fallback su Ollama/%s.",
+                "Errore istanziazione ChatGroq (%s): %s. Attivazione fallback.",
                 config.model_name,
                 e,
-                _FALLBACK_MODEL,
             )
             return _create_fallback_chat_model(config)
 
@@ -164,7 +221,7 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
 
     Se REWRITER_PROVIDER e' configurato, usa un LLM separato (Groq).
     Altrimenti riutilizza il provider principale con temperature=0.0.
-    In caso di chiavi mancanti, ricade su Ollama con Qwen.
+    In caso di chiavi mancanti o invalide, ricade su Ollama con Qwen.
 
     Args:
         fallback_config: Configurazione LLM principale usata come fallback.
@@ -182,39 +239,42 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
         main_provider = fallback_config.provider.lower()
         logger.info(
             "REWRITER_PROVIDER non configurato. "
-            "Uso LLM principale (%s) con temperature=0.0",
+            "Uso LLM principale (%s/%s) con temperature=0.0",
+            main_provider.upper(),
             fallback_config.model_name,
         )
 
         if main_provider == "ollama":
             from langchain_ollama import ChatOllama
 
-            return ChatOllama(
+            ollama_kwargs = dict(
                 model=fallback_config.model_name,
                 temperature=0.0,
                 num_predict=256,
                 base_url=fallback_config.ollama_base_url,
             )
 
+            if _is_thinking_model(fallback_config.model_name):
+                ollama_kwargs["reasoning"] = False
+
+            llm = ChatOllama(**ollama_kwargs)
+            logger.info(
+                "REWRITER ATTIVO: Ollama/%s su %s (temperature=0.0)",
+                fallback_config.model_name,
+                fallback_config.ollama_base_url,
+            )
+            return llm
+
         if main_provider == "huggingface":
             from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 
             if not fallback_config.huggingface_api_token:
                 logger.warning(
-                    "HUGGINGFACEHUB_API_TOKEN mancante per rewriter. "
-                    "Attivazione fallback su Ollama/%s.",
-                    _FALLBACK_MODEL,
+                    "HUGGINGFACEHUB_API_TOKEN mancante per rewriter. Attivazione fallback."
                 )
-                from langchain_ollama import ChatOllama
+                return _create_rewriter_fallback(fallback_config)
 
-                return ChatOllama(
-                    model=_FALLBACK_MODEL,
-                    temperature=0.0,
-                    num_predict=256,
-                    base_url=fallback_config.ollama_base_url or _FALLBACK_BASE_URL,
-                )
-
-            return ChatHuggingFace(
+            llm = ChatHuggingFace(
                 llm=HuggingFaceEndpoint(
                     repo_id=fallback_config.model_name,
                     temperature=0.01,
@@ -223,6 +283,11 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
                     task="text-generation",
                 )
             )
+            logger.info(
+                "REWRITER ATTIVO: HuggingFace/%s (temperature=0.01)",
+                fallback_config.model_name,
+            )
+            return llm
 
         if main_provider == "groq":
             from langchain_groq import ChatGroq
@@ -230,18 +295,16 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
             api_key = fallback_config.groq_rewriter_api_key
             if not api_key:
                 logger.warning(
-                    "GROQ_REWRITER_API_KEY mancante per rewriter. "
-                    "Attivazione fallback su Ollama/%s.",
-                    _FALLBACK_MODEL,
+                    "GROQ_REWRITER_API_KEY mancante. Attivazione fallback."
                 )
-                from langchain_ollama import ChatOllama
+                return _create_rewriter_fallback(fallback_config)
 
-                return ChatOllama(
-                    model=_FALLBACK_MODEL,
-                    temperature=0.0,
-                    num_predict=256,
-                    base_url=fallback_config.ollama_base_url or _FALLBACK_BASE_URL,
+            logger.info("Validazione GROQ_REWRITER_API_KEY per Rewriter in corso...")
+            if not _validate_groq_key(api_key, "GROQ_REWRITER_API_KEY"):
+                logger.warning(
+                    "REWRITER: GROQ_REWRITER_API_KEY non valida. Attivazione fallback."
                 )
+                return _create_rewriter_fallback(fallback_config)
 
             try:
                 llm = ChatGroq(
@@ -251,25 +314,16 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
                     api_key=api_key,
                 )
                 logger.info(
-                    "Rewriter LLM (fallback): ChatGroq (%s) - temperature=0.0",
+                    "REWRITER ATTIVO: Groq/%s (temperature=0.0)",
                     fallback_config.model_name,
                 )
                 return llm
             except Exception as e:
                 logger.error(
-                    "Errore istanziazione rewriter ChatGroq: %s. "
-                    "Attivazione fallback su Ollama/%s.",
+                    "Errore istanziazione rewriter ChatGroq: %s. Attivazione fallback.",
                     e,
-                    _FALLBACK_MODEL,
                 )
-                from langchain_ollama import ChatOllama
-
-                return ChatOllama(
-                    model=_FALLBACK_MODEL,
-                    temperature=0.0,
-                    num_predict=256,
-                    base_url=fallback_config.ollama_base_url or _FALLBACK_BASE_URL,
-                )
+                return _create_rewriter_fallback(fallback_config)
 
         return create_chat_model(fallback_config)
 
@@ -281,18 +335,17 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
 
         if not api_key:
             logger.warning(
-                "GROQ_REWRITER_API_KEY mancante per rewriter esplicito. "
-                "Attivazione fallback su Ollama/%s.",
-                _FALLBACK_MODEL,
+                "GROQ_REWRITER_API_KEY mancante per rewriter esplicito. Attivazione fallback."
             )
-            from langchain_ollama import ChatOllama
+            return _create_rewriter_fallback(fallback_config)
 
-            return ChatOllama(
-                model=_FALLBACK_MODEL,
-                temperature=0.0,
-                num_predict=256,
-                base_url=fallback_config.ollama_base_url or _FALLBACK_BASE_URL,
+        logger.info("Validazione GROQ_REWRITER_API_KEY per Rewriter dedicato in corso...")
+        if not _validate_groq_key(api_key, "GROQ_REWRITER_API_KEY"):
+            logger.warning(
+                "REWRITER: GROQ_REWRITER_API_KEY non valida (401 Unauthorized). "
+                "Attivazione fallback."
             )
+            return _create_rewriter_fallback(fallback_config)
 
         try:
             llm = ChatGroq(
@@ -301,26 +354,47 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
                 max_tokens=256,
                 api_key=api_key,
             )
-            logger.info("Rewriter LLM: ChatGroq (%s) - temperature=0.0", model)
+            logger.info(
+                "REWRITER ATTIVO: Groq/%s dedicato (temperature=0.0)",
+                model,
+            )
             return llm
         except Exception as e:
             logger.error(
-                "Errore istanziazione rewriter ChatGroq (%s): %s. "
-                "Attivazione fallback su Ollama/%s.",
+                "Errore istanziazione rewriter ChatGroq (%s): %s. Attivazione fallback.",
                 model,
                 e,
-                _FALLBACK_MODEL,
             )
-            from langchain_ollama import ChatOllama
-
-            return ChatOllama(
-                model=_FALLBACK_MODEL,
-                temperature=0.0,
-                num_predict=256,
-                base_url=fallback_config.ollama_base_url or _FALLBACK_BASE_URL,
-            )
+            return _create_rewriter_fallback(fallback_config)
 
     raise ValueError(
         f"REWRITER_PROVIDER non supportato: '{provider}'. "
         "Valori ammessi: 'groq' (oppure lasciare vuoto per usare il LLM principale)."
     )
+
+
+def _create_rewriter_fallback(config: LLMConfig) -> BaseChatModel:
+    """Crea un LLM di fallback per il rewriter su Ollama/Qwen.
+
+    Args:
+        config: Configurazione LLM per ereditare base_url.
+
+    Returns:
+        Istanza di BaseChatModel Ollama/Qwen per il rewriting.
+    """
+    from langchain_ollama import ChatOllama
+
+    base_url = config.ollama_base_url or _FALLBACK_BASE_URL
+
+    llm = ChatOllama(
+        model=_FALLBACK_MODEL,
+        temperature=0.0,
+        num_predict=256,
+        base_url=base_url,
+    )
+    logger.info(
+        "REWRITER ATTIVO: Ollama/%s su %s (FALLBACK, temperature=0.0)",
+        _FALLBACK_MODEL,
+        base_url,
+    )
+    return llm

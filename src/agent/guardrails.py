@@ -35,13 +35,6 @@ class GuardrailsChecker:
         enable_input_check: bool = True,
         enable_output_check: bool = True,
     ):
-        """Inizializza il checker con un LLM e i flag di abilitazione.
-
-        Args:
-            llm: Modello linguistico per i controlli di guardrail.
-            enable_input_check: Se True, abilita il controllo sull'input utente.
-            enable_output_check: Se True, abilita il controllo sull'output agente.
-        """
         self._llm = llm
         self._enable_input = enable_input_check
         self._enable_output = enable_output_check
@@ -55,14 +48,6 @@ class GuardrailsChecker:
         )
 
     def _load_prompt(self, task_name: str) -> Optional[str]:
-        """Carica un template di prompt dal file prompts.yml.
-
-        Args:
-            task_name: Identificativo del task nel file YAML.
-
-        Returns:
-            Contenuto del prompt, oppure None se non trovato.
-        """
         prompts_path = _GUARDRAILS_CONFIG_DIR / "prompts.yml"
         if not prompts_path.exists():
             logger.error("File prompts.yml non trovato: %s", prompts_path)
@@ -86,14 +71,6 @@ class GuardrailsChecker:
             return None
 
     def _call_llm_check(self, prompt: str) -> Optional[bool]:
-        """Invoca il LLM per un controllo di guardrail.
-
-        Args:
-            prompt: Prompt completo da inviare al LLM.
-
-        Returns:
-            True se consentito, False se bloccato, None in caso di errore.
-        """
         try:
             from langchain_core.messages import HumanMessage
 
@@ -101,7 +78,7 @@ class GuardrailsChecker:
             result_text = response.content.strip().lower()
             first_word = result_text.split()[0].strip(".,;:!?") if result_text else ""
 
-            logger.info(
+            logger.debug(
                 "Guardrail LLM check result: '%s' -> first_word='%s'",
                 result_text,
                 first_word,
@@ -123,14 +100,6 @@ class GuardrailsChecker:
             return True
 
     def check_input(self, user_message: str) -> Tuple[bool, str]:
-        """Verifica se l'input utente e' consentito dalle policy.
-
-        Args:
-            user_message: Messaggio dell'utente da controllare.
-
-        Returns:
-            Tupla (consentito, messaggio_blocco). Se consentito, messaggio_blocco e' vuoto.
-        """
         if not self._enable_input:
             return (True, "")
 
@@ -150,14 +119,6 @@ class GuardrailsChecker:
         return (False, BLOCKED_INPUT_MESSAGE)
 
     def check_output(self, bot_response: str) -> Tuple[bool, str]:
-        """Verifica se l'output dell'agente e' consentito dalle policy.
-
-        Args:
-            bot_response: Risposta dell'agente da controllare.
-
-        Returns:
-            Tupla (consentito, messaggio_blocco). Se consentito, messaggio_blocco e' vuoto.
-        """
         if not self._enable_output:
             return (True, "")
 
@@ -181,6 +142,29 @@ class GuardrailsChecker:
         return (False, BLOCKED_OUTPUT_MESSAGE)
 
 
+def _validate_groq_api_key(api_key: str) -> bool:
+    """Verifica che la chiave API Groq sia valida con una chiamata di test.
+
+    Returns:
+        True se la chiave e' valida, False altrimenti.
+    """
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import HumanMessage
+
+        test_llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.0,
+            max_tokens=5,
+            api_key=api_key,
+        )
+        test_llm.invoke([HumanMessage(content="test")])
+        return True
+    except Exception as e:
+        logger.warning("Validazione API key Groq fallita: %s", e)
+        return False
+
+
 def build_guardrails_checker(
     enable_pii: bool = True,
     enable_topical: bool = True,
@@ -191,38 +175,33 @@ def build_guardrails_checker(
 ) -> Optional[GuardrailsChecker]:
     """Factory per la creazione di un GuardrailsChecker configurato.
 
-    Richiede GROQ_GUARDRAILS_API_KEY e i file di configurazione nella
-    directory guardrails_config.
-
-    Args:
-        enable_pii: Abilita il filtro PII sull'output.
-        enable_topical: Abilita il controllo di pertinenza tematica sull'input.
-        enable_injection: Abilita il controllo anti-injection sull'input.
-        enable_toxicity: Abilita il controllo di tossicita sull'input.
-        enable_hallucination: Abilita il controllo anti-allucinazione sull'output.
-        enable_code_guard: Abilita il controllo codice sull'output.
-
-    Returns:
-        Istanza di GuardrailsChecker, oppure None se non configurabile.
+    Richiede GROQ_GUARDRAILS_API_KEY valida e i file di configurazione.
     """
     guardrails_api_key = os.environ.get("GROQ_GUARDRAILS_API_KEY", "").strip()
     if not guardrails_api_key:
         logger.warning(
-            "GROQ_GUARDRAILS_API_KEY non configurata. "
-            "I guardrails NON saranno attivati."
+            "GUARDRAILS DISABILITATI: GROQ_GUARDRAILS_API_KEY non configurata."
         )
         return None
 
     if not _GUARDRAILS_CONFIG_DIR.exists():
         logger.error(
-            "Directory configurazione non trovata: %s. Guardrails disabilitati.",
+            "GUARDRAILS DISABILITATI: directory configurazione non trovata: %s",
             _GUARDRAILS_CONFIG_DIR,
         )
         return None
 
     prompts_path = _GUARDRAILS_CONFIG_DIR / "prompts.yml"
     if not prompts_path.exists():
-        logger.error("prompts.yml non trovato: %s", prompts_path)
+        logger.error("GUARDRAILS DISABILITATI: prompts.yml non trovato: %s", prompts_path)
+        return None
+
+    logger.info("Validazione GROQ_GUARDRAILS_API_KEY in corso...")
+    if not _validate_groq_api_key(guardrails_api_key):
+        logger.warning(
+            "GUARDRAILS DISABILITATI: GROQ_GUARDRAILS_API_KEY non valida (401 Unauthorized). "
+            "Controlla la chiave nel file .env."
+        )
         return None
 
     try:
@@ -244,7 +223,7 @@ def build_guardrails_checker(
             enable_output_check=enable_output,
         )
 
-        logger.info("GuardrailsChecker configurato:")
+        logger.info("GUARDRAILS ATTIVI:")
         logger.info("  - LLM: Groq Llama 3.3 70B (temperature=0.0)")
         logger.info("  - Input check: %s", "ON" if enable_input else "OFF")
         logger.info("  - Output check: %s", "ON" if enable_output else "OFF")
@@ -253,16 +232,15 @@ def build_guardrails_checker(
 
     except ImportError as e:
         logger.error(
-            "Impossibile importare langchain_groq: %s. "
-            "Installa con: pip install langchain-groq. "
-            "Guardrails disabilitati.",
+            "GUARDRAILS DISABILITATI: impossibile importare langchain_groq: %s. "
+            "Installa con: pip install langchain-groq.",
             e,
         )
         return None
 
     except Exception as e:
         logger.error(
-            "Errore configurazione GuardrailsChecker: %s. Guardrails disabilitati.",
+            "GUARDRAILS DISABILITATI: errore configurazione: %s",
             e,
         )
         return None
