@@ -6,6 +6,10 @@ persone, offerta formativa, dipartimento e ricerca trasversale.
 NOTA: Questo file contiene una modifica rispetto all'originale per supportare
 la valutazione RAGAS. Il campo "retrieved_texts" e' stato aggiunto a
 _last_search_meta per esporre i testi raw dei chunk recuperati.
+
+ANTI-LOOP: Il limite di tool call e' gestito esclusivamente dal
+ToolCallLimitMiddleware configurato in agent.py con
+exit_behavior="continue". Nessun contatore interno nei tool.
 """
 
 from __future__ import annotations
@@ -35,71 +39,6 @@ _last_search_meta: Dict[str, Any] = {
     "top_links": [],
     "retrieved_texts": [],
 }
-
-_tool_call_counter: int = 0
-_max_tool_calls: int = 3
-
-_TOOL_LIMIT_REACHED_MSG = (
-    "LIMITE MASSIMO DI CHIAMATE TOOL RAGGIUNTO ({count}/{max}). "
-    "NON invocare altri tool. Rispondi SUBITO all'utente utilizzando "
-    "ESCLUSIVAMENTE le informazioni gia' recuperate nelle chiamate "
-    "precedenti. Se non hai trovato informazioni sufficienti, comunica "
-    "all'utente che l'informazione non e' disponibile e suggerisci di "
-    "consultare il sito web del DIEM o contattare la segreteria."
-)
-
-
-def set_max_tool_calls(limit: int) -> None:
-    """Imposta il numero massimo di chiamate tool per query.
-
-    Viene invocato da RAGAgentFactory con il valore da settings.
-
-    Args:
-        limit: Numero massimo di chiamate tool consentite per query.
-    """
-    global _max_tool_calls
-    _max_tool_calls = max(1, limit)
-    logger.info("max_tool_calls impostato a %d", _max_tool_calls)
-
-
-def reset_tool_call_counter() -> None:
-    """Resetta il contatore delle chiamate tool.
-
-    Deve essere invocato da agent.py prima di ogni nuova query
-    per garantire che il contatore parta da zero.
-    """
-    global _tool_call_counter
-    _tool_call_counter = 0
-    logger.debug("Tool call counter resettato a 0")
-
-
-def _increment_and_check_limit() -> Optional[str]:
-    """Incrementa il contatore e verifica se il limite e' stato raggiunto.
-
-    Returns:
-        Messaggio di stop se il limite e' raggiunto, None altrimenti.
-    """
-    global _tool_call_counter
-    _tool_call_counter += 1
-
-    logger.info(
-        "Tool call %d/%d",
-        _tool_call_counter,
-        _max_tool_calls,
-    )
-
-    if _tool_call_counter > _max_tool_calls:
-        logger.warning(
-            "LIMITE TOOL RAGGIUNTO: %d/%d chiamate. Forzatura risposta.",
-            _tool_call_counter,
-            _max_tool_calls,
-        )
-        return _TOOL_LIMIT_REACHED_MSG.format(
-            count=_tool_call_counter,
-            max=_max_tool_calls,
-        )
-
-    return None
 
 
 def set_retrieval_engine(engine: "RetrievalEngine") -> None:
@@ -220,9 +159,6 @@ def _search_collection(
 ) -> str:
     """Esegue una ricerca su una collezione specifica con fallback automatico.
 
-    Prima di eseguire la ricerca, verifica che il limite di chiamate tool
-    non sia stato raggiunto. Se superato, restituisce un messaggio di stop.
-
     Args:
         query: Query di ricerca.
         collection: Collezione target.
@@ -233,10 +169,6 @@ def _search_collection(
         Risultati formattati come stringa.
     """
     global _last_search_meta
-
-    limit_msg = _increment_and_check_limit()
-    if limit_msg is not None:
-        return limit_msg
 
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."
@@ -683,10 +615,6 @@ query is ambiguous and does not clearly belong to a single collection.
 
 Never use this as a first choice. Pass the user's full question in the query parameter."""
     global _last_search_meta
-
-    limit_msg = _increment_and_check_limit()
-    if limit_msg is not None:
-        return limit_msg
 
     if _retrieval_engine is None:
         return "Errore interno: motore di ricerca non inizializzato."

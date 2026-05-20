@@ -16,11 +16,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 logger = logging.getLogger(__name__)
 
-_RETRIEVAL_REMINDER = (
-    "\n\n[SISTEMA: invoke a search tool. "
-    "Pass the user's query INTACT to the tool, without abbreviating it.]"
-)
-
 
 @dataclass
 class ConversationTurn:
@@ -281,17 +276,17 @@ class SmartConversationMemory:
 
         return None
 
-    def get_messages_for_agent(self, current_query: str) -> list:
-        """Costruisce la lista di messaggi da inviare all'agente.
+    def _build_history_messages(self, current_query: str) -> list:
+        """Costruisce la lista di messaggi di storico filtrati e riassunti.
 
-        Include lo storico filtrato e riassunto, piu la query corrente
-        con il reminder di retrieval.
+        Metodo interno condiviso da get_messages_for_agent e
+        get_messages_for_agent_no_retrieval per evitare duplicazione.
 
         Args:
-            current_query: Query corrente dell'utente.
+            current_query: Query corrente per il filtraggio per similarita.
 
         Returns:
-            Lista di dizionari con chiavi 'role' e 'content'.
+            Lista di dizionari con chiavi 'role' e 'content' per lo storico.
         """
         messages = []
 
@@ -313,19 +308,16 @@ class SmartConversationMemory:
                             messages.append({"role": "assistant", "content": msg.content})
                         elif msg.type == 'system':
                             messages.append({"role": "assistant", "content": msg.content})
-
-        messages.append({
-            "role": "user",
-            "content": current_query + _RETRIEVAL_REMINDER,
-        })
 
         return messages
 
-    def get_messages_for_agent_no_retrieval(self, current_query: str) -> list:
-        """Costruisce la lista di messaggi per l'agente SENZA retrieval reminder.
+    def get_messages_for_agent(self, current_query: str) -> list:
+        """Costruisce la lista di messaggi da inviare all'agente.
 
-        Utilizzato per le domande meta (saluti, ringraziamenti, ecc.)
-        dove non e' necessario invocare tool di ricerca.
+        Include lo storico filtrato e riassunto, piu la query corrente.
+        La query viene passata senza alcuna direttiva aggiuntiva: la
+        decisione se invocare un tool o rispondere direttamente e'
+        delegata interamente al system prompt dell'agente.
 
         Args:
             current_query: Query corrente dell'utente.
@@ -333,29 +325,26 @@ class SmartConversationMemory:
         Returns:
             Lista di dizionari con chiavi 'role' e 'content'.
         """
-        messages = []
-
-        if self._turns:
-            filtered_turns = self._filter_turns_by_similarity(current_query)
-
-            if filtered_turns:
-                summarized_messages = self._summarize_if_needed(filtered_turns)
-
-                for msg in summarized_messages:
-                    if isinstance(msg, HumanMessage):
-                        messages.append({"role": "user", "content": msg.content})
-                    elif isinstance(msg, AIMessage):
-                        messages.append({"role": "assistant", "content": msg.content})
-                    elif hasattr(msg, 'type'):
-                        if msg.type == 'human':
-                            messages.append({"role": "user", "content": msg.content})
-                        elif msg.type == 'ai':
-                            messages.append({"role": "assistant", "content": msg.content})
-                        elif msg.type == 'system':
-                            messages.append({"role": "assistant", "content": msg.content})
-
+        messages = self._build_history_messages(current_query)
         messages.append({"role": "user", "content": current_query})
+        return messages
 
+    def get_messages_for_agent_no_retrieval(self, current_query: str) -> list:
+        """Costruisce la lista di messaggi per l'agente SENZA retrieval.
+
+        Utilizzato per le domande meta (saluti, ringraziamenti, ecc.)
+        dove non e' necessario invocare tool di ricerca. Funzionalmente
+        identico a get_messages_for_agent dopo la rimozione del retrieval
+        reminder, ma mantenuto per chiarezza semantica nel codice chiamante.
+
+        Args:
+            current_query: Query corrente dell'utente.
+
+        Returns:
+            Lista di dizionari con chiavi 'role' e 'content'.
+        """
+        messages = self._build_history_messages(current_query)
+        messages.append({"role": "user", "content": current_query})
         return messages
 
     def get_last_completed_turn(self) -> Tuple[str, str]:

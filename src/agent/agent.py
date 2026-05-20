@@ -27,8 +27,6 @@ from agent.tools import (
     set_chat_history,
     get_all_tools,
     get_last_search_meta,
-    set_max_tool_calls,
-    reset_tool_call_counter,
 )
 from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine, QueryOptimizer
@@ -96,7 +94,7 @@ class RAGAgent:
         self._interaction_logger = interaction_logger
         self._query_optimizer = query_optimizer
         self._guardrails_checker = guardrails_checker
-        self._chat_model=chat_model
+        self._chat_model = chat_model
         self._traces: List[Dict[str, Any]] = []
 
     def chat(self, user_query: str) -> dict:
@@ -174,8 +172,6 @@ class RAGAgent:
 
         set_chat_history(self._memory.get_langchain_history())
 
-        reset_tool_call_counter()
-
         obs_handler = create_observability_handler(
             self._settings.observability,
             conversation_turn=turn_number,
@@ -205,6 +201,20 @@ class RAGAgent:
                 response_text = (
                     "Mi scuso, ho riscontrato difficolta nell'elaborare la tua "
                     "domanda. Prova a riformularla in modo piu specifico."
+                )
+            elif "toolcalllimit" in error_str or "tool call limit" in error_str:
+                # Con exit_behavior="continue" questa eccezione non dovrebbe
+                # verificarsi (il middleware blocca le chiamate eccedenti con
+                # un messaggio di errore e l'LLM continua a rispondere).
+                # Mantenuto come safety net nel caso di cambi futuri.
+                logger.warning(
+                    "TOOL CALL LIMIT raggiunto (middleware). Query: '%s'",
+                    user_query[:80],
+                )
+                response_text = (
+                    "Mi scuso, non sono riuscito a trovare informazioni sufficienti "
+                    "per rispondere alla tua domanda. Ti consiglio di consultare "
+                    "il sito web del DIEM o contattare la segreteria."
                 )
             else:
                 logger.error("Errore agente: %s", e, exc_info=True)
@@ -504,8 +514,6 @@ class RAGAgentFactory:
 
         set_retrieval_engine(retrieval_engine)
 
-        set_max_tool_calls(settings.guardrails.max_tool_calls)
-
         tools = get_all_tools()
         logger.info("    Tools registrati: %s", [t.name for t in tools])
 
@@ -544,14 +552,34 @@ class RAGAgentFactory:
             enable_meta=True,
         )
 
+        # --- ToolCallLimitMiddleware ---
+        # Limita il numero di tool call per run a livello di grafo.
+        # Con exit_behavior="continue", le chiamate tool eccedenti vengono
+        # bloccate con un messaggio di errore, ma l'LLM continua a eseguire
+        # e puo' sintetizzare una risposta dai documenti gia' recuperati
+        # nelle chiamate precedenti.
         from langchain.agents import create_agent
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        tool_call_limit = settings.guardrails.max_tool_calls
+
+        logger.info(
+            "    ToolCallLimitMiddleware: run_limit=%d, exit_behavior='continue'",
+            tool_call_limit,
+        )
 
         agent_graph = create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=system_prompt,
+            middleware=[
+                ToolCallLimitMiddleware(
+                    run_limit=tool_call_limit,
+                    exit_behavior="continue",
+                ),
+            ],
         )
-        logger.info("    create_agent() - grafo agente compilato")
+        logger.info("    create_agent() - grafo agente compilato con middleware")
 
         agent = RAGAgent(
             agent_graph=agent_graph,
@@ -573,8 +601,8 @@ class RAGAgentFactory:
         logger.info("    Memoria: SmartConversationMemory (max_turns=%d)", max_memory_turns)
         logger.info("    Tools: %d tool con Pydantic args_schema", len(tools))
         logger.info(
-            "    Anti-loop: max_tool_calls=%d per query",
-            settings.guardrails.max_tool_calls,
+            "    Anti-loop: ToolCallLimitMiddleware (run_limit=%d, exit='continue')",
+            tool_call_limit,
         )
 
         if query_optimizer:
