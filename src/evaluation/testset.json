@@ -1,0 +1,14 @@
+[
+  {
+    "question": "Quali sono i corsi di laurea triennale offerti dal DIEM?",
+    "ground_truth": "Il DIEM offre i seguenti corsi di laurea triennale: Ingegneria Informatica, Ingegneria Elettronica, Ingegneria delle Telecomunicazioni e Matematica Applicata. I corsi sono strutturati in 180 CFU da conseguire in tre anni accademici."
+  },
+  {
+    "question": "Chi è il direttore del dipartimento DIEM?",
+    "ground_truth": "Il direttore del Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) dell'Università degli Studi di Salerno è indicato nella sezione organizzazione del sito dipartimentale."
+  },
+  {
+    "question": "Come si raggiunge il campus di Fisciano?",
+    "ground_truth": "Il campus universitario di Fisciano si raggiunge tramite l'autostrada A30 (uscita Fisciano-Lancusi), oppure con i bus CSTP e SITA che collegano Salerno e le città limitrofe al campus. È disponibile anche un servizio navetta interno per gli spostamenti tra le varie strutture."
+  }
+]

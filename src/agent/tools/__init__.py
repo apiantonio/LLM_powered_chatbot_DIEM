@@ -2,6 +2,10 @@
 
 Definisce i tool LangChain per la ricerca nelle collezioni del knowledge base:
 persone, offerta formativa, dipartimento e ricerca trasversale.
+
+NOTA: Questo file contiene una modifica rispetto all'originale per supportare
+la valutazione RAGAS. Il campo "retrieved_texts" e' stato aggiunto a
+_last_search_meta per esporre i testi raw dei chunk recuperati.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ _last_search_meta: Dict[str, Any] = {
     "collection": "",
     "metadata_filter": None,
     "top_links": [],
+    "retrieved_texts": [],
 }
 
 _tool_call_counter: int = 0
@@ -115,7 +120,11 @@ def set_chat_history(history: list) -> None:
 
 
 def get_last_search_meta() -> Dict[str, Any]:
-    """Restituisce i metadati dell'ultima ricerca effettuata."""
+    """Restituisce i metadati dell'ultima ricerca effettuata.
+
+    Include il campo 'retrieved_texts' con i testi raw dei chunk
+    recuperati, necessario per la valutazione RAGAS.
+    """
     return _last_search_meta.copy()
 
 
@@ -187,6 +196,7 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
             "collection": "ALL (cross-collection, fallback)",
             "metadata_filter": None,
             "top_links": top_links,
+            "retrieved_texts": [doc.page_content for doc in documents],
         }
 
         logger.info(
@@ -257,6 +267,7 @@ def _search_collection(
             "collection": collection.value,
             "metadata_filter": metadata_filter,
             "top_links": top_links,
+            "retrieved_texts": [doc.page_content for doc in documents],
         }
 
         _tool_error_counts.pop(tool_key, None)
@@ -692,6 +703,7 @@ Never use this as a first choice. Pass the user's full question in the query par
             "collection": "ALL (cross-collection)",
             "metadata_filter": None,
             "top_links": top_links,
+            "retrieved_texts": [doc.page_content for doc in documents],
         }
 
         if not documents:
