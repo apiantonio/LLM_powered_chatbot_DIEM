@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from config.settings import AppSettings, load_settings
@@ -20,7 +20,7 @@ from agent.callbacks import (
     create_interaction_log_handler,
 )
 from agent.memory import SmartConversationMemory, create_conversation_memory
-from agent.prompts import get_agent_system_prompt
+from agent.prompts import get_agent_system_prompt, get_meta_system_prompt
 from agent.guardrails import GuardrailsChecker, build_guardrails_checker
 from agent.tools import (
     set_retrieval_engine,
@@ -30,7 +30,7 @@ from agent.tools import (
     set_max_tool_calls,
     reset_tool_call_counter,
 )
-from agent.llm_providers import create_chat_model, create_rewriter_llm
+from agent.llm_providers import create_chat_model
 from retrieval.engine import RetrievalEngine, QueryOptimizer
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,7 @@ class RAGAgent:
     def __init__(
         self,
         agent_graph,
+        chat_model,
         memory: SmartConversationMemory,
         settings: AppSettings,
         interaction_logger: InteractionLogHandler,
@@ -95,6 +96,7 @@ class RAGAgent:
         self._interaction_logger = interaction_logger
         self._query_optimizer = query_optimizer
         self._guardrails_checker = guardrails_checker
+        self._chat_model=chat_model
         self._traces: List[Dict[str, Any]] = []
 
     def chat(self, user_query: str) -> dict:
@@ -258,11 +260,12 @@ class RAGAgent:
         }
 
     def _handle_meta_query(self, user_query: str) -> dict:
-        """Gestisce le domande meta senza salvataggio in memoria.
+        """Gestisce le domande meta SENZA il grafo agente.
 
         Le domande meta (saluti, ringraziamenti, domande sull'identita, ecc.)
-        vengono processate dall'agente ma NON vengono salvate nella cronologia
-        conversazionale. Il contatore dei turni non viene incrementato.
+        vengono processate con una chiamata LLM diretta, SENZA passare dal
+        grafo agente e SENZA tool di ricerca. Il contatore dei turni non
+        viene incrementato.
 
         Args:
             user_query: Query meta dell'utente.
@@ -270,21 +273,7 @@ class RAGAgent:
         Returns:
             Dizionario con la risposta e i metadati dell'interazione meta.
         """
-        logger.info("GESTIONE META QUERY (no memoria): '%s'", user_query)
-
-        messages = self._memory.get_messages_for_agent_no_retrieval(user_query)
-
-        temporal_msg = _get_temporal_system_message()
-        if messages and messages[-1]["role"] == "user":
-            messages.insert(-1, temporal_msg)
-        else:
-            messages.append(temporal_msg)
-
-        logger.debug("MESSAGGI META INVIATI ALL'AGENTE: %s", messages)
-
-        set_chat_history(self._memory.get_langchain_history())
-
-        reset_tool_call_counter()
+        logger.info("GESTIONE META QUERY (LLM diretto, no retrieval): '%s'", user_query)
 
         obs_handler = create_observability_handler(
             self._settings.observability,
@@ -292,18 +281,28 @@ class RAGAgent:
         )
 
         try:
-            result = self._agent.invoke(
-                {"messages": messages},
-                config={
-                    "callbacks": [obs_handler],
-                    "recursion_limit": self._settings.guardrails.max_agent_iterations,
-                },
-            )
-            response_text = self._extract_final_response(result)
-            logger.info("RISPOSTA META: %s", response_text)
+            meta_system_prompt = get_meta_system_prompt()
+            messages = [
+                meta_system_prompt,
+                HumanMessage(content=user_query),
+            ]
+
+            response = self._chat_model.invoke(messages)
+            response_text = _strip_think_tags(response.content)
+
+            if not response_text:
+                response_text = (
+                    "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
+                    "dell'Universita degli Studi di Salerno. "
+                    "Posso aiutarti con informazioni su corsi, docenti, esami, "
+                    "regolamenti, laboratori e servizi universitari. "
+                    "Come posso esserti utile?"
+                )
+
+            logger.info("RISPOSTA META (LLM diretto): %s", response_text)
 
         except Exception as e:
-            logger.error("Errore agente su meta query: %s", e, exc_info=True)
+            logger.error("Errore LLM su meta query: %s", e, exc_info=True)
             response_text = (
                 "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
                 "dell'Universita degli Studi di Salerno. "
@@ -556,6 +555,7 @@ class RAGAgentFactory:
 
         agent = RAGAgent(
             agent_graph=agent_graph,
+            chat_model=chat_model,
             memory=memory,
             settings=settings,
             interaction_logger=interaction_logger,

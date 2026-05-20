@@ -53,9 +53,23 @@ class QueryOptimizer:
 
     MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
         ("system",
-         "Generate exactly 3 Italian rephrasings of the given question for semantic search. "
-         "Preserve all proper nouns and the original intent. "
-         "Output one variant per line, no numbering, no explanations."),
+         "You generate Italian rephrasings of a question for semantic search in the knowledge base "
+         "of the DIEM department (Dipartimento di Ingegneria dell'Informazione ed Elettrica e "
+         "Matematica Applicata) at Universita degli Studi di Salerno.\n\n"
+         "STRICT RULES:\n"
+         "1. Generate exactly 3 rephrasings in Italian.\n"
+         "2. Preserve ALL proper nouns, acronyms (DIEM, UniSA, CFU), professor names, "
+         "course names, and the original intent EXACTLY.\n"
+         "3. Do NOT change, expand, or guess institutional names. "
+         "'DIEM' stays 'DIEM', NOT 'Dipartimento di Scienze dell'Informazione'. "
+         "Do NOT add university names like 'Bologna', 'Roma', 'Milano'.\n"
+         "4. Only vary the sentence structure and synonyms, not the entities.\n"
+         "5. Output one variant per line, no numbering, no explanations, no preamble.\n\n"
+         "Example input: 'Quali sono i corsi di laurea triennale offerti dal DIEM?'\n"
+         "Example output:\n"
+         "Quali corsi di laurea triennale sono disponibili presso il DIEM?\n"
+         "Elenco dei corsi triennali del DIEM\n"
+         "Offerta formativa triennale del DIEM"),
         ("human", "{question}"),
     ])
 
@@ -117,17 +131,7 @@ class QueryOptimizer:
                     len(result), len(question),
                 )
                 return question
-
-            original_entities = self._extract_proper_nouns(question)
-            if original_entities:
-                result_lower = result.lower()
-                missing = [e for e in original_entities if e.lower() not in result_lower]
-                if missing:
-                    logger.warning(
-                        "Rewriting ha perso entita: %s, uso l'originale", missing
-                    )
-                    return question
-
+            
             logger.info("Query rewritten: '%s' -> '%s'", question, result)
             return result
 
@@ -160,38 +164,6 @@ class QueryOptimizer:
         except Exception as e:
             logger.warning("Errore multi-query expansion: %s", e)
             return [question]
-
-    @staticmethod
-    def _extract_proper_nouns(text: str) -> list:
-        """Estrae nomi propri dal testo basandosi sulla capitalizzazione.
-
-        Args:
-            text: Testo da cui estrarre i nomi propri.
-
-        Returns:
-            Lista di stringhe identificate come nomi propri.
-        """
-        skip_words = {
-            "chi", "cosa", "come", "dove", "quando", "quale", "quali",
-            "parlami", "dimmi", "spiegami", "cercami", "trovami",
-            "il", "la", "lo", "le", "gli", "un", "una", "del", "della",
-            "dei", "delle", "nel", "nella", "sul", "sulla",
-            "per", "con", "tra", "fra", "che", "non", "sono",
-            "qual", "quanto", "quanti", "quante",
-        }
-        words = text.split()
-        entities = []
-        for w in words:
-            clean = w.strip("?.,!;:'\"()[]")
-            if (
-                clean
-                and clean[0].isupper()
-                and len(clean) > 2
-                and clean.lower() not in skip_words
-            ):
-                entities.append(clean)
-        return entities
-
 
 class CrossEncoderReranker:
     """Reranker basato su Cross-Encoder per il riordinamento dei documenti candidati.
