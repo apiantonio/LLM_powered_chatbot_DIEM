@@ -271,8 +271,7 @@ def load_settings() -> AppSettings:
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             # Fallback locale
             fallback_model=os.getenv("FALLBACK_MODEL", "qwen2.5"),
-            fallback_base_url=os.getenv("FALLBACK_BASE_URL",
-                                        os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
+            fallback_base_url=os.getenv("FALLBACK_BASE_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
             # Rewriter
             rewriter_provider=os.getenv("REWRITER_PROVIDER", "groq"),
             rewriter_model=os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
