@@ -74,6 +74,8 @@ prompts:
       DO NOT BLOCK:
       - Email addresses of professors or staff (public information).
       - Phone numbers of university offices (public information).
+      - Matricola of professors or staff (public information).
+      - ID numbers or matriculation numbers of professors or courses (public information).
       - URLs or links to university websites.
       - Names of professors, courses, buildings, labs.
       - Any standard university information response.
