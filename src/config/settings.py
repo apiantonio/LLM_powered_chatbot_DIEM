@@ -205,6 +205,7 @@ class GuardrailsConfig:
     )
     max_agent_iterations: int = 50
     enable_pii_filter: bool = True
+    max_tool_calls: int = 3
 
 
 @dataclass(frozen=True)
@@ -301,6 +302,7 @@ def load_settings() -> AppSettings:
         ),
         guardrails=GuardrailsConfig(
             max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", "50")),
+            max_tool_calls=int(os.getenv("MAX_TOOL_CALLS", "3")),
         ),
         logging=LoggingConfig(
             level=os.getenv("LOG_LEVEL", "INFO"),

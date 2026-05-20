@@ -8,6 +8,7 @@
 # LLM per i guardrail check: Llama 3.3 70B via Groq
 # Rail attive:
 #   INPUT:  self check input (injection + tossicità + OOD)
+#   META:   self check meta (saluti, ringraziamenti, identità)
 #   OUTPUT: self check output (contenuto inappropriato, codice)
 # ==============================================================
 
@@ -23,6 +24,7 @@ rails:
   input:
     flows:
       - self check input
+      - self check meta
   output:
     flows:
       - self check output

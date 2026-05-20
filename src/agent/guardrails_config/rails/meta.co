@@ -1,0 +1,9 @@
+define flow self check meta
+  $is_meta = execute self_check_meta
+
+  if $is_meta
+    bot respond to meta query
+    stop
+
+define bot respond to meta query
+  "(meta_detected)"

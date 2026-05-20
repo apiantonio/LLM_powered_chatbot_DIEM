@@ -21,25 +21,6 @@ _RETRIEVAL_REMINDER = (
     "Pass the user's query INTACT to the tool, without abbreviating it.]"
 )
 
-_META_PATTERNS = [
-    r"^(ciao|salve|buongiorno|buonasera|hey|hi|hello)\b",
-    r"^grazie",
-    r"^(come stai|come va|chi sei|cosa sai fare)",
-]
-
-
-def _is_meta_query(query: str) -> bool:
-    """Determina se la query e' una meta-domanda (saluto, ringraziamento, ecc.).
-
-    Args:
-        query: Testo della query utente.
-
-    Returns:
-        True se la query corrisponde a un pattern meta.
-    """
-    q = query.strip().lower()
-    return any(re.match(p, q) for p in _META_PATTERNS)
-
 
 @dataclass
 class ConversationTurn:
@@ -304,7 +285,7 @@ class SmartConversationMemory:
         """Costruisce la lista di messaggi da inviare all'agente.
 
         Include lo storico filtrato e riassunto, piu la query corrente
-        con eventuale reminder di retrieval.
+        con il reminder di retrieval.
 
         Args:
             current_query: Query corrente dell'utente.
@@ -333,13 +314,47 @@ class SmartConversationMemory:
                         elif msg.type == 'system':
                             messages.append({"role": "assistant", "content": msg.content})
 
-        if _is_meta_query(current_query):
-            messages.append({"role": "user", "content": current_query})
-        else:
-            messages.append({
-                "role": "user",
-                "content": current_query + _RETRIEVAL_REMINDER,
-            })
+        messages.append({
+            "role": "user",
+            "content": current_query + _RETRIEVAL_REMINDER,
+        })
+
+        return messages
+
+    def get_messages_for_agent_no_retrieval(self, current_query: str) -> list:
+        """Costruisce la lista di messaggi per l'agente SENZA retrieval reminder.
+
+        Utilizzato per le domande meta (saluti, ringraziamenti, ecc.)
+        dove non e' necessario invocare tool di ricerca.
+
+        Args:
+            current_query: Query corrente dell'utente.
+
+        Returns:
+            Lista di dizionari con chiavi 'role' e 'content'.
+        """
+        messages = []
+
+        if self._turns:
+            filtered_turns = self._filter_turns_by_similarity(current_query)
+
+            if filtered_turns:
+                summarized_messages = self._summarize_if_needed(filtered_turns)
+
+                for msg in summarized_messages:
+                    if isinstance(msg, HumanMessage):
+                        messages.append({"role": "user", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        messages.append({"role": "assistant", "content": msg.content})
+                    elif hasattr(msg, 'type'):
+                        if msg.type == 'human':
+                            messages.append({"role": "user", "content": msg.content})
+                        elif msg.type == 'ai':
+                            messages.append({"role": "assistant", "content": msg.content})
+                        elif msg.type == 'system':
+                            messages.append({"role": "assistant", "content": msg.content})
+
+        messages.append({"role": "user", "content": current_query})
 
         return messages
 

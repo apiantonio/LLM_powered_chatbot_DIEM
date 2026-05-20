@@ -19,10 +19,17 @@ from agent.callbacks import (
     InteractionLogHandler,
     create_interaction_log_handler,
 )
-from agent.memory import SmartConversationMemory, create_conversation_memory, _is_meta_query
+from agent.memory import SmartConversationMemory, create_conversation_memory
 from agent.prompts import get_agent_system_prompt
 from agent.guardrails import GuardrailsChecker, build_guardrails_checker
-from agent.tools import set_retrieval_engine, set_chat_history, get_all_tools, get_last_search_meta
+from agent.tools import (
+    set_retrieval_engine,
+    set_chat_history,
+    get_all_tools,
+    get_last_search_meta,
+    set_max_tool_calls,
+    reset_tool_call_counter,
+)
 from agent.llm_providers import create_chat_model, create_rewriter_llm
 from retrieval.engine import RetrievalEngine, QueryOptimizer
 
@@ -65,8 +72,11 @@ class RAGAgent:
     """Facade principale per l'interazione con l'agente RAG DIEM.
 
     I guardrails sono integrati direttamente in chat():
-    check_input() sulla query originale prima del rewriting,
-    check_output() sulla risposta finale dopo l'agente.
+    - check_meta() sulla query originale per identificare domande meta
+      (saluti, ringraziamenti, ecc.) che non richiedono retrieval
+      e non vengono salvate in memoria.
+    - check_input() sulla query originale prima del rewriting.
+    - check_output() sulla risposta finale dopo l'agente.
     Le interazioni bloccate dai guardrails non vengono salvate in memoria.
     """
 
@@ -99,6 +109,7 @@ class RAGAgent:
                     "response": block_message,
                     "blocked": True,
                     "block_reason": "input_guardrail",
+                    "is_meta": False,
                     "trace": {
                         "tool_name": "(Bloccato da Input Guardrail)",
                         "tools_invoked": [],
@@ -111,10 +122,17 @@ class RAGAgent:
                     "turn": self._memory.turn_count,
                 }
 
+        is_meta = False
+        if self._guardrails_checker:
+            is_meta = self._guardrails_checker.check_meta(user_query)
+
+        if is_meta:
+            return self._handle_meta_query(user_query)
+
         messages = self._memory.get_messages_for_agent(user_query)
 
         rewritten_query = user_query
-        if self._query_optimizer and not _is_meta_query(user_query):
+        if self._query_optimizer:
             rewritten_query = self._rewrite_query(user_query)
             if rewritten_query != user_query:
                 logger.info("Query rewritten: '%s' -> '%s'", user_query, rewritten_query)
@@ -129,6 +147,7 @@ class RAGAgent:
                 "response": cached_response,
                 "blocked": False,
                 "block_reason": None,
+                "is_meta": False,
                 "trace": {
                     "tool_name": "(Risposta da Cache)",
                     "tools_invoked": [],
@@ -152,6 +171,8 @@ class RAGAgent:
         logger.debug("MESSAGGI INVIATI ALL'AGENTE: %s", messages)
 
         set_chat_history(self._memory.get_langchain_history())
+
+        reset_tool_call_counter()
 
         obs_handler = create_observability_handler(
             self._settings.observability,
@@ -205,6 +226,7 @@ class RAGAgent:
                     "response": block_message,
                     "blocked": True,
                     "block_reason": "output_guardrail",
+                    "is_meta": False,
                     "trace": trace_dict,
                     "turn": turn_number,
                 }
@@ -230,8 +252,84 @@ class RAGAgent:
             "response": response_text,
             "blocked": False,
             "block_reason": None,
+            "is_meta": False,
             "trace": trace_dict,
             "turn": turn_number,
+        }
+
+    def _handle_meta_query(self, user_query: str) -> dict:
+        """Gestisce le domande meta senza salvataggio in memoria.
+
+        Le domande meta (saluti, ringraziamenti, domande sull'identita, ecc.)
+        vengono processate dall'agente ma NON vengono salvate nella cronologia
+        conversazionale. Il contatore dei turni non viene incrementato.
+
+        Args:
+            user_query: Query meta dell'utente.
+
+        Returns:
+            Dizionario con la risposta e i metadati dell'interazione meta.
+        """
+        logger.info("GESTIONE META QUERY (no memoria): '%s'", user_query)
+
+        messages = self._memory.get_messages_for_agent_no_retrieval(user_query)
+
+        temporal_msg = _get_temporal_system_message()
+        if messages and messages[-1]["role"] == "user":
+            messages.insert(-1, temporal_msg)
+        else:
+            messages.append(temporal_msg)
+
+        logger.debug("MESSAGGI META INVIATI ALL'AGENTE: %s", messages)
+
+        set_chat_history(self._memory.get_langchain_history())
+
+        reset_tool_call_counter()
+
+        obs_handler = create_observability_handler(
+            self._settings.observability,
+            conversation_turn=self._memory.turn_count,
+        )
+
+        try:
+            result = self._agent.invoke(
+                {"messages": messages},
+                config={
+                    "callbacks": [obs_handler],
+                    "recursion_limit": self._settings.guardrails.max_agent_iterations,
+                },
+            )
+            response_text = self._extract_final_response(result)
+            logger.info("RISPOSTA META: %s", response_text)
+
+        except Exception as e:
+            logger.error("Errore agente su meta query: %s", e, exc_info=True)
+            response_text = (
+                "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
+                "dell'Universita degli Studi di Salerno. "
+                "Posso aiutarti con informazioni su corsi, docenti, esami, "
+                "regolamenti, laboratori e servizi universitari. "
+                "Come posso esserti utile?"
+            )
+
+        obs_handler.set_final_output(response_text)
+
+        trace_dict = obs_handler.get_trace_dict()
+        trace_dict["tool_name"] = "(Meta Query - No Retrieval)"
+        self._traces.append(trace_dict)
+
+        logger.info(
+            "META QUERY completata (turno NON salvato in memoria): '%s...'",
+            user_query[:80],
+        )
+
+        return {
+            "response": response_text,
+            "blocked": False,
+            "block_reason": None,
+            "is_meta": True,
+            "trace": trace_dict,
+            "turn": self._memory.turn_count,
         }
 
     def _rewrite_query(self, user_query: str) -> str:
@@ -406,6 +504,9 @@ class RAGAgentFactory:
         chat_model = create_chat_model(settings.llm)
 
         set_retrieval_engine(retrieval_engine)
+
+        set_max_tool_calls(settings.guardrails.max_tool_calls)
+
         tools = get_all_tools()
         logger.info("    Tools registrati: %s", [t.name for t in tools])
 
@@ -441,6 +542,7 @@ class RAGAgentFactory:
             enable_toxicity=True,
             enable_hallucination=True,
             enable_code_guard=True,
+            enable_meta=True,
         )
 
         from langchain.agents import create_agent
@@ -470,6 +572,10 @@ class RAGAgentFactory:
         logger.info("    Temporale: iniezione SEMPRE attiva (A.A. default: %d/%d)", anno_acc, anno_acc + 1)
         logger.info("    Memoria: SmartConversationMemory (max_turns=%d)", max_memory_turns)
         logger.info("    Tools: %d tool con Pydantic args_schema", len(tools))
+        logger.info(
+            "    Anti-loop: max_tool_calls=%d per query",
+            settings.guardrails.max_tool_calls,
+        )
 
         if query_optimizer:
             logger.info("    Rewriting: ATTIVO")
@@ -479,6 +585,7 @@ class RAGAgentFactory:
         if guardrails_checker:
             logger.info("    Guardrails: ATTIVI (Groq Llama 3.3 70B)")
             logger.info("      - Input check: PRIMA del rewriting (query originale)")
+            logger.info("      - Meta check: DOPO input check, PRIMA del rewriting")
             logger.info("      - Output check: DOPO la risposta finale")
         else:
             logger.info("    Guardrails: DISABILITATI")

@@ -1,6 +1,8 @@
 """Guardrails per il sistema RAG DIEM.
 
 Implementa controlli di sicurezza input/output tramite LLM dedicato (Groq).
+Include il rilevamento delle domande "meta" (saluti, ringraziamenti, ecc.)
+per gestirle senza salvataggio in memoria.
 """
 
 import os
@@ -27,24 +29,32 @@ BLOCKED_OUTPUT_MESSAGE = (
 
 
 class GuardrailsChecker:
-    """Esegue controlli di sicurezza su input utente e output agente via LLM."""
+    """Esegue controlli di sicurezza su input utente e output agente via LLM.
+
+    Include anche il rilevamento delle domande meta (saluti, ringraziamenti,
+    domande sull'identita dell'assistente) tramite un prompt LLM dedicato.
+    """
 
     def __init__(
         self,
         llm,
         enable_input_check: bool = True,
         enable_output_check: bool = True,
+        enable_meta_check: bool = True,
     ):
         self._llm = llm
         self._enable_input = enable_input_check
         self._enable_output = enable_output_check
+        self._enable_meta = enable_meta_check
         self._input_prompt_template = self._load_prompt("self_check_input")
         self._output_prompt_template = self._load_prompt("self_check_output")
+        self._meta_prompt_template = self._load_prompt("self_check_meta")
 
         logger.info(
-            "GuardrailsChecker inizializzato: input=%s, output=%s",
+            "GuardrailsChecker inizializzato: input=%s, output=%s, meta=%s",
             "ON" if enable_input_check else "OFF",
             "ON" if enable_output_check else "OFF",
+            "ON" if enable_meta_check else "OFF",
         )
 
     def _load_prompt(self, task_name: str) -> Optional[str]:
@@ -99,6 +109,43 @@ class GuardrailsChecker:
             logger.error("Errore durante il guardrail check LLM: %s", e)
             return True
 
+    def _call_llm_meta_check(self, prompt: str) -> Optional[bool]:
+        """Chiama l'LLM per il meta check. Logica invertita rispetto ai check standard.
+
+        Per il meta check, "Yes" significa che E' una domanda meta (positivo),
+        "No" significa che NON e' una domanda meta.
+
+        Returns:
+            True se la query e' una domanda meta, False altrimenti, None in caso di errore.
+        """
+        try:
+            from langchain_core.messages import HumanMessage
+
+            response = self._llm.invoke([HumanMessage(content=prompt)])
+            result_text = response.content.strip().lower()
+            first_word = result_text.split()[0].strip(".,;:!?") if result_text else ""
+
+            logger.debug(
+                "Guardrail META check result: '%s' -> first_word='%s'",
+                result_text,
+                first_word,
+            )
+
+            if first_word == "yes":
+                return True
+            if first_word == "no":
+                return False
+
+            logger.warning(
+                "Meta check: risposta ambigua '%s'. Default: non meta.",
+                result_text,
+            )
+            return False
+
+        except Exception as e:
+            logger.error("Errore durante il meta check LLM: %s", e)
+            return False
+
     def check_input(self, user_message: str) -> Tuple[bool, str]:
         if not self._enable_input:
             return (True, "")
@@ -141,6 +188,36 @@ class GuardrailsChecker:
         logger.warning("OUTPUT BLOCCATO (%d chars)", len(bot_response))
         return (False, BLOCKED_OUTPUT_MESSAGE)
 
+    def check_meta(self, user_message: str) -> bool:
+        """Verifica se il messaggio utente e' una domanda meta.
+
+        Le domande meta includono: saluti, ringraziamenti, domande sull'identita
+        dell'assistente, richieste di aiuto generico, commiati.
+        Queste interazioni vengono gestite senza salvataggio in memoria.
+
+        Args:
+            user_message: Testo del messaggio utente.
+
+        Returns:
+            True se il messaggio e' una domanda meta, False altrimenti.
+        """
+        if not self._enable_meta:
+            return False
+
+        if not self._meta_prompt_template:
+            logger.warning("Meta check template non disponibile, skip.")
+            return False
+
+        prompt = self._meta_prompt_template.replace("{{ user_input }}", user_message)
+
+        logger.info("Guardrail META check per: '%s...'", user_message[:80])
+        is_meta = self._call_llm_meta_check(prompt)
+
+        if is_meta:
+            logger.info("QUERY META rilevata: '%s...'", user_message[:80])
+
+        return bool(is_meta)
+
 
 def _validate_groq_api_key(api_key: str) -> bool:
     """Verifica che la chiave API Groq sia valida con una chiamata di test.
@@ -172,6 +249,7 @@ def build_guardrails_checker(
     enable_toxicity: bool = True,
     enable_hallucination: bool = True,
     enable_code_guard: bool = True,
+    enable_meta: bool = True,
 ) -> Optional[GuardrailsChecker]:
     """Factory per la creazione di un GuardrailsChecker configurato.
 
@@ -221,12 +299,14 @@ def build_guardrails_checker(
             llm=llm,
             enable_input_check=enable_input,
             enable_output_check=enable_output,
+            enable_meta_check=enable_meta,
         )
 
         logger.info("GUARDRAILS ATTIVI:")
         logger.info("  - LLM: Groq Llama 3.3 70B (temperature=0.0)")
         logger.info("  - Input check: %s", "ON" if enable_input else "OFF")
         logger.info("  - Output check: %s", "ON" if enable_output else "OFF")
+        logger.info("  - Meta check: %s", "ON" if enable_meta else "OFF")
 
         return checker
 

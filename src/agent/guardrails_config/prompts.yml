@@ -47,6 +47,8 @@ prompts:
       - "Ciao", "Grazie", "Chi sei?", "Cosa sai fare?", "Aiuto" — greetings and meta-questions
       - "Can you explain that better?" — polite request for clarification about a previous answer
 
+      IMPORTANT: Do NOT block greetings, thanks, farewells, or questions about the assistant's identity/capabilities. These are handled separately as "meta" messages.
+
       User message: "{{ user_input }}"
 
       Answer ONLY "Yes" or "No".
@@ -82,6 +84,56 @@ prompts:
       - Responses saying "I don't know" or suggesting to contact the secretariat.
 
       Bot response: "{{ bot_response }}"
+
+      Answer ONLY "Yes" or "No".
+      Answer:
+
+  # ==============================================================
+  # SELF CHECK META
+  #
+  # Classifica le domande "meta": saluti, ringraziamenti, commiati,
+  # domande sull'identita/capacita dell'assistente, richieste di
+  # aiuto generico. Queste interazioni NON devono essere salvate
+  # in memoria conversazionale e NON richiedono retrieval.
+  #
+  # PRINCIPI DI DESIGN:
+  #   - Prompt in inglese per massima accuratezza con Llama 70B
+  #   - "Yes" = è una domanda meta
+  #   - "No" = NON è una domanda meta (è una domanda sostanziale)
+  #   - Esempi espliciti in italiano e inglese per coprire entrambe
+  #     le lingue di interazione
+  # ==============================================================
+
+  - task: self_check_meta
+    content: |
+      You are a message classifier for a university department assistant chatbot.
+
+      Decide if the user message is a META message. Answer "Yes" if it is meta, "No" if it is a substantive question.
+
+      A META message is one that does NOT require searching a knowledge base or retrieving specific information. It is conversational in nature.
+
+      META messages (answer "Yes") include:
+      1. GREETINGS: "Ciao", "Salve", "Buongiorno", "Buonasera", "Hey", "Hi", "Hello", "Ehi", "Buon pomeriggio".
+      2. THANKS: "Grazie", "Grazie mille", "Ti ringrazio", "Thank you", "Thanks", "Grazie per l'aiuto", "Sei stato utile".
+      3. FAREWELLS: "Arrivederci", "A presto", "Ciao ciao", "Bye", "Goodbye", "Alla prossima", "Buona giornata", "Buona serata".
+      4. IDENTITY/CAPABILITY QUESTIONS: "Chi sei?", "Cosa sai fare?", "Come funzioni?", "What can you do?", "Who are you?", "Che tipo di assistente sei?", "Quali sono le tue funzionalità?", "Come puoi aiutarmi?", "What are you?", "Presentati".
+      5. GENERIC HELP: "Aiuto", "Help", "Mi puoi aiutare?", "Ho bisogno di aiuto", "Can you help me?", "Non so cosa chiedere".
+      6. CONVERSATIONAL PLEASANTRIES: "Come stai?", "Come va?", "Tutto bene?", "How are you?", "Va bene", "OK", "Perfetto", "Capito", "D'accordo".
+      7. SIMPLE ACKNOWLEDGMENTS: "Ok grazie", "Va bene grazie", "Ho capito", "Perfetto grazie", "Ottimo".
+
+      NOT META (answer "No") — these are substantive questions requiring knowledge retrieval:
+      - "Quali corsi ci sono al DIEM?" — asks about specific courses
+      - "Chi è il professore di Matematica?" — asks about a specific professor
+      - "Quando sono gli esami?" — asks about exam schedules
+      - "Come funziona l'iscrizione?" — asks about enrollment procedures (even if phrased with "come funziona", it's about a process)
+      - "Dove si trova l'aula 5?" — asks about a specific location
+      - "Puoi spiegarmi meglio la procedura di tesi?" — asks for clarification on a substantive topic
+      - "Grazie, ma puoi dirmi anche gli orari?" — contains thanks BUT also asks a substantive question
+      - "Ciao, vorrei sapere i corsi disponibili" — contains a greeting BUT also asks a substantive question
+
+      CRITICAL RULE: If the message contains BOTH a meta element (greeting, thanks) AND a substantive question, answer "No" (NOT meta). The substantive question takes priority.
+
+      User message: "{{ user_input }}"
 
       Answer ONLY "Yes" or "No".
       Answer:
