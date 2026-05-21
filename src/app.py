@@ -142,7 +142,6 @@ def inject_custom_css():
             box-shadow: none !important; /* Rimossa ombra */
             border: none !important; /* Rimosso bordo */
         }}
-        /* Colore testo bot: NON inseriamo regole "!important", così Streamlit lo adatta (Nero su Chiaro, Bianco su Scuro) automaticamente */
 
         /* =========================================
            FIX BARRA DI INPUT (Bordi Tondi & Focus)
@@ -174,6 +173,7 @@ def inject_custom_css():
             align-items: center;
             gap: 12px; /* Spazio ridotto */
             margin-bottom: 5px;
+            transform: translateY(-14px); /* FIX: Sposta SOLO il blocco di caricamento in alto per allinearlo all'avatar */
         }}
         .custom-spinner-container {{
             position: relative;
