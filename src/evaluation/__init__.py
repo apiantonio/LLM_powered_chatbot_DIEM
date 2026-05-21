@@ -4,9 +4,9 @@ Fornisce strumenti per la valutazione quantitativa delle performance
 di retrieval e generazione dell'agente, basati sul framework RAGAS.
 """
 
-from src.evaluation.data_collector import RAGASDataCollector
-from src.evaluation.ragas_evaluator import RAGASEvaluator
-from src.evaluation.report_generator import ReportGenerator
+from evaluation.data_collector import RAGASDataCollector
+from evaluation.ragas_evaluator import RAGASEvaluator
+from evaluation.report_generator import ReportGenerator
 
 __all__ = [
     "RAGASDataCollector",

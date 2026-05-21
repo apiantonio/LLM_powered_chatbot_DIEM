@@ -17,9 +17,8 @@ import os
 import argparse
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
-# Assicura che la directory src sia nel path
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
@@ -46,10 +45,10 @@ Esempi di utilizzo:
   python run_evaluation.py --output-dir risultati/ --log-level DEBUG
   python run_evaluation.py --no-guardrails
   python run_evaluation.py --llm-judge-provider groq
+  python run_evaluation.py --run-note "Test con reranker Qwen3 e soglia 0.0"
         """,
     )
 
-    # Percorsi
     parser.add_argument(
         "--testset",
         type=str,
@@ -63,7 +62,6 @@ Esempi di utilizzo:
         help="Directory di output per i report (default: src/evaluation/results)",
     )
 
-    # Configurazione agente
     parser.add_argument(
         "--no-guardrails",
         action="store_true",
@@ -76,14 +74,14 @@ Esempi di utilizzo:
         help="Numero massimo di turni di memoria (default: 5)",
     )
 
-    # Configurazione LLM judge per RAGAS
     parser.add_argument(
         "--llm-judge-provider",
         type=str,
         default=None,
         help=(
-            "Provider LLM per il judge RAGAS (groq, ollama, huggingface). "
-            "Se non specificato, usa lo stesso LLM dell'agente."
+            "Provider LLM per il judge RAGAS (groq, ollama). "
+            "Se non specificato, usa lo stesso LLM dell'agente "
+            "(da LLM_PROVIDER nel .env)."
         ),
     )
     parser.add_argument(
@@ -92,7 +90,8 @@ Esempi di utilizzo:
         default=None,
         help=(
             "Modello LLM per il judge RAGAS. "
-            "Se non specificato, usa lo stesso modello dell'agente."
+            "Se non specificato, usa lo stesso modello dell'agente "
+            "(da LLM_MODEL nel .env)."
         ),
     )
     parser.add_argument(
@@ -102,7 +101,6 @@ Esempi di utilizzo:
         help="API key per il judge RAGAS (se provider=groq).",
     )
 
-    # Metriche
     parser.add_argument(
         "--metrics",
         type=str,
@@ -116,7 +114,6 @@ Esempi di utilizzo:
         ),
     )
 
-    # Parallelismo
     parser.add_argument(
         "--max-workers",
         type=int,
@@ -124,23 +121,33 @@ Esempi di utilizzo:
         help=(
             "Numero massimo di chiamate LLM concorrenti durante la "
             "valutazione RAGAS. Impostare a 1 per API con rate limit "
-            "stringenti (Ollama cloud, Groq free tier). Aumentare a "
+            "stringenti (Ollama locale, Groq free tier). Aumentare a "
             "2-4 se l'API lo consente. Default: 1 (sequenziale)."
         ),
     )
 
-    # Logging
+    parser.add_argument(
+        "--run-note",
+        type=str,
+        default=None,
+        help=(
+            "Nota descrittiva della run, inclusa nel JSON summary "
+            "per facilitare il confronto tra esperimenti diversi "
+            "(es. 'Test con chunk_size=500 e reranker attivo')."
+        ),
+    )
+
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default=None,
-        help="Livello di logging (default: da settings)",
+        help="Livello di logging (default: da LOG_LEVEL nel .env)",
     )
     parser.add_argument(
         "--log-file",
         type=str,
         default=None,
-        help="File di log (default: da settings)",
+        help="File di log (default: da LOG_FILE nel .env)",
     )
 
     return parser.parse_args()
@@ -152,93 +159,175 @@ def build_llm_judge(
 ):
     """Costruisce il LLM judge per la valutazione RAGAS.
 
-    Se il provider del judge e' specificato negli argomenti, crea un LLM
-    dedicato. Altrimenti usa lo stesso LLM dell'agente.
+    Strategia di selezione del judge:
+    1. Se --llm-judge-provider e' specificato, crea un LLM dedicato
+       con quel provider e modello.
+    2. Altrimenti, usa lo stesso provider/modello configurato nel .env
+       (LLM_PROVIDER / LLM_MODEL), creando l'istanza corrispondente.
+
+    In entrambi i casi, se il provider e' "groq" e manca una API key
+    valida, cade in fallback sul modello Ollama locale (FALLBACK_MODEL).
+
+    Args:
+        args: Argomenti da riga di comando.
+        settings: Configurazione dell'applicazione (da .env).
+
+    Returns:
+        Istanza di BaseChatModel per il judge RAGAS.
+    """
+
+    provider = (args.llm_judge_provider or settings.llm.provider).lower()
+    model = args.llm_judge_model  
+
+    logger.info(
+        "Configurazione LLM judge: provider=%s, model=%s",
+        provider,
+        model or "(default dal .env)",
+    )
+
+    if provider == "groq":
+        effective_api_key = (
+            args.llm_judge_api_key
+            or os.getenv("GROQ_JUDGE_API_KEY")
+            or settings.llm.groq_rewriter_api_key
+            or settings.llm.groq_chat_api_key
+        )
+
+        if not effective_api_key:
+            logger.warning(
+                "Nessuna API key Groq disponibile per il judge. "
+                "Fallback su Ollama locale (%s).",
+                settings.llm.fallback_model,
+            )
+            return _build_ollama_judge(
+                model=settings.llm.fallback_model,
+                base_url=settings.llm.fallback_base_url,
+            )
+
+        effective_model = model or settings.llm.rewriter_model
+        try:
+            from langchain_groq import ChatGroq
+
+            judge = ChatGroq(
+                model=effective_model,
+                temperature=0.0,
+                max_tokens=1024,
+                api_key=effective_api_key,
+            )
+            logger.info("LLM judge creato: Groq/%s", effective_model)
+            return judge
+        except Exception as e:
+            logger.warning(
+                "Errore creazione judge Groq: %s. Fallback su Ollama locale.",
+                e,
+            )
+            return _build_ollama_judge(
+                model=settings.llm.fallback_model,
+                base_url=settings.llm.fallback_base_url,
+            )
+        
+    if provider == "ollama":
+        effective_model = model or settings.llm.model_name
+        return _build_ollama_judge(
+            model=effective_model,
+            base_url=settings.llm.ollama_base_url,
+        )
+
+    logger.warning(
+        "Provider judge '%s' non supportato. Fallback su Ollama locale (%s).",
+        provider,
+        settings.llm.fallback_model,
+    )
+    return _build_ollama_judge(
+        model=settings.llm.fallback_model,
+        base_url=settings.llm.fallback_base_url,
+    )
+
+
+def _build_ollama_judge(model: str, base_url: str):
+    """Crea un'istanza ChatOllama da usare come judge RAGAS.
+
+    Args:
+        model: Nome del modello Ollama (es. 'nemotron-3-super:cloud', 'qwen2.5').
+        base_url: URL del server Ollama (es. 'http://localhost:11434').
+
+    Returns:
+        Istanza di ChatOllama configurata per la valutazione.
+    """
+    from langchain_ollama import ChatOllama
+
+    judge = ChatOllama(
+        model=model,
+        temperature=0.0,
+        num_predict=1024,
+        base_url=base_url,
+    )
+    logger.info("LLM judge creato: Ollama/%s su %s", model, base_url)
+    return judge
+
+
+def build_run_metadata(
+    args: argparse.Namespace,
+    settings: AppSettings,
+) -> Dict[str, Any]:
+    """Costruisce i metadati della run per il JSON summary.
+
+    Cattura automaticamente la configurazione corrente (modelli, parametri
+    di retrieval, embedding, reranker) cosi' da poter confrontare run
+    diverse senza dover ricordare cosa era attivo in ciascuna.
 
     Args:
         args: Argomenti da riga di comando.
         settings: Configurazione dell'applicazione.
 
     Returns:
-        Istanza di BaseChatModel per il judge RAGAS, oppure None
-        per usare il default.
+        Dizionario con tutti i metadati rilevanti della run.
     """
-    provider = args.llm_judge_provider
-    if not provider:
-        logger.info(
-            "LLM judge: usa lo stesso LLM dell'agente (%s/%s)",
-            settings.llm.provider,
-            settings.llm.model_name,
-        )
-        return None
-
-    model = args.llm_judge_model
-    api_key = args.llm_judge_api_key
-
-    logger.info(
-        "Configurazione LLM judge dedicato: provider=%s, model=%s",
-        provider,
-        model or "(default del provider)",
+    judge_provider = (args.llm_judge_provider or settings.llm.provider).lower()
+    judge_model = args.llm_judge_model or (
+        settings.llm.rewriter_model if judge_provider == "groq"
+        else settings.llm.model_name
     )
 
-    if provider.lower() == "groq":
-        from langchain_groq import ChatGroq
+    metadata = {
+        "agent_provider": settings.llm.provider,
+        "agent_model": settings.llm.model_name,
+        "agent_temperature": settings.llm.temperature,
+        "agent_max_tokens": settings.llm.max_tokens,
+        "guardrails_enabled": not args.no_guardrails,
+        "max_memory_turns": args.max_turns,
+        "judge_provider": judge_provider,
+        "judge_model": judge_model,
+        "embedding_model": settings.embedding.model_name,
+        "reranker_model": settings.reranker.model_name,
+        "reranker_score_threshold": settings.reranker.score_treshold,
+        "reranker_top_n": settings.reranker.top_n,
+        "search_k": settings.vectorstore.search_k,
+        "rewriter_provider": settings.llm.rewriter_provider,
+        "rewriter_model": settings.llm.rewriter_model,
+        "testset_path": args.testset,
+        "metrics": args.metrics or [
+            "context_precision",
+            "context_recall",
+            "response_relevancy",
+            "faithfulness",
+            "factual_correctness",
+        ],
+        "max_workers": args.max_workers,
+    }
 
-        effective_api_key = (
-            api_key
-            or os.getenv("GROQ_JUDGE_API_KEY")
-            or os.getenv("GROQ_REWRITER_API_KEY")
-            or os.getenv("GROQ_CHAT_API_KEY")
-        )
-        if not effective_api_key:
-            logger.warning(
-                "Nessuna API key Groq disponibile per il judge. "
-                "Fallback al LLM dell'agente."
-            )
-            return None
+    if args.run_note:
+        metadata["note"] = args.run_note
 
-        effective_model = model or "llama-3.3-70b-versatile"
-        judge = ChatGroq(
-            model=effective_model,
-            temperature=0.0,
-            max_tokens=1024,
-            api_key=effective_api_key,
-        )
-        logger.info("LLM judge creato: Groq/%s", effective_model)
-        return judge
-
-    if provider.lower() == "ollama":
-        from langchain_ollama import ChatOllama
-
-        effective_model = model or settings.llm.model_name
-        judge = ChatOllama(
-            model=effective_model,
-            temperature=0.0,
-            num_predict=1024,
-            base_url=settings.llm.ollama_base_url,
-        )
-        logger.info(
-            "LLM judge creato: Ollama/%s su %s",
-            effective_model,
-            settings.llm.ollama_base_url,
-        )
-        return judge
-
-    logger.warning(
-        "Provider judge '%s' non supportato. Fallback al LLM dell'agente.",
-        provider,
-    )
-    return None
+    return metadata
 
 
 def main() -> None:
     """Entry point principale dello script di valutazione."""
     args = parse_args()
 
-    # Carica configurazione
     settings = load_settings()
 
-    # Configura logging
     log_level = args.log_level or settings.logging.level
     log_file = args.log_file or settings.logging.log_file
 
@@ -250,26 +339,36 @@ def main() -> None:
         date_format=settings.logging.date_format,
     )
 
+    judge_provider = (args.llm_judge_provider or settings.llm.provider).lower()
+    judge_model = args.llm_judge_model or (
+        settings.llm.rewriter_model if judge_provider == "groq"
+        else settings.llm.model_name
+    )
+
     print("\n" + "=" * 60)
     print("  VALUTAZIONE RAGAS - Agente RAG DIEM")
     print("=" * 60)
-    print(f"  Data:        {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"  Test set:    {args.testset}")
-    print(f"  Output:      {args.output_dir}")
-    print(f"  Guardrails:  {'OFF' if args.no_guardrails else 'ON'}")
-    print(f"  Max turns:   {args.max_turns}")
-    print(f"  Metriche:    {args.metrics or 'tutte (default)'}")
-    print(f"  Max workers: {args.max_workers}")
+    print(f"  Data:          {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    print(f"  Test set:      {args.testset}")
+    print(f"  Output:        {args.output_dir}")
+    print(f"  Guardrails:    {'OFF' if args.no_guardrails else 'ON'}")
+    print(f"  Max turns:     {args.max_turns}")
+    print(f"  Metriche:      {args.metrics or 'tutte (default)'}")
+    print(f"  Max workers:   {args.max_workers}")
+    print(f"  Agente:        {settings.llm.provider}/{settings.llm.model_name}")
+    print(f"  Judge:         {judge_provider}/{judge_model}")
+    print(f"  Embedding:     {settings.embedding.model_name}")
+    print(f"  Reranker:      {settings.reranker.model_name}")
+    if args.run_note:
+        print(f"  Nota:          {args.run_note}")
     print("=" * 60 + "\n")
 
-    # Verifica esistenza del test set
     if not os.path.exists(args.testset):
         logger.error("File test set non trovato: %s", args.testset)
         print(f"\n  ERRORE: File test set non trovato: {args.testset}")
         print("  Crea il file testset.json con le domande e le ground truth.")
         sys.exit(1)
 
-    # Fase 1: Bootstrap dei componenti
     logger.info("Fase 1: Bootstrap dei componenti")
     print("  [1/5] Bootstrap dei componenti...")
 
@@ -296,14 +395,12 @@ def main() -> None:
         print(f"\n  ERRORE nel bootstrap: {e}")
         sys.exit(1)
 
-    # Fase 2: Configurazione LLM judge
     logger.info("Fase 2: Configurazione LLM judge")
     print("  [2/5] Configurazione LLM judge...")
 
     llm_judge = build_llm_judge(args, settings)
     print("  [2/5] LLM judge configurato.\n")
 
-    # Fase 3: Inizializzazione RAGASEvaluator
     logger.info("Fase 3: Inizializzazione RAGASEvaluator")
     print("  [3/5] Inizializzazione evaluator...")
 
@@ -324,7 +421,8 @@ def main() -> None:
         print("  Verifica che la directory evaluation/ sia nel PYTHONPATH.")
         sys.exit(1)
 
-    # Fase 4-5: Esecuzione valutazione completa
+    run_metadata = build_run_metadata(args, settings)
+
     logger.info("Fase 4-5: Esecuzione valutazione completa")
     print("  [4/5] Raccolta dati e valutazione RAGAS in corso...")
     print("         (questo puo' richiedere diversi minuti)\n")
@@ -334,13 +432,13 @@ def main() -> None:
             agent=agent,
             testset_path=args.testset,
             output_dir=args.output_dir,
+            run_metadata=run_metadata,
         )
     except Exception as e:
         logger.error("Errore durante la valutazione: %s", e, exc_info=True)
         print(f"\n  ERRORE durante la valutazione: {e}")
         sys.exit(1)
 
-    # Riepilogo finale
     print("\n  [5/5] Valutazione completata!")
 
     if "error" in results:
@@ -355,6 +453,7 @@ def main() -> None:
                 print(f"    {metric_name:<30s} {score:.4f}")
 
     print(f"\n  Report salvati in: {args.output_dir}/")
+    print(f"  (CSV, Markdown e JSON summary con metadati della run)")
     print("=" * 60 + "\n")
 
 

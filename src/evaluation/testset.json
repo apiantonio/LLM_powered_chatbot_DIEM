@@ -1,14 +1,14 @@
 [
   {
-    "question": "Quali sono i corsi di laurea triennale offerti dal DIEM?",
-    "ground_truth": "Il DIEM offre i seguenti corsi di laurea triennale: Ingegneria Informatica, Ingegneria Elettronica, Ingegneria delle Telecomunicazioni e Matematica Applicata. I corsi sono strutturati in 180 CFU da conseguire in tre anni accademici."
+    "question": "Quali corsi di laurea sono offerti dal DIEM?",
+    "ground_truth": "Il DIEM offre i seguenti corsi di laurea: due lauree triennali (classe L-8) in Ingegneria Informatica e in Ingegneria dell'Informazione per la Medicina Digitale; tre lauree magistrali in Electrical Engineering for Digital Energy (LM-28), Information Engineering for Digital Medicine (LM-32) e Ingegneria Informatica (LM-32)."
   },
   {
-    "question": "Chi è il direttore del dipartimento DIEM?",
-    "ground_truth": "Il direttore del Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) dell'Università degli Studi di Salerno è indicato nella sezione organizzazione del sito dipartimentale."
+    "question": "Se ho un punteggio di 18 al mio TOLC, posso iscrivermi alla laurea triennale in ingegneria informatica nel 2025?",
+    "ground_truth": "Con un punteggio totale di 18/50 al TOLC-I (esclusa la sezione di lingua inglese), che è inferiore alla soglia minima di 16/50, l'immatricolazione è sconsigliata. A tale punteggio vengono attribuiti OFA totali (in Matematica di Base, Scienze, Logica e Comprensione verbale). Se tali OFA non vengono superati entro le tre sessioni disponibili, lo studente rimane bloccato per un anno senza poter sostenere esami, perdendo anche le eventuali agevolazioni sulle tasse universitarie."
   },
   {
-    "question": "Come si raggiunge il campus di Fisciano?",
-    "ground_truth": "Il campus universitario di Fisciano si raggiunge tramite l'autostrada A30 (uscita Fisciano-Lancusi), oppure con i bus CSTP e SITA che collegano Salerno e le città limitrofe al campus. È disponibile anche un servizio navetta interno per gli spostamenti tra le varie strutture."
+    "question": "Quali sono i requisiti di ammissione per il corso di laurea magistrale in Information Engineering for Digital Medicine?",
+    "ground_truth": "L'accesso alla laurea magistrale in Information Engineering for Digital Medicine è subordinato al superamento di una prova di ammissione, le cui sessioni vengono calendarizzate annualmente sul sito del Dipartimento. Il punteggio minimo per il superamento della prova è 60/100, così ripartiti: fino a 20 punti per i titoli relativi alla carriera universitaria pregressa e fino a 80 punti per la prova di verifica, composta da 5 esercizi basati sul Syllabus ufficiale. L'esonero dalla prova è previsto solo in casi specifici, come indicato nel documento ufficiale sulle modalità di verifica dei requisiti di ingresso."
   }
 ]

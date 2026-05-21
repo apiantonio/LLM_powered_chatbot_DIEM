@@ -54,7 +54,6 @@ class RAGASDataCollector:
         logger.info("Raccolta dati per domanda: '%s'", question[:80])
 
         try:
-            # Invoca l'agente con la domanda
             chat_result = agent.chat(question)
             response = chat_result.get("response", "")
             is_blocked = chat_result.get("blocked", False)
@@ -66,7 +65,6 @@ class RAGASDataCollector:
                     question[:80],
                 )
 
-            # Estrae i contesti recuperati dai metadati dell'ultima ricerca
             retrieved_contexts = self._extract_contexts(agent, chat_result)
 
             sample = {
@@ -93,7 +91,7 @@ class RAGASDataCollector:
                 e,
                 exc_info=True,
             )
-            # Restituisce un sample con valori vuoti in caso di errore
+
             error_sample = {
                 "user_input": question,
                 "retrieved_contexts": [],
@@ -118,7 +116,7 @@ class RAGASDataCollector:
         Returns:
             Lista di stringhe con i testi dei contesti recuperati.
         """
-        # Strategia 1: testi raw da get_last_search_meta()
+
         try:
             from agent.tools import get_last_search_meta
             search_meta = get_last_search_meta()
@@ -134,7 +132,6 @@ class RAGASDataCollector:
         except Exception as e:
             logger.warning("Errore accesso a search_meta: %s", e)
 
-        # Strategia 2: contesti dal trace dict nel risultato della chat
         trace = chat_result.get("trace", {})
         if isinstance(trace, dict):
             contexts = trace.get("retrieved_contexts", [])
@@ -145,7 +142,6 @@ class RAGASDataCollector:
                 )
                 return [ctx for ctx in contexts if ctx]
 
-        # Strategia 3: fallback - lista vuota
         logger.warning(
             "Nessun contesto recuperato per la domanda corrente. "
             "Verificare che agent/tools.py esponga i testi raw dei chunk."
@@ -193,8 +189,6 @@ class RAGASDataCollector:
                 question[:60],
             )
 
-            # Resetta la memoria dell'agente per evitare contaminazione
-            # tra le domande del test set
             try:
                 agent.reset_memory()
             except Exception as e:

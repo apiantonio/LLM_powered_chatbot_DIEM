@@ -1,14 +1,15 @@
 """Generatore di report per i risultati della valutazione RAGAS.
 
-Produce report in formato console, CSV e Markdown con i risultati
+Produce report in formato console, CSV, Markdown e JSON con i risultati
 dettagliati e aggregati della valutazione dell'Agente RAG DIEM.
 """
 
+import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,11 @@ logger = logging.getLogger(__name__)
 class ReportGenerator:
     """Formattatore e generatore di report per i risultati RAGAS.
 
-    Produce output in tre formati:
+    Produce output in quattro formati:
     - Console summary: stampa riassuntiva con le metriche aggregate
     - CSV dettagliato: una riga per ogni domanda con tutti gli score
     - Markdown report: report leggibile con tabella dei risultati
+    - JSON summary: riepilogo strutturato per confronto tra run diverse
     """
 
     def __init__(self, output_dir: str = "evaluation/results"):
@@ -88,7 +90,6 @@ class ReportGenerator:
         filepath = self._output_dir / filename
 
         try:
-            # Rinomina le colonne per maggiore leggibilita'
             column_mapping = {
                 "user_input": "query",
                 "retrieved_contexts": "contexts",
@@ -111,12 +112,6 @@ class ReportGenerator:
                 inplace=True,
             )
 
-            # Tronca i testi lunghi nei contesti per leggibilita' del CSV
-            if "contexts" in df_report.columns:
-                df_report["contexts"] = df_report["contexts"].apply(
-                    lambda x: str(x)[:500] + "..." if len(str(x)) > 500 else str(x)
-                )
-
             df_report.to_csv(filepath, index=False, encoding="utf-8-sig")
 
             logger.info("Report CSV generato: %s", filepath)
@@ -125,6 +120,103 @@ class ReportGenerator:
 
         except Exception as e:
             logger.error("Errore generazione report CSV: %s", e)
+            return ""
+
+    def generate_json_summary(
+        self,
+        results: Dict[str, Any],
+        df=None,
+        run_metadata: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+    ) -> str:
+        """Genera un file JSON strutturato con il riepilogo della run.
+
+        Pensato per il confronto tra run diverse: ogni file contiene
+        timestamp, configurazione, metriche aggregate e score per-sample.
+        Puo' essere caricato facilmente con json.load() o pandas per
+        costruire tabelle comparative nel report finale.
+
+        Args:
+            results: Dizionario con i risultati aggregati della valutazione.
+            df: DataFrame Pandas con i risultati dettagliati (opzionale).
+                Se fornito, include gli score per-sample nel JSON.
+            run_metadata: Dizionario opzionale con metadati aggiuntivi
+                sulla run (es. modello usato, parametri retriever, note).
+            filename: Nome del file di output. Se None, viene generato
+                      automaticamente con timestamp.
+
+        Returns:
+            Percorso del file JSON generato.
+        """
+        if filename is None:
+            filename = f"results_summary_{self._timestamp}.json"
+
+        filepath = self._output_dir / filename
+
+        try:
+            summary = {
+                "run_id": self._timestamp,
+                "timestamp": datetime.now().isoformat(),
+                "num_samples": results.get("num_samples", 0),
+                "metrics_used": results.get("metrics_used", []),
+                "aggregate_scores": {},
+                "per_sample_scores": [],
+            }
+
+            if run_metadata:
+                summary["run_metadata"] = run_metadata
+
+            scores = results.get("scores", {})
+            for metric_name, score in scores.items():
+                if isinstance(score, (int, float)):
+                    summary["aggregate_scores"][metric_name] = round(score, 4)
+                else:
+                    summary["aggregate_scores"][metric_name] = score
+
+            numeric_scores = {
+                k: v for k, v in scores.items()
+                if isinstance(v, (int, float))
+            }
+            if numeric_scores:
+                summary["average_score"] = round(
+                    sum(numeric_scores.values()) / len(numeric_scores), 4
+                )
+
+            if "error" in results:
+                summary["error"] = results["error"]
+
+            if df is not None and not df.empty:
+                metric_cols = [
+                    c for c in df.columns
+                    if c not in [
+                        "user_input", "response", "reference",
+                        "retrieved_contexts",
+                    ]
+                ]
+
+                for idx, row in df.iterrows():
+                    sample_entry = {
+                        "sample_index": idx,
+                        "question": str(row.get("user_input", "")),
+                        "scores": {},
+                    }
+                    for col in metric_cols:
+                        val = row.get(col)
+                        if isinstance(val, float):
+                            sample_entry["scores"][col] = round(val, 4)
+                        elif val is not None:
+                            sample_entry["scores"][col] = val
+                    summary["per_sample_scores"].append(sample_entry)
+
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2, ensure_ascii=False)
+
+            logger.info("JSON summary generato: %s", filepath)
+            print(f"  JSON summary salvato: {filepath}")
+            return str(filepath)
+
+        except Exception as e:
+            logger.error("Errore generazione JSON summary: %s", e)
             return ""
 
     def generate_markdown_report(
@@ -152,7 +244,6 @@ class ReportGenerator:
         try:
             lines = []
 
-            # Intestazione
             lines.append("# Report Valutazione RAGAS - Agente RAG DIEM")
             lines.append("")
             lines.append(
@@ -163,7 +254,6 @@ class ReportGenerator:
             )
             lines.append("")
 
-            # Sezione errori
             if "error" in results:
                 lines.append("## Errore")
                 lines.append("")
@@ -172,7 +262,6 @@ class ReportGenerator:
                 self._write_file(filepath, lines)
                 return str(filepath)
 
-            # Metriche aggregate
             lines.append("## Metriche Aggregate")
             lines.append("")
             lines.append("| Metrica | Score |")
@@ -187,24 +276,20 @@ class ReportGenerator:
 
             lines.append("")
 
-            # Interpretazione dei risultati
             lines.append("## Interpretazione")
             lines.append("")
             self._add_interpretation(lines, scores)
             lines.append("")
 
-            # Tabella dettagliata per-sample
             if df is not None and not df.empty:
                 lines.append("## Risultati Dettagliati per Domanda")
                 lines.append("")
 
-                # Seleziona solo le colonne piu' rilevanti per il markdown
                 display_cols = []
                 for col in ["user_input", "response", "reference"]:
                     if col in df.columns:
                         display_cols.append(col)
 
-                # Aggiungi colonne metriche
                 metric_cols = [
                     c for c in df.columns
                     if c not in [
@@ -215,7 +300,6 @@ class ReportGenerator:
                 display_cols.extend(metric_cols)
 
                 if display_cols:
-                    # Header
                     header = "| # | " + " | ".join(display_cols) + " |"
                     separator = "|---|" + "|".join(
                         ["---" for _ in display_cols]
@@ -223,7 +307,6 @@ class ReportGenerator:
                     lines.append(header)
                     lines.append(separator)
 
-                    # Righe
                     for idx, row in df.iterrows():
                         cells = []
                         for col in display_cols:
@@ -239,7 +322,6 @@ class ReportGenerator:
 
                 lines.append("")
 
-            # Note finali
             lines.append("## Note")
             lines.append("")
             lines.append(
@@ -313,7 +395,6 @@ class ReportGenerator:
         )
         lines.append("")
 
-        # Identifica punti di forza e debolezza
         best_metric = max(numeric_scores, key=numeric_scores.get)
         worst_metric = min(numeric_scores, key=numeric_scores.get)
 
@@ -324,7 +405,6 @@ class ReportGenerator:
             f"- **Area di miglioramento**: {worst_metric} ({numeric_scores[worst_metric]:.4f})"
         )
 
-        # Suggerimenti basati sugli score
         lines.append("")
         lines.append("### Suggerimenti")
         lines.append("")

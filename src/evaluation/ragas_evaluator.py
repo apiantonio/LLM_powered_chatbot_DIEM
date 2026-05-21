@@ -179,7 +179,6 @@ class RAGASEvaluator:
             "Avvio valutazione RAGAS su %d sample", len(collected_data)
         )
 
-        # Assicura che LLM e embedding siano disponibili
         self._ensure_llm_judge()
         self._ensure_embedding_model()
 
@@ -188,24 +187,20 @@ class RAGASEvaluator:
             from ragas.llms import LangchainLLMWrapper
             from ragas.embeddings import LangchainEmbeddingsWrapper
 
-            # Costruisce l'EvaluationDataset di RAGAS
             evaluation_dataset = EvaluationDataset.from_list(collected_data)
             logger.info(
                 "EvaluationDataset RAGAS creato: %d sample",
                 len(collected_data),
             )
 
-            # Configura le metriche
             metrics = self._build_metrics()
             if not metrics:
                 logger.error("Nessuna metrica valida configurata")
                 return {"error": "Nessuna metrica configurata"}
 
-            # Wrappa il LLM judge e l'embedding model per RAGAS
             wrapped_llm = LangchainLLMWrapper(self._llm_judge)
             wrapped_embeddings = LangchainEmbeddingsWrapper(self._embedding_model)
 
-            # Configura il parallelismo per rispettare i rate limit dell'API
             from ragas.run_config import RunConfig
             run_config = RunConfig(
                 max_workers=self._max_workers,
@@ -217,7 +212,6 @@ class RAGASEvaluator:
                 self._max_workers,
             )
 
-            # Esegue la valutazione
             logger.info("Esecuzione evaluate() di RAGAS in corso...")
             result = evaluate(
                 dataset=evaluation_dataset,
@@ -230,14 +224,12 @@ class RAGASEvaluator:
             self._results = result
             logger.info("Valutazione RAGAS completata con successo")
 
-            # Estrae i risultati aggregati
             result_dict = {
                 "scores": dict(result) if hasattr(result, '__iter__') else {},
                 "num_samples": len(collected_data),
                 "metrics_used": self._metrics_names,
             }
 
-            # Log dei risultati aggregati
             if result_dict.get("scores"):
                 logger.info("=" * 50)
                 logger.info("  RISULTATI RAGAS AGGREGATI")
@@ -295,6 +287,7 @@ class RAGASEvaluator:
         agent,
         testset_path: str = "evaluation/testset.json",
         output_dir: str = "evaluation/results",
+        run_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Esegue l'intero flusso di valutazione: carica testset, raccoglie dati, valuta, genera report.
 
@@ -305,6 +298,10 @@ class RAGASEvaluator:
             agent: Istanza di RAGAgent da valutare.
             testset_path: Percorso del file testset.json.
             output_dir: Directory di output per i report.
+            run_metadata: Dizionario opzionale con metadati aggiuntivi sulla
+                run (es. modello usato, parametri retriever, note).
+                Viene incluso nel JSON summary per facilitare il confronto
+                tra run diverse.
 
         Returns:
             Dizionario con i risultati completi della valutazione.
@@ -313,14 +310,12 @@ class RAGASEvaluator:
         logger.info("  AVVIO VALUTAZIONE COMPLETA RAGAS")
         logger.info("=" * 60)
 
-        # Fase 1: Caricamento test set
         logger.info("Fase 1: Caricamento test set da '%s'", testset_path)
         testset = self._load_testset(testset_path)
         if not testset:
             return {"error": f"Test set vuoto o non trovato: {testset_path}"}
         logger.info("Test set caricato: %d domande", len(testset))
 
-        # Fase 2: Raccolta dati
         logger.info("Fase 2: Raccolta dati tramite DataCollector")
         from evaluation.data_collector import RAGASDataCollector
 
@@ -328,11 +323,9 @@ class RAGASEvaluator:
         collected_data = collector.collect_batch(agent, testset)
         logger.info("Dati raccolti: %d sample", len(collected_data))
 
-        # Fase 3: Valutazione RAGAS
         logger.info("Fase 3: Valutazione RAGAS")
         results = self.evaluate(collected_data)
 
-        # Fase 4: Generazione report
         logger.info("Fase 4: Generazione report")
         from evaluation.report_generator import ReportGenerator
 
@@ -343,11 +336,13 @@ class RAGASEvaluator:
             report_gen.generate_console_summary(results)
             report_gen.generate_csv_report(df)
             report_gen.generate_markdown_report(results, df)
+            report_gen.generate_json_summary(results, df, run_metadata)
         else:
             logger.warning(
                 "DataFrame non disponibile, generazione report limitata"
             )
             report_gen.generate_console_summary(results)
+            report_gen.generate_json_summary(results, run_metadata=run_metadata)
 
         logger.info("=" * 60)
         logger.info("  VALUTAZIONE COMPLETA RAGAS TERMINATA")
@@ -382,7 +377,6 @@ class RAGASEvaluator:
                 )
                 return []
 
-            # Validazione delle chiavi richieste
             valid_items = []
             for idx, item in enumerate(testset):
                 if "question" not in item:
