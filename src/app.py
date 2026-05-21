@@ -101,6 +101,9 @@ def inject_custom_css():
             margin-top: 0 !important;
             padding-top: 0 !important;
         }}
+        [data-testid="stStatusWidget"] {{
+            display: none !important;
+        }}
 
         /* === MESSAGGIO UTENTE (DESTRA) === */
         [data-testid="stChatMessage"]:has(.user-msg-anchor) {{
@@ -279,6 +282,22 @@ def handle_commands(command_type: str):
         st.success("Sessione scollegata in modo sicuro. Ricarica la pagina per un nuovo colloquio.")
         st.stop()
 
+def format_latex(text: str) -> str:
+    """Converte i delimitatori matematici del bot nel formato compatibile con Streamlit (KaTeX)."""
+    if not text:
+        return text
+        
+    # 1. Sostituisce i delimitatori LaTeX standard ( \[ \] e \( \) )
+    text = text.replace(r"\[", "$$").replace(r"\]", "$$")
+    text = text.replace(r"\(", "$").replace(r"\)", "$")
+    
+    # 2. Corregge l'anomalia specifica del tuo LLM che omette l'escape prima delle parentesi quadre
+    # (trasforma "[ \text..." in "$$ \text...")
+    text = text.replace("[ \\text", "$$ \\text")
+    text = text.replace("} ]", "} $$")
+    
+    return text
+
 def render_sidebar():
     with st.sidebar:
         st.image(LOGO_URL, use_container_width=True)
@@ -328,7 +347,9 @@ def render_chat_interface():
         avatar = "👤" if msg["role"] == "user" else "🤖"
         with st.chat_message(msg["role"], avatar=avatar):
             anchor = "<span class='user-msg-anchor'></span>" if msg["role"] == "user" else "<span class='bot-msg-anchor'></span>"
-            st.markdown(f"{anchor}{msg['content']}", unsafe_allow_html=True)
+            # Formatta il contenuto solo se il messaggio è del bot
+            content_to_render = format_latex(msg['content']) if msg["role"] == "assistant" else msg['content']
+            st.markdown(f"{anchor}{content_to_render}", unsafe_allow_html=True)
             
             if st.session_state.trace_mode and msg["role"] == "assistant" and "trace" in msg:
                 with st.expander("🛠️ Dati di Tracciamento e Retrieval", expanded=False):
@@ -372,8 +393,10 @@ def render_chat_interface():
                 result_dict = st.session_state.agent.chat(prompt)
                 
                 loader_placeholder.empty()
+                # Estrae e formatta la stringa prima di salvarla e mostrarla a schermo
+                raw_response = result_dict.get("response", "Nessuna risposta dal sistema.")
+                response_text = format_latex(raw_response)
                 
-                response_text = result_dict.get("response", "Nessuna risposta dal sistema.")
                 trace_data = result_dict.get("trace", {})
                 is_blocked = result_dict.get("blocked", False)
                 
