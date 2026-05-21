@@ -186,6 +186,20 @@ class RAGAgent:
                 },
             )
             response_text = self._extract_final_response(result)
+
+            if not response_text:
+                logger.warning(
+                    "Content vuoto dal grafo agente al turno #%d. "
+                    "Tentativo retry con LLM diretto...",
+                    turn_number,
+                )
+                response_text = self._retry_with_direct_llm(result, user_query)
+
+                if not response_text:
+                    response_text = (
+                        "Mi scuso, ho riscontrato un problema nell'elaborazione "
+                        "della risposta. Per favore, riprova o riformula la domanda."
+                    )
             logger.info("TESTO DI RISPOSTA AGENTE AL TURNO %d: %s", turn_number, response_text)
 
         except Exception as e:
@@ -490,6 +504,70 @@ class RAGAgent:
             "Tutti i content sono vuoti."
         )
         return ""
+    
+    def _retry_with_direct_llm(self, result, user_query: str) -> str:
+        """Tentativo di recovery quando _extract_final_response restituisce vuoto.
+
+        Estrae i documenti dai ToolMessage nel result del grafo e chiede
+        all'LLM una sintesi diretta, senza passare dal grafo agente.
+
+        Args:
+            result: Il risultato completo dell'invoke del grafo agente.
+            user_query: La query originale dell'utente.
+
+        Returns:
+            Testo della risposta sintetizzata, oppure stringa vuota se il retry fallisce.
+        """
+        from langchain_core.messages import ToolMessage, HumanMessage, SystemMessage
+
+        messages = result.get("messages", [])
+
+        tool_contents = []
+        for msg in messages:
+            if isinstance(msg, ToolMessage) and msg.content:
+                content = _strip_think_tags(msg.content) if hasattr(msg, 'content') else ""
+                if content and "Errore" not in content:
+                    tool_contents.append(content)
+
+        if not tool_contents:
+            logger.warning("Retry LLM: nessun ToolMessage con contenuto trovato.")
+            return ""
+
+        combined_docs = "\n\n---\n\n".join(tool_contents)
+
+        synthesis_prompt = (
+            "Sei l'assistente virtuale del DIEM, Universita degli Studi di Salerno. "
+            "Ti vengono forniti dei documenti recuperati dalla knowledge base. "
+            "Rispondi alla domanda dell'utente basandoti ESCLUSIVAMENTE su questi documenti. "
+            "Se i documenti non contengono l'informazione richiesta, dillo chiaramente. "
+            "Rispondi nella stessa lingua usata dall'utente."
+        )
+
+        try:
+            llm_messages = [
+                SystemMessage(content=synthesis_prompt),
+                HumanMessage(content=(
+                    f"DOCUMENTI RECUPERATI:\n{combined_docs}\n\n"
+                    f"DOMANDA DELL'UTENTE: {user_query}"
+                )),
+            ]
+
+            response = self._chat_model.invoke(llm_messages)
+            response_text = _strip_think_tags(response.content)
+
+            if response_text:
+                logger.info(
+                    "RETRY LLM DIRETTO RIUSCITO: risposta di %d caratteri generata.",
+                    len(response_text),
+                )
+            else:
+                logger.warning("RETRY LLM DIRETTO: anche il retry ha prodotto content vuoto.")
+
+            return response_text
+
+        except Exception as e:
+            logger.error("Errore nel retry LLM diretto: %s", e, exc_info=True)
+            return ""
 
 
 class RAGAgentFactory:
