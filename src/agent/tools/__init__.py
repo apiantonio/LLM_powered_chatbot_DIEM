@@ -77,9 +77,10 @@ _VALID_SOTTO_AREA_OFFERTA_FORMATIVA = frozenset({
 })
 
 _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
-    "aule", "laboratori", "bandi", "ricerca_dipartimentale",
-    "terza_missione", "internazionale", "organizzazione",
-    "alternanza", "eccellenza", "monitoraggio", "personale", "generale",
+    "aule", "laboratori", "bandi",
+    "ricerca_dipartimentale", "terza_missione",
+    "internazionale", "generale",
+    "alternanza", "eccellenza", "monitoraggio",
 })
 
 _tool_error_counts: Dict[str, int] = {}
@@ -391,7 +392,8 @@ class SearchDipartimentoInput(BaseModel):
     sotto_area: Optional[Literal[
         "aule", "laboratori", "bandi",
         "ricerca_dipartimentale", "terza_missione",
-        "internazionale", "organizzazione", "generale"
+        "internazionale", "generale",
+        "alternanza", "eccellenza", "monitoraggio"
     ]] = Field(
         default=None,
         description=(
@@ -402,9 +404,14 @@ class SearchDipartimentoInput(BaseModel):
             "Use 'ricerca_dipartimentale' for departmental research. "
             "Use 'terza_missione' for third mission, social impact. "
             "Use 'internazionale' for Erasmus, mobility, international agreements. "
-            "Use 'organizzazione' for org chart, committees, staff. "
-            "Use 'generale' for general department info, contacts, directions. "
+            "Use 'generale' for general department info, contacts, directions, "
+            "organization, org chart, committees, staff. "
+            "Use 'alternanza' for school-university alternation programs. "
+            "Use 'eccellenza' for department of excellence projects. "
+            "Use 'monitoraggio' for quality monitoring and review. "
             "Note: 'strutture' is not a valid value; use 'aule' or 'laboratori'. "
+            "Note: 'organizzazione' is not a valid value; use 'generale' instead. "
+            "Note: 'personale' is not a valid value; use 'generale' instead. "
             "Leave empty when uncertain."
         )
     )
@@ -552,13 +559,17 @@ Use this tool when the user asks about:
 - Classrooms or lecture hall capacity -> sotto_area="aule"
 - Research laboratories -> sotto_area="laboratori"
 - Erasmus or international mobility -> sotto_area="internazionale"
-- Department contacts, address, directions -> sotto_area="generale"
+- Department contacts, address, directions, organization, org chart, committees -> sotto_area="generale"
 - Departmental research -> sotto_area="ricerca_dipartimentale"
-- Organization, committees -> sotto_area="organizzazione"
+- School-university alternation programs -> sotto_area="alternanza"
+- Department of excellence projects -> sotto_area="eccellenza"
+- Quality monitoring and review -> sotto_area="monitoraggio"
 
-Note: sotto_area="strutture" does not exist. Use "aule" or "laboratori" instead.
+Note: 'strutture' is not a valid value; use 'aule' or 'laboratori' instead.
+Note: for organization, org chart, committees, or staff queries use sotto_area='generale'.
 
 Pass the user's full question in the query parameter without abbreviation."""
+
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_DIPARTIMENTO:
         logger.warning("sotto_area non valido per DIPARTIMENTO: '%s'. Ignoro.", sotto_area)
         sotto_area = None
@@ -588,6 +599,23 @@ Pass the user's full question in the query parameter without abbreviation."""
             "erasmus", "internazionale", "international", "mobilità"
         ]):
             sotto_area = "internazionale"
+        elif any(kw in query_lower for kw in [
+            "alternanza", "pcto", "scuola-lavoro"
+        ]):
+            sotto_area = "alternanza"
+        elif any(kw in query_lower for kw in [
+            "eccellenza", "dipartimento di eccellenza"
+        ]):
+            sotto_area = "eccellenza"
+        elif any(kw in query_lower for kw in [
+            "monitoraggio", "riesame", "qualità", "quality"
+        ]):
+            sotto_area = "monitoraggio"
+        elif any(kw in query_lower for kw in [
+            "organizzazione", "delegato", "personale", "staff",
+            "comitato", "commissione", "giunta"
+        ]):
+            sotto_area = "generale"
 
     metadata_filter = {}
     if sotto_area:
