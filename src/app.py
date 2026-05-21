@@ -45,7 +45,9 @@ def load_global_engines():
 
 def init_session_agent():
     if "agent" not in st.session_state:
-        with st.status("Avvio dell'infrastruttura AI dipartimentale...", expanded=True) as status:
+        boot_placeholder = st.empty()
+        
+        with boot_placeholder.status("Avvio dell'infrastruttura AI dipartimentale...", expanded=True) as status:
             st.write("Caricamento configurazioni...")
             settings, engine, embedding_model = load_global_engines()
             
@@ -59,6 +61,8 @@ def init_session_agent():
             )
             status.update(label="Motore AI pronto!", state="complete", expanded=False)
             logger.info("Inizializzazione nuovo agente completata.")
+            
+        boot_placeholder.empty()
             
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -164,6 +168,35 @@ def inject_custom_css():
         [data-testid="stChatInput"] > div:focus-within {{
             box-shadow: 0 0 0 2px {COLOR_PRIMARY} !important;
             border-color: {COLOR_PRIMARY} !important;
+        }}
+        /* Seleziona il cerchio di sfondo del pulsante quando è ATTIVO */
+        [data-testid="stChatInput"] button {{
+            background-color: {COLOR_PRIMARY} !important;
+            border-color: {COLOR_PRIMARY} !important;
+            color: #FFFFFF !important; /* Forza la freccia interna a essere bianca sul cerchio blu */
+        }}
+
+        /* Seleziona l'icona della freccia interna per assicurarsi che sia bianca */
+        [data-testid="stChatInput"] button svg {{
+            fill: #FFFFFF !important;
+            color: #FFFFFF !important;
+        }}
+
+        /* Gestione dello stato HOVER (quando passi sopra con il mouse) */
+        [data-testid="stChatInput"] button:hover {{
+            background-color: #004070 !important; /* Un blu leggermente più scuro per dare feedback visivo */
+            border-color: #004070 !important;
+        }}
+
+        /* Gestione dello stato DISABILITATO (quando la barra è vuota) */
+        [data-testid="stChatInput"] button:disabled {{
+            background-color: dimgray !important; /* Blu opaco/semitrasparente */
+            border-color: transparent !important;
+            opacity: 0.6 !important;
+        }}
+        [data-testid="stChatInput"] button:disabled svg {{
+            fill: #ffffff !important;
+            opacity: 0.5 !important;
         }}
 
         /* =========================================
@@ -288,12 +321,9 @@ def format_latex(text: str) -> str:
     if not text:
         return text
         
-    # 1. Sostituisce i delimitatori LaTeX standard ( \[ \] e \( \) )
     text = text.replace(r"\[", "$$").replace(r"\]", "$$")
     text = text.replace(r"\(", "$").replace(r"\)", "$")
     
-    # 2. Corregge l'anomalia specifica del tuo LLM che omette l'escape prima delle parentesi quadre
-    # (trasforma "[ \text..." in "$$ \text...")
     text = text.replace("[ \\text", "$$ \\text")
     text = text.replace("} ]", "} $$")
     
@@ -360,7 +390,6 @@ def render_chat_interface():
         avatar = "assets/user.ico" if msg["role"] == "user" else "assets/chat.ico"
         with st.chat_message(msg["role"], avatar=avatar):
             anchor = "<span class='user-msg-anchor'></span>" if msg["role"] == "user" else "<span class='bot-msg-anchor'></span>"
-            # Formatta il contenuto solo se il messaggio è del bot
             content_to_render = format_latex(msg['content']) if msg["role"] == "assistant" else msg['content']
             st.markdown(f"{anchor}{content_to_render}", unsafe_allow_html=True)
             
@@ -406,7 +435,7 @@ def render_chat_interface():
                 result_dict = st.session_state.agent.chat(prompt)
                 
                 loader_placeholder.empty()
-                # Estrae e formatta la stringa prima di salvarla e mostrarla a schermo
+    
                 raw_response = result_dict.get("response", "Nessuna risposta dal sistema.")
                 response_text = format_latex(raw_response)
                 
