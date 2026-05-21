@@ -108,17 +108,17 @@ search_offerta_formativa - Degree programs and academic offerings.
     "Regolamento del corso di laurea magistrale" -> search_offerta_formativa(query="Regolamento del corso di laurea magistrale", sotto_area="regolamenti")
 
 search_dipartimento - Departmental and institutional information.
-  Use for: calls, scholarships, PhD notices (sotto_area="bandi"); classrooms and
-  capacity (sotto_area="aule"); research laboratories (sotto_area="laboratori");
-  Erasmus and international mobility (sotto_area="internazionale"); general
-  department info, contacts, directions (sotto_area="generale"); department
-  organization (sotto_area="organizzazione"); departmental research
-  (sotto_area="ricerca_dipartimentale").
+  Use for: calls, scholarships, PhD notices (sotto_area="bandi"); classrooms, lecture halls and capacity (sotto_area="aule"); research laboratories (sotto_area="laboratori"); Erasmus and international mobility (sotto_area="internazionale"); general department info, contacts, directions, organization, org chart, committees, and staff (sotto_area="generale"); departmental research (sotto_area="ricerca_dipartimentale"); third mission and social impact (sotto_area="terza_missione"); school-university alternation programs / PCTO (sotto_area="alternanza"); department of excellence projects (sotto_area="eccellenza"); quality monitoring and review (sotto_area="monitoraggio").
+
+  DISAMBIGUATION RULE: When the user asks for the name, contact, or identity of a person in charge of a specific sector (e.g., "responsabile di...", "delegato per...", "direttore", "coordinatore"), ALWAYS use sotto_area="generale" because this relates to the department's organizational chart, even if the sector itself (like Erasmus or Research) has its own category.
 
   Examples:
     "Bandi dottorato aperti" -> search_dipartimento(query="Bandi dottorato aperti", sotto_area="bandi")
     "Dove si trova l'aula P3" -> search_dipartimento(query="Dove si trova l'aula P3", sotto_area="aule")
     "Contatti della segreteria DIEM" -> search_dipartimento(query="Contatti della segreteria DIEM", sotto_area="generale")
+    "Chi fa parte della giunta di dipartimento" -> search_dipartimento(query="Chi fa parte della giunta di dipartimento", sotto_area="generale")
+    "Progetti del dipartimento di eccellenza" -> search_dipartimento(query="Progetti del dipartimento di eccellenza", sotto_area="eccellenza")
+    
 
 search_all - Cross-collection search.
   Use only when the query genuinely spans all three collections, or when the

@@ -498,33 +498,12 @@ This tool does NOT contain information about who teaches a course or course syll
 For those queries, use search_persone instead.
 
 Pass the user's full question in the query parameter without abbreviation."""
+    
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
         logger.warning("sotto_area non valido per OFFERTA_FORMATIVA: '%s'. Ignoro.", sotto_area)
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
-
-    if sotto_area is None:
-        query_lower = query.lower()
-        if any(kw in query_lower for kw in [
-            "regolamento", "regolamenti", "propedeuticità", "propedeuticita",
-            "norme", "regole"
-        ]):
-            sotto_area = "regolamenti"
-        elif any(kw in query_lower for kw in [
-            "piano di studi", "piano di studio", "curriculum", "percorso",
-            "percorsi", "insegnamenti del corso"
-        ]):
-            sotto_area = "piani_di_studio"
-        elif any(kw in query_lower for kw in [
-            "statistica", "statistiche", "occupazione", "occupazionali",
-            "laureati", "iscritti"
-        ]):
-            sotto_area = "statistiche"
-        elif any(kw in query_lower for kw in [
-            "aula", "aule", "strutture didattiche"
-        ]):
-            sotto_area = "aule"
 
     metadata_filter = {}
     if sotto_area:
@@ -565,8 +544,9 @@ Use this tool when the user asks about:
 - Department of excellence projects -> sotto_area="eccellenza"
 - Quality monitoring and review -> sotto_area="monitoraggio"
 
-Note: 'strutture' is not a valid value; use 'aule' or 'laboratori' instead.
-Note: for organization, org chart, committees, or staff queries use sotto_area='generale'.
+"DISAMBIGUATION: For names/contacts of sector heads (e.g., 'responsabile Erasmus', 'delegato alla ricerca'), ALWAYS use 'generale'. "
+"Note: 'strutture', 'organizzazione', and 'personale' are not valid values. "
+"Leave empty when uncertain."
 
 Pass the user's full question in the query parameter without abbreviation."""
 
@@ -575,47 +555,6 @@ Pass the user's full question in the query parameter without abbreviation."""
         sotto_area = None
     elif sotto_area:
         sotto_area = sotto_area.lower().strip()
-
-    if sotto_area is None:
-        query_lower = query.lower()
-        if any(kw in query_lower for kw in [
-            "bando", "bandi", "borsa", "borse", "assegno", "assegni",
-            "concorso", "concorsi", "dottorato", "avviso", "avvisi"
-        ]):
-            sotto_area = "bandi"
-        elif any(kw in query_lower for kw in [
-            "laboratorio", "laboratori", "lab "
-        ]):
-            sotto_area = "laboratori"
-        elif any(kw in query_lower for kw in [
-            "aula", "aule", "strutture didattiche", "strutture-didattiche"
-        ]):
-            sotto_area = "aule"
-        elif any(kw in query_lower for kw in [
-            "terza missione", "terza-missione"
-        ]):
-            sotto_area = "terza_missione"
-        elif any(kw in query_lower for kw in [
-            "erasmus", "internazionale", "international", "mobilità"
-        ]):
-            sotto_area = "internazionale"
-        elif any(kw in query_lower for kw in [
-            "alternanza", "pcto", "scuola-lavoro"
-        ]):
-            sotto_area = "alternanza"
-        elif any(kw in query_lower for kw in [
-            "eccellenza", "dipartimento di eccellenza"
-        ]):
-            sotto_area = "eccellenza"
-        elif any(kw in query_lower for kw in [
-            "monitoraggio", "riesame", "qualità", "quality"
-        ]):
-            sotto_area = "monitoraggio"
-        elif any(kw in query_lower for kw in [
-            "organizzazione", "delegato", "personale", "staff",
-            "comitato", "commissione", "giunta"
-        ]):
-            sotto_area = "generale"
 
     metadata_filter = {}
     if sotto_area:
