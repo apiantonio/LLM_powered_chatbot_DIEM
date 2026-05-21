@@ -168,6 +168,10 @@ def build_llm_judge(
     In entrambi i casi, se il provider e' "groq" e manca una API key
     valida, cade in fallback sul modello Ollama locale (FALLBACK_MODEL).
 
+    NOTA: Per i modelli Ollama, viene impostato format="json" per
+    forzare output JSON strutturato, necessario affinche' RAGAS possa
+    parsare correttamente le risposte del judge.
+
     Args:
         args: Argomenti da riga di comando.
         settings: Configurazione dell'applicazione (da .env).
@@ -177,7 +181,7 @@ def build_llm_judge(
     """
 
     provider = (args.llm_judge_provider or settings.llm.provider).lower()
-    model = args.llm_judge_model  
+    model = args.llm_judge_model
 
     logger.info(
         "Configurazione LLM judge: provider=%s, model=%s",
@@ -225,7 +229,7 @@ def build_llm_judge(
                 model=settings.llm.fallback_model,
                 base_url=settings.llm.fallback_base_url,
             )
-        
+
     if provider == "ollama":
         effective_model = model or settings.llm.model_name
         return _build_ollama_judge(
@@ -247,22 +251,41 @@ def build_llm_judge(
 def _build_ollama_judge(model: str, base_url: str):
     """Crea un'istanza ChatOllama da usare come judge RAGAS.
 
+    Configura il modello con:
+    - format="json": forza output JSON strutturato, fondamentale per il
+      parsing interno di RAGAS (PydanticPrompt). Senza questo, i modelli
+      thinking (Nemotron, Qwen3, DeepSeek-R1) producono testo libero con
+      tag <think> che causa RagasOutputParserException.
+    - temperature=0.0: output deterministico per riproducibilita'.
+    - num_ctx=8192: contesto esteso necessario per i prompt complessi
+      di RAGAS (statement_generator, faithfulness) che includono
+      l'intero contesto recuperato + la risposta dell'agente.
+    - num_predict=2048: limite generazione sufficiente per le risposte
+      JSON strutturate di RAGAS.
+
     Args:
         model: Nome del modello Ollama (es. 'nemotron-3-super:cloud', 'qwen2.5').
         base_url: URL del server Ollama (es. 'http://localhost:11434').
 
     Returns:
-        Istanza di ChatOllama configurata per la valutazione.
+        Istanza di ChatOllama configurata per la valutazione RAGAS.
     """
     from langchain_ollama import ChatOllama
 
     judge = ChatOllama(
         model=model,
         temperature=0.0,
-        num_predict=1024,
+        num_predict=2048,
+        num_ctx=8192,
+        format="json",
         base_url=base_url,
     )
-    logger.info("LLM judge creato: Ollama/%s su %s", model, base_url)
+    logger.info(
+        "LLM judge creato: Ollama/%s su %s "
+        "(format=json, num_ctx=8192, num_predict=2048)",
+        model,
+        base_url,
+    )
     return judge
 
 
@@ -298,6 +321,7 @@ def build_run_metadata(
         "max_memory_turns": args.max_turns,
         "judge_provider": judge_provider,
         "judge_model": judge_model,
+        "judge_format": "json" if judge_provider == "ollama" else "default",
         "embedding_model": settings.embedding.model_name,
         "reranker_model": settings.reranker.model_name,
         "reranker_score_threshold": settings.reranker.score_treshold,
@@ -357,6 +381,8 @@ def main() -> None:
     print(f"  Max workers:   {args.max_workers}")
     print(f"  Agente:        {settings.llm.provider}/{settings.llm.model_name}")
     print(f"  Judge:         {judge_provider}/{judge_model}")
+    if judge_provider == "ollama":
+        print(f"  Judge format:  json (forzato per compatibilita' RAGAS)")
     print(f"  Embedding:     {settings.embedding.model_name}")
     print(f"  Reranker:      {settings.reranker.model_name}")
     if args.run_note:

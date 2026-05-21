@@ -2,14 +2,287 @@
 
 Orchestra la valutazione end-to-end: raccolta dati, costruzione del
 dataset RAGAS, esecuzione delle metriche e generazione dei report.
+
+NOTA: Include un wrapper (CleanOutputChatModel) che intercetta e pulisce
+gli output del LLM judge prima che RAGAS tenti il parsing JSON.
+
+Risolve DUE classi di problemi:
+1. Output sporco: tag <think>, markdown fences, prefissi testuali.
+2. Struttura JSON non conforme: modelli locali che producono
+   {"statements": ["str1", "str2"]} invece del formato Pydantic atteso
+   {"statements": [{"text": "str1"}, {"text": "str2"}]}.
+   Questo causa "validation error for StringIO / text Field required".
 """
 
+import re
 import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, AIMessage
+
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+#  Regex pre-compilate per la pulizia degli output LLM
+# --------------------------------------------------------------------------- #
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+_LEADING_TEXT_BEFORE_JSON_RE = re.compile(
+    r"^[^{\[]*?(?=[\{\[])", re.DOTALL
+)
+
+
+def _clean_llm_output(text: str) -> str:
+    """Pulisce l'output di un LLM per facilitare il parsing JSON di RAGAS.
+
+    Operazioni eseguite in ordine:
+    1. Rimuove i tag <think>...</think> (modelli thinking).
+    2. Estrae il contenuto da markdown code fences (```json ... ```).
+    3. Rimuove eventuale testo prima del primo '{' o '['.
+    4. Strip finale.
+
+    Args:
+        text: Testo raw dall'LLM.
+
+    Returns:
+        Testo pulito, pronto per il parsing JSON.
+    """
+    if not text:
+        return text
+
+    # 1. Rimuovi <think>...</think>
+    cleaned = _THINK_TAG_RE.sub("", text)
+
+    # 2. Estrai da markdown fences
+    fence_match = _JSON_FENCE_RE.search(cleaned)
+    if fence_match:
+        cleaned = fence_match.group(1)
+
+    # 3. Rimuovi testo prima del primo JSON token
+    cleaned = cleaned.strip()
+    if cleaned and cleaned[0] not in ('{', '['):
+        match = _LEADING_TEXT_BEFORE_JSON_RE.match(cleaned)
+        if match:
+            cleaned = cleaned[match.end():]
+
+    return cleaned.strip()
+
+
+def _fix_ragas_json_structure(text: str) -> str:
+    """Corregge la struttura JSON per conformarla agli schema Pydantic di RAGAS.
+
+    I modelli locali (Ollama, Qwen, Nemotron) spesso producono JSON valido
+    ma con struttura diversa da quella attesa da RAGAS. Questa funzione
+    intercetta i pattern noti e li trasforma nel formato corretto.
+
+    Trasformazioni applicate:
+
+    1. statements: ["str"] -> statements: [{"text": "str"}]
+       (richiesto da StringIO in Faithfulness/FactualCorrectness)
+
+    2. verdicts: [{"statement": "...", "verdict": 1}]
+       -> verdicts: [{"statement": "...", "verdict": 1, "reason": ""}]
+       (aggiunge campo reason mancante se assente)
+
+    3. {"question": "...", "answer": ...}
+       -> invariato (gia' conforme per ResponseRelevancy)
+
+    4. claims: ["str"] -> claims: [{"text": "str"}]
+       (variante usata da alcune versioni di RAGAS)
+
+    Args:
+        text: JSON string (gia' pulita da _clean_llm_output).
+
+    Returns:
+        JSON string con struttura corretta per RAGAS.
+    """
+    if not text or not text.strip():
+        return text
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        # Non e' JSON valido, restituisci invariato
+        return text
+
+    if not isinstance(data, dict):
+        return text
+
+    modified = False
+
+    # --- Fix 1: statements come lista di stringhe -> lista di oggetti ---
+    # RAGAS Faithfulness/FactualCorrectness usa StatementGeneratorOutput
+    # che contiene una lista di StringIO, ognuno con campo "text".
+    if "statements" in data and isinstance(data["statements"], list):
+        new_statements = []
+        for item in data["statements"]:
+            if isinstance(item, str):
+                new_statements.append({"text": item})
+                modified = True
+            elif isinstance(item, dict):
+                # Gia' un oggetto, ma potrebbe mancare "text"
+                if "text" not in item:
+                    # Prova a trovare il campo giusto
+                    if "statement" in item:
+                        item["text"] = item["statement"]
+                        modified = True
+                    elif len(item) == 1:
+                        # Singolo campo, usalo come text
+                        item["text"] = next(iter(item.values()))
+                        modified = True
+                new_statements.append(item)
+            else:
+                new_statements.append({"text": str(item)})
+                modified = True
+        if modified:
+            data["statements"] = new_statements
+
+    # --- Fix 2: verdicts - assicura che ogni verdict abbia "reason" ---
+    # RAGAS Faithfulness usa StatementFaithfulnessAnswer con campo reason
+    if "verdicts" in data and isinstance(data["verdicts"], list):
+        for verdict in data["verdicts"]:
+            if isinstance(verdict, dict):
+                if "reason" not in verdict:
+                    verdict["reason"] = ""
+                    modified = True
+                # Normalizza verdict a intero se e' stringa
+                if "verdict" in verdict and isinstance(verdict["verdict"], str):
+                    v_lower = verdict["verdict"].lower().strip()
+                    if v_lower in ("1", "yes", "true", "supported"):
+                        verdict["verdict"] = 1
+                        modified = True
+                    elif v_lower in ("0", "no", "false", "not supported",
+                                     "unsupported"):
+                        verdict["verdict"] = 0
+                        modified = True
+
+    # --- Fix 3: claims come lista di stringhe -> lista di oggetti ---
+    if "claims" in data and isinstance(data["claims"], list):
+        new_claims = []
+        for item in data["claims"]:
+            if isinstance(item, str):
+                new_claims.append({"text": item})
+                modified = True
+            elif isinstance(item, dict) and "text" not in item:
+                if "claim" in item:
+                    item["text"] = item["claim"]
+                    modified = True
+                new_claims.append(item)
+            else:
+                new_claims.append(item)
+        if modified:
+            data["claims"] = new_claims
+
+    # --- Fix 4: sentences come lista di stringhe -> lista di oggetti ---
+    if "sentences" in data and isinstance(data["sentences"], list):
+        new_sentences = []
+        for item in data["sentences"]:
+            if isinstance(item, str):
+                new_sentences.append({"text": item})
+                modified = True
+            elif isinstance(item, dict) and "text" not in item:
+                if "sentence" in item:
+                    item["text"] = item["sentence"]
+                    modified = True
+                new_sentences.append(item)
+            else:
+                new_sentences.append(item)
+        if modified:
+            data["sentences"] = new_sentences
+
+    # --- Fix 5: score come stringa -> float ---
+    if "score" in data and isinstance(data["score"], str):
+        try:
+            data["score"] = float(data["score"])
+            modified = True
+        except ValueError:
+            pass
+
+    if modified:
+        result = json.dumps(data, ensure_ascii=False)
+        logger.debug(
+            "_fix_ragas_json_structure: struttura JSON corretta. "
+            "Chiavi modificate nel payload."
+        )
+        return result
+
+    return text
+
+
+class CleanOutputChatModel(BaseChatModel):
+    """Wrapper attorno a un BaseChatModel che pulisce gli output per RAGAS.
+
+    Intercetta tutte le chiamate (invoke, generate, agenerate) e applica:
+    1. _clean_llm_output: rimuove <think> tags, markdown fences, prefissi
+    2. _fix_ragas_json_structure: corregge strutture JSON non conformi
+
+    Questo garantisce che RAGAS riceva JSON pulito E strutturalmente
+    conforme ai suoi schema Pydantic interni.
+    """
+
+    # Campo per il modello interno wrappato
+    wrapped_model: BaseChatModel
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    @property
+    def _llm_type(self) -> str:
+        return f"clean_output_wrapper({self.wrapped_model._llm_type})"
+
+    @property
+    def _identifying_params(self) -> Dict[str, Any]:
+        return self.wrapped_model._identifying_params
+
+    def _process_output(self, content: str) -> str:
+        """Applica pulizia e fix strutturale al contenuto."""
+        cleaned = _clean_llm_output(content)
+        fixed = _fix_ragas_json_structure(cleaned)
+        if fixed != content:
+            logger.debug(
+                "CleanOutputChatModel: output processato "
+                "(%d chars -> %d chars)",
+                len(content),
+                len(fixed),
+            )
+        return fixed
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        """Override di _generate per pulire e fixare gli output."""
+        result = self.wrapped_model._generate(
+            messages, stop=stop, run_manager=run_manager, **kwargs
+        )
+
+        for generation in result.generations:
+            if generation.message and isinstance(generation.message, AIMessage):
+                original = generation.message.content
+                processed = self._process_output(original)
+                generation.message.content = processed
+                generation.text = processed
+
+        return result
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        """Override asincrono di _agenerate per pulire e fixare gli output."""
+        result = await self.wrapped_model._agenerate(
+            messages, stop=stop, run_manager=run_manager, **kwargs
+        )
+
+        for generation in result.generations:
+            if generation.message and isinstance(generation.message, AIMessage):
+                original = generation.message.content
+                processed = self._process_output(original)
+                generation.message.content = processed
+                generation.text = processed
+
+        return result
+
+    def bind_tools(self, tools, **kwargs):
+        """Delega bind_tools al modello wrappato."""
+        return self.wrapped_model.bind_tools(tools, **kwargs)
 
 
 class RAGASEvaluator:
@@ -160,8 +433,34 @@ class RAGASEvaluator:
         logger.info("Metriche RAGAS configurate: %d", len(metrics))
         return metrics
 
+    def _wrap_llm_judge(self, llm_judge):
+        """Wrappa il LLM judge con CleanOutputChatModel per pulire gli output.
+
+        Se il judge e' gia' un CleanOutputChatModel, lo restituisce invariato.
+
+        Args:
+            llm_judge: Istanza di BaseChatModel da wrappare.
+
+        Returns:
+            Istanza di CleanOutputChatModel che wrappa il judge originale.
+        """
+        if isinstance(llm_judge, CleanOutputChatModel):
+            logger.debug("LLM judge gia' wrappato, skip.")
+            return llm_judge
+
+        wrapped = CleanOutputChatModel(wrapped_model=llm_judge)
+        logger.info(
+            "LLM judge wrappato con CleanOutputChatModel "
+            "(pulizia output + fix struttura JSON per RAGAS)"
+        )
+        return wrapped
+
     def evaluate(self, collected_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Esegue la valutazione RAGAS sui dati raccolti.
+
+        Il LLM judge viene automaticamente wrappato con CleanOutputChatModel
+        per garantire che gli output siano puliti e strutturalmente conformi
+        agli schema Pydantic interni di RAGAS.
 
         Args:
             collected_data: Lista di dizionari con le quattro variabili RAGAS
@@ -182,15 +481,35 @@ class RAGASEvaluator:
         self._ensure_llm_judge()
         self._ensure_embedding_model()
 
+        # --- Pulizia dei dati raccolti ---
+        cleaned_data = []
+        for sample in collected_data:
+            cleaned_sample = dict(sample)
+            contexts = cleaned_sample.get("retrieved_contexts", [])
+            cleaned_sample["retrieved_contexts"] = [
+                ctx for ctx in contexts
+                if ctx and isinstance(ctx, str) and ctx.strip()
+            ]
+            if not cleaned_sample["retrieved_contexts"]:
+                cleaned_sample["retrieved_contexts"] = [
+                    "Nessun documento recuperato dalla knowledge base."
+                ]
+                logger.warning(
+                    "Sample senza contesti per query: '%s'. "
+                    "Aggiunto placeholder.",
+                    cleaned_sample.get("user_input", "")[:60],
+                )
+            cleaned_data.append(cleaned_sample)
+
         try:
             from ragas import EvaluationDataset, evaluate
             from ragas.llms import LangchainLLMWrapper
             from ragas.embeddings import LangchainEmbeddingsWrapper
 
-            evaluation_dataset = EvaluationDataset.from_list(collected_data)
+            evaluation_dataset = EvaluationDataset.from_list(cleaned_data)
             logger.info(
                 "EvaluationDataset RAGAS creato: %d sample",
-                len(collected_data),
+                len(cleaned_data),
             )
 
             metrics = self._build_metrics()
@@ -198,17 +517,19 @@ class RAGASEvaluator:
                 logger.error("Nessuna metrica valida configurata")
                 return {"error": "Nessuna metrica configurata"}
 
-            wrapped_llm = LangchainLLMWrapper(self._llm_judge)
+            # Wrappa il judge con CleanOutputChatModel
+            clean_judge = self._wrap_llm_judge(self._llm_judge)
+            wrapped_llm = LangchainLLMWrapper(clean_judge)
             wrapped_embeddings = LangchainEmbeddingsWrapper(self._embedding_model)
 
             from ragas.run_config import RunConfig
             run_config = RunConfig(
                 max_workers=self._max_workers,
-                max_wait=180,
-                max_retries=5,
+                max_wait=240,
+                max_retries=10,
             )
             logger.info(
-                "RunConfig: max_workers=%d, max_wait=180s, max_retries=5",
+                "RunConfig: max_workers=%d, max_wait=240s, max_retries=10",
                 self._max_workers,
             )
 
@@ -226,7 +547,7 @@ class RAGASEvaluator:
 
             result_dict = {
                 "scores": dict(result) if hasattr(result, '__iter__') else {},
-                "num_samples": len(collected_data),
+                "num_samples": len(cleaned_data),
                 "metrics_used": self._metrics_names,
             }
 
@@ -289,19 +610,13 @@ class RAGASEvaluator:
         output_dir: str = "evaluation/results",
         run_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Esegue l'intero flusso di valutazione: carica testset, raccoglie dati, valuta, genera report.
-
-        Metodo di convenienza che orchestra tutte le fasi della valutazione
-        in un'unica chiamata.
+        """Esegue l'intero flusso di valutazione end-to-end.
 
         Args:
             agent: Istanza di RAGAgent da valutare.
             testset_path: Percorso del file testset.json.
             output_dir: Directory di output per i report.
-            run_metadata: Dizionario opzionale con metadati aggiuntivi sulla
-                run (es. modello usato, parametri retriever, note).
-                Viene incluso nel JSON summary per facilitare il confronto
-                tra run diverse.
+            run_metadata: Dizionario opzionale con metadati aggiuntivi.
 
         Returns:
             Dizionario con i risultati completi della valutazione.
