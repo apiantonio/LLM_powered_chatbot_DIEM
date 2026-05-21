@@ -2,6 +2,7 @@ import streamlit as st
 import sys
 import os
 import logging
+import base64
 
 _src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 if _src_dir not in sys.path:
@@ -323,10 +324,22 @@ def render_sidebar():
         st.markdown(f'<img src="{FOOTER_URL}" class="footer-img">', unsafe_allow_html=True)
         st.caption("<center><small>© 2026 Dipartimento DIEM<br>Università degli Studi di Salerno</small></center>", unsafe_allow_html=True)
 
+def get_image_base64(image_path: str) -> str:
+    """Legge un'immagine locale e la converte in stringa Base64."""
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode('utf-8')
+    
 def render_chat_interface():
     col1, col2 = st.columns([1, 10])
     with col1:
-        st.markdown("<h1 style='text-align: center;'>🤖</h1>", unsafe_allow_html=True)
+        icon_path = "assets/bot.ico"
+        try:
+            icon_base64 = get_image_base64(icon_path)
+            img_html = f'<img src="data:image/png;base64,{icon_base64}" style="width: 48px; height: 48px;">'
+            st.markdown(f"<h1 style='text-align: center; margin-top: 0;'>{img_html}</h1>", unsafe_allow_html=True)
+        except FileNotFoundError:
+            logger.error(f"Impossibile trovare l'icona nel percorso: {icon_path}")
+            st.markdown("<h1 style='text-align: center; margin-top: 0;'>🤖</h1>", unsafe_allow_html=True)
     with col2:
         st.title("Assistente Virtuale DIEM")
         
@@ -344,7 +357,7 @@ def render_chat_interface():
         prompt = chat_input_prompt
 
     for msg in st.session_state.messages:
-        avatar = "👤" if msg["role"] == "user" else "🤖"
+        avatar = "assets/user.ico" if msg["role"] == "user" else "assets/chat.ico"
         with st.chat_message(msg["role"], avatar=avatar):
             anchor = "<span class='user-msg-anchor'></span>" if msg["role"] == "user" else "<span class='bot-msg-anchor'></span>"
             # Formatta il contenuto solo se il messaggio è del bot
@@ -372,10 +385,10 @@ def render_chat_interface():
 
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user", avatar="👤"):
+        with st.chat_message("user", avatar="assets/user.ico"):
             st.markdown(f"<span class='user-msg-anchor'></span>{prompt}", unsafe_allow_html=True)
         
-        with st.chat_message("assistant", avatar="🤖"):
+        with st.chat_message("assistant", avatar="assets/chat.ico"):
             loader_placeholder = st.empty()
             loader_placeholder.markdown("""
                 <span class='bot-msg-anchor'></span>
@@ -424,7 +437,7 @@ def render_chat_interface():
 def main():
     st.set_page_config(
         page_title="Chatbot DIEM",
-        page_icon="🎓",
+        page_icon="assets/bot.ico",
         layout="centered",
         initial_sidebar_state="expanded"
     )
