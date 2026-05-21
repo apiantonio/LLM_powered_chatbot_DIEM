@@ -23,20 +23,6 @@ logger = logging.getLogger(__name__)
 _FALLBACK_MODEL = "qwen2.5"
 _FALLBACK_BASE_URL = "http://localhost:11434"
 
-_THINKING_MODEL_PREFIXES = (
-    "nemotron",
-    "deepseek-r1",
-    "qwen3",
-    "qwen3.5",
-    "gpt-oss",
-)
-
-
-def _is_thinking_model(model_name: str) -> bool:
-    """Verifica se il modello e' un modello thinking che richiede reasoning=False."""
-    name_lower = model_name.lower().split(":")[0]
-    return any(name_lower.startswith(prefix) for prefix in _THINKING_MODEL_PREFIXES)
-
 
 def _validate_groq_key(api_key: str, label: str) -> bool:
     """Verifica che una chiave API Groq sia valida con una chiamata di test.
@@ -153,13 +139,6 @@ def create_chat_model(config: LLMConfig) -> BaseChatModel:
             base_url=config.ollama_base_url,
         )
 
-        if _is_thinking_model(config.model_name):
-            ollama_kwargs["reasoning"] = False
-            logger.info(
-                "Modello thinking rilevato (%s): reasoning=False per compatibilita tool calling",
-                config.model_name,
-            )
-
         chat_model = ChatOllama(**ollama_kwargs)
         logger.info(
             "CHAT MODEL ATTIVO: Ollama/%s su %s",
@@ -252,10 +231,7 @@ def create_rewriter_llm(fallback_config: LLMConfig) -> BaseChatModel:
                 temperature=0.0,
                 num_predict=256,
                 base_url=fallback_config.ollama_base_url,
-            )
-
-            if _is_thinking_model(fallback_config.model_name):
-                ollama_kwargs["reasoning"] = False
+            )    
 
             llm = ChatOllama(**ollama_kwargs)
             logger.info(
