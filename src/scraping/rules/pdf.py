@@ -1,4 +1,7 @@
-"""Regole di filtraggio per URL che puntano a documenti PDF."""
+"""Regole di filtraggio per URL che puntano a documenti PDF.
+
+Tutte le regole ereditano da PdfFilterRule.
+"""
 
 import logging
 import re
@@ -8,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from scraping.core.base_rule import PdfFilterRule
+from scraping.interfaces import PdfFilterRule
 
 logger = logging.getLogger(__name__)
 

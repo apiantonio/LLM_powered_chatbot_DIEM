@@ -1,9 +1,29 @@
-"""Classificatori di URL per il dominio docenti.unisa.it e www.diem.unisa.it."""
+"""Classificatori di URL per i domini UNISA durante il crawling.
+
+Contiene UrlClassifier per i domini:
+- corsi.unisa.it (offerta formativa)
+- docenti.unisa.it (pagine docente)
+- www.diem.unisa.it (pagine dipartimento)
+"""
 
 import re
 from urllib.parse import urlparse, parse_qs
 
-from scraping.core.url_classifier import UrlClassifier
+from scraping.interfaces import UrlClassifier
+
+
+class CorsiUrlClassifier(UrlClassifier):
+    """Classifica URL del dominio corsi.unisa.it in base al path."""
+
+    def classify(self, url: str) -> str:
+        """Restituisce 'navigate' per pagine di piano di studi o regolamenti, 'pass' altrimenti."""
+        url_lower = url.lower()
+
+        if "corsi.unisa.it" in url_lower:
+            if "piano-di-studi" in url_lower or "regolamenti" in url_lower:
+                return "navigate"
+
+        return "pass"
 
 
 class ProgettiUrlClassifier(UrlClassifier):

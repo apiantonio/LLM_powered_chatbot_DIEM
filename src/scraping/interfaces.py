@@ -1,12 +1,60 @@
-"""Classe base e pipeline per i classificatori di URL.
+"""Astrazioni del modulo di scraping.
 
-Introduce il pattern Strategy con un Composite (UrlClassificationPipeline)
-che permette di iterare su piu classificatori in sequenza, restituendo
-la prima decisione diversa da 'pass'.
+Contiene le interfacce per:
+- regole di filtraggio HTML (CleaningRule)
+- regole di filtraggio PDF (PdfFilterRule)
+- classificatori di URL (UrlClassifier) e pipeline composita (UrlClassificationPipeline)
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from pathlib import Path
+from typing import List, Optional
+
+
+class CleaningRule(ABC):
+    """Regola astratta per il filtraggio e la pulizia di file HTML."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Identificativo descrittivo della regola."""
+
+    @property
+    def requires_content(self) -> bool:
+        """Indica se la regola necessita del contenuto del file per la valutazione."""
+        return True
+
+    @abstractmethod
+    def should_delete(self, filepath: Path, content: Optional[str] = None) -> bool:
+        """Determina se il file deve essere eliminato.
+
+        Args:
+            filepath: Percorso del file da valutare.
+            content: Contenuto testuale del file (opzionale).
+
+        Returns:
+            True se il file deve essere scartato.
+        """
+
+
+class PdfFilterRule(ABC):
+    """Regola astratta per il filtraggio di URL che puntano a PDF."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Identificativo descrittivo della regola."""
+
+    @abstractmethod
+    def should_discard(self, url: str) -> bool:
+        """Determina se il PDF individuato dall'URL deve essere scartato.
+
+        Args:
+            url: URL del PDF da valutare.
+
+        Returns:
+            True se il PDF deve essere scartato.
+        """
 
 
 class UrlClassifier(ABC):
