@@ -11,7 +11,7 @@ from typing import Optional
 
 from bs4 import BeautifulSoup
 
-from scraping.interfaces import CleaningRule
+from src.scraping.interfaces import CleaningRule
 
 
 class EmptyBodyRule(CleaningRule):

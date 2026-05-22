@@ -10,8 +10,8 @@ Contiene:
 from pathlib import Path
 from typing import List
 
-from scraping.interfaces import CleaningRule, PdfFilterRule
-from scraping.rules.html_content import (
+from src.scraping.interfaces import CleaningRule, PdfFilterRule
+from src.scraping.rules.html_content import (
     CalendarRule,
     DepartmentBandiRule,
     EmptyBodyRule,
@@ -22,7 +22,7 @@ from scraping.rules.html_content import (
     PageNotFoundRule,
     PublicationTipRule,
 )
-from scraping.rules.pdf import (
+from src.scraping.rules.pdf import (
     DomainWhitelistRule,
     EnglishPdfFilterRule,
     ObsoleteYearRule,

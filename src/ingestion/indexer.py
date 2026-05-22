@@ -24,9 +24,9 @@ from langchain_core.documents import Document
 from langchain_classic.retrievers import ParentDocumentRetriever
 from langchain_classic.storage import LocalFileStore, create_kv_docstore
 
-from config.settings import AppSettings
-from ingestion.registry import IndexRegistry, IndexEntry
-from ingestion.router import DocumentRouter, CollectionTarget
+from src.config.settings import AppSettings
+from src.ingestion.registry import IndexRegistry, IndexEntry
+from src.ingestion.router import DocumentRouter, CollectionTarget
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ Contiene UrlClassifier per i domini:
 import re
 from urllib.parse import urlparse, parse_qs
 
-from scraping.interfaces import UrlClassifier
+from src.scraping.interfaces import UrlClassifier
 
 
 class CorsiUrlClassifier(UrlClassifier):

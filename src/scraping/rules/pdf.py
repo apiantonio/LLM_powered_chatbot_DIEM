@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from scraping.interfaces import PdfFilterRule
+from src.scraping.interfaces import PdfFilterRule
 
 logger = logging.getLogger(__name__)
 

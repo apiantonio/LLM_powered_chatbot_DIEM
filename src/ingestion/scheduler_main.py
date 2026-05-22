@@ -20,10 +20,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from config.settings import AppSettings, load_settings
-from config.logging_config import setup_logging
-from ingestion.indexer import KnowledgeBaseIndexer
-from ingestion.router import CollectionTarget
+from src.config.settings import AppSettings, load_settings
+from src.config.logging_config import setup_logging
+from src.ingestion.indexer import KnowledgeBaseIndexer
+from src.ingestion.router import CollectionTarget
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +57,8 @@ class IngestionScheduler:
         """
         logger.info("[CRAWL] Avvio crawling...")
         try:
-            from scraping.factories import RuleFactory, PdfRuleFactory
-            from scraping.scrapers import UnisaCrawler
+            from src.scraping.factories import RuleFactory, PdfRuleFactory
+            from src.scraping.scrapers import UnisaCrawler
 
             ingestion_cfg = self._settings.ingestion
             output_dir = ingestion_cfg.html_raw_dir

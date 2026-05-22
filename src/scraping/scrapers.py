@@ -20,14 +20,14 @@ import requests
 from bs4 import BeautifulSoup
 from langchain_community.document_loaders import AsyncHtmlLoader
 
-from config.settings import CrawlerConfig, IngestionConfig
-from scraping.interfaces import (
+from src.config.settings import CrawlerConfig, IngestionConfig
+from src.scraping.interfaces import (
     CleaningRule,
     PdfFilterRule,
     UrlClassificationPipeline,
 )
-from scraping.persistence import CrawlerPersistence, PostProcessor
-from scraping.rules.urls import (
+from src.scraping.persistence import CrawlerPersistence, PostProcessor
+from src.scraping.rules.urls import (
     CorsiUrlClassifier,
     DidatticaIdUrlClassifier,
     DidatticaOrariUrlClassifier,
