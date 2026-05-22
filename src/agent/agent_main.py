@@ -11,16 +11,12 @@ import logging
 import argparse
 from typing import Optional
 
-_src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _src_dir not in sys.path:
-    sys.path.insert(0, _src_dir)
-
-from config.settings import AppSettings, load_settings
-from config.logging_config import setup_logging
-from ingestion.indexer import KnowledgeBaseIndexer
-from retrieval.engine import RetrievalEngine, QueryOptimizer, CrossEncoderReranker
-from agent.agent import RAGAgentFactory, RAGAgent
-from agent.llm_providers import create_chat_model, create_rewriter_llm
+from src.config.settings import AppSettings, load_settings
+from src.config.logging_config import setup_logging
+from src.ingestion.indexer import KnowledgeBaseIndexer
+from src.retrieval.engine import RetrievalEngine, QueryOptimizer, CrossEncoderReranker
+from src.agent.agent import RAGAgentFactory, RAGAgent
+from src.agent.llm_providers import create_chat_model, create_rewriter_llm
 from langchain_huggingface import HuggingFaceEmbeddings
 
 logger = logging.getLogger(__name__)
@@ -33,30 +29,32 @@ def build_retrieval_engine(settings: AppSettings) -> RetrievalEngine:
     logger.info("[BOOT] Inizializzazione Cross-Encoder Reranker...")
     reranker = CrossEncoderReranker(settings.reranker)
 
-    rewriter_provider = os.getenv("REWRITER_PROVIDER", "").strip()
+    rewriter_provider = settings.llm.rewriter_provider
     if rewriter_provider:
         logger.info(
             "[BOOT] QueryOptimizer: provider dedicato richiesto (%s/%s)",
             rewriter_provider.upper(),
-            os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
+            settings.llm.rewriter_model,
         )
     else:
         logger.info(
-            "[BOOT] QueryOptimizer: usa LLM principale (%s/%s) con temperature=0.0",
+            "[BOOT] QueryOptimizer: usa LLM principale (%s/%s) con temperature=%.2f",
             settings.llm.provider.upper(),
             settings.llm.model_name,
+            settings.llm.rewriter_temperature,
         )
 
-    rewriter_llm = create_rewriter_llm(fallback_config=settings.llm)
+    rewriter_llm = create_rewriter_llm(config=settings.llm)
 
     logger.info("[BOOT] Inizializzazione QueryOptimizer...")
-    query_optimizer = QueryOptimizer(rewriter_llm)
+    query_optimizer = QueryOptimizer(rewriter_llm, config=settings.query_optimizer)
 
     logger.info("[BOOT] Assemblaggio RetrievalEngine...")
     engine = RetrievalEngine(
         indexer=indexer,
         reranker=reranker,
         query_optimizer=query_optimizer,
+        dedup_hash_chars=settings.query_optimizer.dedup_hash_chars,
     )
     logger.info("[BOOT] RetrievalEngine pronto.")
     return engine
@@ -76,14 +74,12 @@ def build_agent(
     settings: AppSettings,
     engine: RetrievalEngine,
     enable_scope_guardrail: bool = True,
-    max_memory_turns: int = 10,
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
 ) -> RAGAgent:
     return RAGAgentFactory.create(
         retrieval_engine=engine,
         settings=settings,
         enable_scope_guardrail=enable_scope_guardrail,
-        max_memory_turns=max_memory_turns,
         embedding_model=embedding_model,
     )
 
@@ -169,7 +165,6 @@ def parse_args() -> argparse.Namespace:
         description="Agente RAG DIEM -- Assistente virtuale DIEM UniSA",
     )
     parser.add_argument("--no-scope-guard", action="store_true")
-    parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -207,7 +202,6 @@ def main() -> None:
         settings=settings,
         engine=engine,
         enable_scope_guardrail=not args.no_scope_guard,
-        max_memory_turns=args.max_turns,
         embedding_model=embedding_model,
     )
 

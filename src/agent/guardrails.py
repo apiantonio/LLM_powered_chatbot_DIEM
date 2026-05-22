@@ -5,27 +5,15 @@ Include il rilevamento delle domande "meta" (saluti, ringraziamenti, ecc.)
 per gestirle senza salvataggio in memoria.
 """
 
-import os
 import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
+from src.config.settings import LLMConfig, GuardrailsConfig
+
 logger = logging.getLogger(__name__)
 
 _GUARDRAILS_CONFIG_DIR = Path(__file__).parent / "guardrails_config"
-
-BLOCKED_INPUT_MESSAGE = (
-    "Mi dispiace, non posso elaborare questa richiesta. "
-    "Sono l'assistente virtuale del Dipartimento DIEM "
-    "dell'Universita degli Studi di Salerno. "
-    "Posso aiutarti con informazioni su corsi, docenti, esami, "
-    "regolamenti, laboratori e servizi universitari."
-)
-
-BLOCKED_OUTPUT_MESSAGE = (
-    "Mi scuso, non posso fornire questa risposta per motivi di policy. "
-    "Posso aiutarti con informazioni sul Dipartimento DIEM."
-)
 
 
 class GuardrailsChecker:
@@ -38,11 +26,13 @@ class GuardrailsChecker:
     def __init__(
         self,
         llm,
+        guardrails_config: Optional[GuardrailsConfig] = None,
         enable_input_check: bool = True,
         enable_output_check: bool = True,
         enable_meta_check: bool = True,
     ):
         self._llm = llm
+        self._config = guardrails_config or GuardrailsConfig()
         self._enable_input = enable_input_check
         self._enable_output = enable_output_check
         self._enable_meta = enable_meta_check
@@ -163,7 +153,7 @@ class GuardrailsChecker:
             return (True, "")
 
         logger.warning("INPUT BLOCCATO: '%s...'", user_message[:80])
-        return (False, BLOCKED_INPUT_MESSAGE)
+        return (False, self._config.blocked_input_message)
 
     def check_output(self, bot_response: str) -> Tuple[bool, str]:
         if not self._enable_output:
@@ -186,21 +176,10 @@ class GuardrailsChecker:
             return (True, "")
 
         logger.warning("OUTPUT BLOCCATO (%d chars)", len(bot_response))
-        return (False, BLOCKED_OUTPUT_MESSAGE)
+        return (False, self._config.blocked_output_message)
 
     def check_meta(self, user_message: str) -> bool:
-        """Verifica se il messaggio utente e' una domanda meta.
-
-        Le domande meta includono: saluti, ringraziamenti, domande sull'identita
-        dell'assistente, richieste di aiuto generico, commiati.
-        Queste interazioni vengono gestite senza salvataggio in memoria.
-
-        Args:
-            user_message: Testo del messaggio utente.
-
-        Returns:
-            True se il messaggio e' una domanda meta, False altrimenti.
-        """
+        """Verifica se il messaggio utente e' una domanda meta."""
         if not self._enable_meta:
             return False
 
@@ -219,20 +198,16 @@ class GuardrailsChecker:
         return bool(is_meta)
 
 
-def _validate_groq_api_key(api_key: str) -> bool:
-    """Verifica che la chiave API Groq sia valida con una chiamata di test.
-
-    Returns:
-        True se la chiave e' valida, False altrimenti.
-    """
+def _validate_groq_api_key(api_key: str, llm_config: LLMConfig) -> bool:
+    """Verifica che la chiave API Groq sia valida con una chiamata di test."""
     try:
         from langchain_groq import ChatGroq
         from langchain_core.messages import HumanMessage
 
         test_llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model=llm_config.groq_validation_model,
             temperature=0.0,
-            max_tokens=5,
+            max_tokens=llm_config.groq_validation_max_tokens,
             api_key=api_key,
         )
         test_llm.invoke([HumanMessage(content="test")])
@@ -243,6 +218,8 @@ def _validate_groq_api_key(api_key: str) -> bool:
 
 
 def build_guardrails_checker(
+    llm_config: Optional[LLMConfig] = None,
+    guardrails_config: Optional[GuardrailsConfig] = None,
     enable_pii: bool = True,
     enable_topical: bool = True,
     enable_injection: bool = True,
@@ -253,12 +230,26 @@ def build_guardrails_checker(
 ) -> Optional[GuardrailsChecker]:
     """Factory per la creazione di un GuardrailsChecker configurato.
 
-    Richiede GROQ_GUARDRAILS_API_KEY valida e i file di configurazione.
+    Args:
+        llm_config: Configurazione LLM per modello e chiave API guardrails.
+                    Se None, viene caricata da settings.
+        guardrails_config: Configurazione messaggi guardrails.
+                          Se None, viene caricata da settings.
     """
-    guardrails_api_key = os.environ.get("GROQ_GUARDRAILS_API_KEY", "").strip()
+    if llm_config is None:
+        from src.config.settings import load_settings
+        settings = load_settings()
+        llm_config = settings.llm
+
+    if guardrails_config is None:
+        from src.config.settings import load_settings
+        settings = load_settings()
+        guardrails_config = settings.guardrails
+
+    guardrails_api_key = (llm_config.groq_guardrails_api_key or "").strip()
     if not guardrails_api_key:
         logger.warning(
-            "GUARDRAILS DISABILITATI: GROQ_GUARDRAILS_API_KEY non configurata."
+            "GUARDRAILS DISABILITATI: groq_guardrails_api_key non configurata."
         )
         return None
 
@@ -275,7 +266,7 @@ def build_guardrails_checker(
         return None
 
     logger.info("Validazione GROQ_GUARDRAILS_API_KEY in corso...")
-    if not _validate_groq_api_key(guardrails_api_key):
+    if not _validate_groq_api_key(guardrails_api_key, llm_config):
         logger.warning(
             "GUARDRAILS DISABILITATI: GROQ_GUARDRAILS_API_KEY non valida (401 Unauthorized). "
             "Controlla la chiave nel file .env."
@@ -286,9 +277,9 @@ def build_guardrails_checker(
         from langchain_groq import ChatGroq
 
         llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model=llm_config.guardrails_model,
             temperature=0.0,
-            max_tokens=10,
+            max_tokens=llm_config.guardrails_max_tokens,
             api_key=guardrails_api_key,
         )
 
@@ -297,13 +288,14 @@ def build_guardrails_checker(
 
         checker = GuardrailsChecker(
             llm=llm,
+            guardrails_config=guardrails_config,
             enable_input_check=enable_input,
             enable_output_check=enable_output,
             enable_meta_check=enable_meta,
         )
 
         logger.info("GUARDRAILS ATTIVI:")
-        logger.info("  - LLM: Groq Llama 3.3 70B (temperature=0.0)")
+        logger.info("  - LLM: Groq %s (temperature=0.0)", llm_config.guardrails_model)
         logger.info("  - Input check: %s", "ON" if enable_input else "OFF")
         logger.info("  - Output check: %s", "ON" if enable_output else "OFF")
         logger.info("  - Meta check: %s", "ON" if enable_meta else "OFF")

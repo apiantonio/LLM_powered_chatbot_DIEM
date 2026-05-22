@@ -12,24 +12,24 @@ from typing import Optional, List, Dict, Any
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from config.settings import AppSettings, load_settings
-from agent.callbacks import (
+from src.config.settings import AppSettings, load_settings
+from src.agent.callbacks import (
     RAGObservabilityHandler,
     create_observability_handler,
     InteractionLogHandler,
     create_interaction_log_handler,
 )
-from agent.memory import SmartConversationMemory, create_conversation_memory
-from agent.prompts import get_agent_system_prompt, get_meta_system_prompt
-from agent.guardrails import GuardrailsChecker, build_guardrails_checker
-from agent.tools import (
+from src.agent.memory import SmartConversationMemory, create_conversation_memory
+from src.agent.prompts import get_agent_system_prompt, get_meta_system_prompt
+from src.agent.guardrails import GuardrailsChecker, build_guardrails_checker
+from src.agent.tools import (
     set_retrieval_engine,
     set_chat_history,
     get_all_tools,
     get_last_search_meta,
 )
-from agent.llm_providers import create_chat_model
-from retrieval.engine import RetrievalEngine, QueryOptimizer
+from src.agent.llm_providers import create_chat_model
+from src.retrieval.engine import RetrievalEngine, QueryOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +67,7 @@ def _get_temporal_system_message() -> dict:
 
 
 class RAGAgent:
-    """Facade principale per l'interazione con l'agente RAG DIEM.
-
-    I guardrails sono integrati direttamente in chat():
-    - check_meta() sulla query originale per identificare domande meta
-      (saluti, ringraziamenti, ecc.) che non richiedono retrieval
-      e non vengono salvate in memoria.
-    - check_input() sulla query originale prima del rewriting.
-    - check_output() sulla risposta finale dopo l'agente.
-    Le interazioni bloccate dai guardrails non vengono salvate in memoria.
-    """
+    """Facade principale per l'interazione con l'agente RAG DIEM."""
 
     def __init__(
         self,
@@ -96,6 +87,8 @@ class RAGAgent:
         self._guardrails_checker = guardrails_checker
         self._chat_model = chat_model
         self._traces: List[Dict[str, Any]] = []
+        self._preview = self._settings.observability.log_query_preview_chars
+        self._gr_cfg = self._settings.guardrails
 
     def chat(self, user_query: str) -> dict:
         logger.info("USER QUERY (pulita): %s", user_query)
@@ -103,7 +96,10 @@ class RAGAgent:
         if self._guardrails_checker:
             input_allowed, block_message = self._guardrails_checker.check_input(user_query)
             if not input_allowed:
-                logger.warning("INPUT BLOCCATO dal guardrail: '%s...'", user_query[:80])
+                logger.warning(
+                    "INPUT BLOCCATO dal guardrail: '%s...'",
+                    user_query[:self._preview],
+                )
 
                 return {
                     "response": block_message,
@@ -196,10 +192,8 @@ class RAGAgent:
                 response_text = self._retry_with_direct_llm(result, user_query)
 
                 if not response_text:
-                    response_text = (
-                        "Mi scuso, ho riscontrato un problema nell'elaborazione "
-                        "della risposta. Per favore, riprova o riformula la domanda."
-                    )
+                    response_text = self._gr_cfg.error_empty_response_message
+
             logger.info("TESTO DI RISPOSTA AGENTE AL TURNO %d: %s", turn_number, response_text)
 
         except Exception as e:
@@ -210,32 +204,18 @@ class RAGAgent:
                     or "iteration" in error_str):
                 logger.error(
                     "LOOP RILEVATO - Agente terminato forzatamente. Query: '%s'",
-                    user_query[:80],
+                    user_query[:self._preview],
                 )
-                response_text = (
-                    "Mi scuso, ho riscontrato difficolta nell'elaborare la tua "
-                    "domanda. Prova a riformularla in modo piu specifico."
-                )
+                response_text = self._gr_cfg.error_loop_message
             elif "toolcalllimit" in error_str or "tool call limit" in error_str:
-                # Con exit_behavior="continue" questa eccezione non dovrebbe
-                # verificarsi (il middleware blocca le chiamate eccedenti con
-                # un messaggio di errore e l'LLM continua a rispondere).
-                # Mantenuto come safety net nel caso di cambi futuri.
                 logger.warning(
                     "TOOL CALL LIMIT raggiunto (middleware). Query: '%s'",
-                    user_query[:80],
+                    user_query[:self._preview],
                 )
-                response_text = (
-                    "Mi scuso, non sono riuscito a trovare informazioni sufficienti "
-                    "per rispondere alla tua domanda. Ti consiglio di consultare "
-                    "il sito web del DIEM o contattare la segreteria."
-                )
+                response_text = self._gr_cfg.error_tool_limit_message
             else:
                 logger.error("Errore agente: %s", e, exc_info=True)
-                response_text = (
-                    "Mi scuso, si e' verificato un errore. "
-                    "Riprova tra qualche istante."
-                )
+                response_text = self._gr_cfg.error_generic_message
 
         if self._guardrails_checker and response_text:
             output_allowed, block_message = self._guardrails_checker.check_output(response_text)
@@ -284,20 +264,11 @@ class RAGAgent:
         }
 
     def _handle_meta_query(self, user_query: str) -> dict:
-        """Gestisce le domande meta SENZA il grafo agente.
-
-        Le domande meta (saluti, ringraziamenti, domande sull'identita, ecc.)
-        vengono processate con una chiamata LLM diretta, SENZA passare dal
-        grafo agente e SENZA tool di ricerca. Il contatore dei turni non
-        viene incrementato.
-
-        Args:
-            user_query: Query meta dell'utente.
-
-        Returns:
-            Dizionario con la risposta e i metadati dell'interazione meta.
-        """
-        logger.info("GESTIONE META QUERY (LLM diretto, no retrieval): '%s'", user_query)
+        """Gestisce le domande meta SENZA il grafo agente."""
+        logger.info(
+            "GESTIONE META QUERY (LLM diretto, no retrieval): '%s'",
+            user_query,
+        )
 
         obs_handler = create_observability_handler(
             self._settings.observability,
@@ -315,25 +286,13 @@ class RAGAgent:
             response_text = _strip_think_tags(response.content)
 
             if not response_text:
-                response_text = (
-                    "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
-                    "dell'Universita degli Studi di Salerno. "
-                    "Posso aiutarti con informazioni su corsi, docenti, esami, "
-                    "regolamenti, laboratori e servizi universitari. "
-                    "Come posso esserti utile?"
-                )
+                response_text = self._gr_cfg.meta_fallback_message
 
             logger.info("RISPOSTA META (LLM diretto): %s", response_text)
 
         except Exception as e:
             logger.error("Errore LLM su meta query: %s", e, exc_info=True)
-            response_text = (
-                "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
-                "dell'Universita degli Studi di Salerno. "
-                "Posso aiutarti con informazioni su corsi, docenti, esami, "
-                "regolamenti, laboratori e servizi universitari. "
-                "Come posso esserti utile?"
-            )
+            response_text = self._gr_cfg.meta_fallback_message
 
         obs_handler.set_final_output(response_text)
 
@@ -343,7 +302,7 @@ class RAGAgent:
 
         logger.info(
             "META QUERY completata (turno NON salvato in memoria): '%s...'",
-            user_query[:80],
+            user_query[:self._preview],
         )
 
         return {
@@ -451,14 +410,7 @@ class RAGAgent:
 
     @staticmethod
     def _extract_final_response(result: Dict[str, Any]) -> str:
-        """Estrae la risposta finale dai messaggi prodotti dall'agente.
-
-        Gestisce modelli thinking (Nemotron, Qwen, DeepSeek-R1) che possono:
-        - Mettere la risposta in content con <think>...</think> tags
-        - Mettere la risposta in additional_kwargs["reasoning_content"]
-          lasciando content vuoto
-        - Comportarsi normalmente con content pieno
-        """
+        """Estrae la risposta finale dai messaggi prodotti dall'agente."""
         messages = result.get("messages", [])
 
         for msg in reversed(messages):
@@ -504,20 +456,9 @@ class RAGAgent:
             "Tutti i content sono vuoti."
         )
         return ""
-    
+
     def _retry_with_direct_llm(self, result, user_query: str) -> str:
-        """Tentativo di recovery quando _extract_final_response restituisce vuoto.
-
-        Estrae i documenti dai ToolMessage nel result del grafo e chiede
-        all'LLM una sintesi diretta, senza passare dal grafo agente.
-
-        Args:
-            result: Il risultato completo dell'invoke del grafo agente.
-            user_query: La query originale dell'utente.
-
-        Returns:
-            Testo della risposta sintetizzata, oppure stringa vuota se il retry fallisce.
-        """
+        """Tentativo di recovery quando _extract_final_response restituisce vuoto."""
         from langchain_core.messages import ToolMessage, HumanMessage, SystemMessage
 
         messages = result.get("messages", [])
@@ -535,17 +476,9 @@ class RAGAgent:
 
         combined_docs = "\n\n---\n\n".join(tool_contents)
 
-        synthesis_prompt = (
-            "Sei l'assistente virtuale del DIEM, Universita degli Studi di Salerno. "
-            "Ti vengono forniti dei documenti recuperati dalla knowledge base. "
-            "Rispondi alla domanda dell'utente basandoti ESCLUSIVAMENTE su questi documenti. "
-            "Se i documenti non contengono l'informazione richiesta, dillo chiaramente. "
-            "Rispondi nella stessa lingua usata dall'utente."
-        )
-
         try:
             llm_messages = [
-                SystemMessage(content=synthesis_prompt),
+                SystemMessage(content=self._gr_cfg.synthesis_system_prompt),
                 HumanMessage(content=(
                     f"DOCUMENTI RECUPERATI:\n{combined_docs}\n\n"
                     f"DOMANDA DELL'UTENTE: {user_query}"
@@ -578,8 +511,6 @@ class RAGAgentFactory:
         retrieval_engine: RetrievalEngine,
         settings: Optional[AppSettings] = None,
         enable_scope_guardrail: bool = True,
-        max_memory_turns: int = 10,
-        log_output_dir: str = "logs/interactions",
         embedding_model: Optional[HuggingFaceEmbeddings] = None,
     ) -> "RAGAgent":
         settings = settings or load_settings()
@@ -604,14 +535,22 @@ class RAGAgentFactory:
         logger.info("    System prompt caricato")
 
         memory = create_conversation_memory(
-            max_turns=max_memory_turns,
             llm_for_summary=chat_model,
             embedding_model=embedding_model,
+            config=settings.memory,
         )
-        logger.info("    SmartConversationMemory: max_turns=%d", max_memory_turns)
+        logger.info(
+            "    SmartConversationMemory: max_turns=%d",
+            settings.memory.max_turns,
+        )
 
-        interaction_logger = create_interaction_log_handler(log_output_dir)
-        logger.info("    InteractionLogHandler: %s", log_output_dir)
+        interaction_logger = create_interaction_log_handler(
+            settings.observability.interaction_log_dir
+        )
+        logger.info(
+            "    InteractionLogHandler: %s",
+            settings.observability.interaction_log_dir,
+        )
 
         query_optimizer = getattr(retrieval_engine, '_optimizer', None)
         if query_optimizer:
@@ -621,6 +560,8 @@ class RAGAgentFactory:
 
         logger.info("    Configurazione GuardrailsChecker...")
         guardrails_checker = build_guardrails_checker(
+            llm_config=settings.llm,
+            guardrails_config=settings.guardrails,
             enable_pii=settings.guardrails.enable_pii_filter,
             enable_topical=enable_scope_guardrail,
             enable_injection=True,
@@ -630,12 +571,6 @@ class RAGAgentFactory:
             enable_meta=True,
         )
 
-        # --- ToolCallLimitMiddleware ---
-        # Limita il numero di tool call per run a livello di grafo.
-        # Con exit_behavior="continue", le chiamate tool eccedenti vengono
-        # bloccate con un messaggio di errore, ma l'LLM continua a eseguire
-        # e puo' sintetizzare una risposta dai documenti gia' recuperati
-        # nelle chiamate precedenti.
         from langchain.agents import create_agent
         from langchain.agents.middleware import ToolCallLimitMiddleware
 
@@ -675,8 +610,14 @@ class RAGAgentFactory:
         logger.info("=" * 60)
         logger.info(" Agente RAG DIEM assemblato e pronto!")
         logger.info("=" * 60)
-        logger.info("    Temporale: iniezione SEMPRE attiva (A.A. default: %d/%d)", anno_acc, anno_acc + 1)
-        logger.info("    Memoria: SmartConversationMemory (max_turns=%d)", max_memory_turns)
+        logger.info(
+            "    Temporale: iniezione SEMPRE attiva (A.A. default: %d/%d)",
+            anno_acc, anno_acc + 1,
+        )
+        logger.info(
+            "    Memoria: SmartConversationMemory (max_turns=%d)",
+            settings.memory.max_turns,
+        )
         logger.info("    Tools: %d tool con Pydantic args_schema", len(tools))
         logger.info(
             "    Anti-loop: ToolCallLimitMiddleware (run_limit=%d, exit='continue')",
@@ -689,7 +630,9 @@ class RAGAgentFactory:
             logger.info("    Rewriting: DISABILITATO (QueryOptimizer non disponibile)")
 
         if guardrails_checker:
-            logger.info("    Guardrails: ATTIVI (Groq Llama 3.3 70B)")
+            logger.info(
+                "    Guardrails: ATTIVI (Groq %s)", settings.llm.guardrails_model
+            )
             logger.info("      - Input check: PRIMA del rewriting (query originale)")
             logger.info("      - Meta check: DOPO input check, PRIMA del rewriting")
             logger.info("      - Output check: DOPO la risposta finale")

@@ -108,15 +108,7 @@ class IngestionConfig:
         return tuple(self.seed_urls)
 
     def get_collection_html_params(self, collection_name: str) -> tuple[int, int]:
-        """Restituisce chunk_size e chunk_overlap specifici per la collezione indicata.
-
-        Args:
-            collection_name: Nome della collezione (persone, offerta_formativa, dipartimento).
-
-        Returns:
-            Tupla (chunk_size, chunk_overlap) per la collezione richiesta,
-            oppure i valori di default se la collezione non e' mappata.
-        """
+        """Restituisce chunk_size e chunk_overlap specifici per la collezione indicata."""
         mapping = {
             "persone": (self.persone_html_chunk_size, self.persone_html_chunk_overlap),
             "offerta_formativa": (self.offerta_html_chunk_size, self.offerta_html_chunk_overlap),
@@ -135,10 +127,7 @@ class CrawlerConfig:
     write_buffer_size: int = 0
 
     def compute_max_workers(self) -> int:
-        """Calcola il numero di worker in base alle CPU disponibili.
-
-        Il valore e' limitato tra thread_min_workers e thread_max_workers.
-        """
+        """Calcola il numero di worker in base alle CPU disponibili."""
         cpu = os.cpu_count() or 4
         computed = max(self.thread_min_workers, int(cpu * self.thread_cpu_factor))
         return min(computed, self.thread_max_workers)
@@ -250,14 +239,7 @@ class MemoryConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Configurazione del modello linguistico (provider, credenziali, parametri).
-
-    - provider / model_name: provider e modello per il CHAT (es. ollama / nemotron-3-super:cloud).
-    - fallback_model / fallback_base_url: modello Ollama locale usato come fallback universale.
-    - rewriter_provider / rewriter_model / groq_rewriter_api_key: config dedicata al rewriter.
-    - groq_guardrails_api_key: chiave Groq dedicata ai guardrails.
-    - groq_chat_api_key: chiave Groq dedicata al chat (usata solo se provider=groq).
-    """
+    """Configurazione del modello linguistico (provider, credenziali, parametri)."""
 
     provider: str = "ollama"
     model_name: str = "nemotron-3-super:cloud"
@@ -277,6 +259,7 @@ class LLMConfig:
 
     groq_guardrails_api_key: Optional[str] = field(default=None)
     guardrails_model: str = "llama-3.3-70b-versatile"
+    guardrails_max_tokens: int = 10
 
     groq_chat_api_key: Optional[str] = field(default=None)
 
@@ -300,6 +283,56 @@ class GuardrailsConfig:
     enable_pii_filter: bool = True
     max_tool_calls: int = 3
 
+    blocked_input_message: str = (
+        "Mi dispiace, non posso elaborare questa richiesta. "
+        "Sono l'assistente virtuale del Dipartimento DIEM "
+        "dell'Universita degli Studi di Salerno. "
+        "Posso aiutarti con informazioni su corsi, docenti, esami, "
+        "regolamenti, laboratori e servizi universitari."
+    )
+
+    blocked_output_message: str = (
+        "Mi scuso, non posso fornire questa risposta per motivi di policy. "
+        "Posso aiutarti con informazioni sul Dipartimento DIEM."
+    )
+
+    meta_fallback_message: str = (
+        "Ciao! Sono l'assistente virtuale del Dipartimento DIEM "
+        "dell'Universita degli Studi di Salerno. "
+        "Posso aiutarti con informazioni su corsi, docenti, esami, "
+        "regolamenti, laboratori e servizi universitari. "
+        "Come posso esserti utile?"
+    )
+
+    error_generic_message: str = (
+        "Mi scuso, si e' verificato un errore. "
+        "Riprova tra qualche istante."
+    )
+
+    error_loop_message: str = (
+        "Mi scuso, ho riscontrato difficolta nell'elaborare la tua "
+        "domanda. Prova a riformularla in modo piu specifico."
+    )
+
+    error_tool_limit_message: str = (
+        "Mi scuso, non sono riuscito a trovare informazioni sufficienti "
+        "per rispondere alla tua domanda. Ti consiglio di consultare "
+        "il sito web del DIEM o contattare la segreteria."
+    )
+
+    error_empty_response_message: str = (
+        "Mi scuso, ho riscontrato un problema nell'elaborazione "
+        "della risposta. Per favore, riprova o riformula la domanda."
+    )
+
+    synthesis_system_prompt: str = (
+        "Sei l'assistente virtuale del DIEM, Universita degli Studi di Salerno. "
+        "Ti vengono forniti dei documenti recuperati dalla knowledge base. "
+        "Rispondi alla domanda dell'utente basandoti ESCLUSIVAMENTE su questi documenti. "
+        "Se i documenti non contengono l'informazione richiesta, dillo chiaramente. "
+        "Rispondi nella stessa lingua usata dall'utente."
+    )
+
 
 @dataclass(frozen=True)
 class ObservabilityConfig:
@@ -311,6 +344,8 @@ class ObservabilityConfig:
     max_chunk_preview_chars: int = 200
 
     report_path: str = "data/reports/ingestion_report.json"
+    interaction_log_dir: str = "logs/interactions"
+    log_query_preview_chars: int = 80
 
 
 @dataclass(frozen=True)
@@ -331,12 +366,7 @@ class AppSettings:
 
 
 def load_settings() -> AppSettings:
-    """Carica e restituisce la configurazione completa dell'applicazione.
-
-    Le variabili d'ambiente sovrascrivono i valori di default. Se il
-    pacchetto python-dotenv e' disponibile, il file .env viene caricato
-    automaticamente prima della lettura delle variabili.
-    """
+    """Carica e restituisce la configurazione completa dell'applicazione."""
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -375,6 +405,7 @@ def load_settings() -> AppSettings:
             groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
             groq_guardrails_api_key=os.getenv("GROQ_GUARDRAILS_API_KEY"),
             guardrails_model=os.getenv("GUARDRAILS_MODEL", "llama-3.3-70b-versatile"),
+            guardrails_max_tokens=int(os.getenv("GUARDRAILS_MAX_TOKENS", "10")),
             groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
             groq_validation_model=os.getenv("GROQ_VALIDATION_MODEL", "llama-3.3-70b-versatile"),
             groq_validation_max_tokens=int(os.getenv("GROQ_VALIDATION_MAX_TOKENS", "5")),
@@ -391,6 +422,8 @@ def load_settings() -> AppSettings:
         observability=ObservabilityConfig(
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
             report_path=os.getenv("INGESTION_REPORT_PATH", "data/reports/ingestion_report.json"),
+            interaction_log_dir=os.getenv("INTERACTION_LOG_DIR", "logs/interactions"),
+            log_query_preview_chars=int(os.getenv("LOG_QUERY_PREVIEW_CHARS", "80")),
         ),
         reranker=RerankerConfig(
             model_name=os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L6-v2"),
