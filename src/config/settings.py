@@ -74,6 +74,25 @@ class IngestionConfig:
 
     index_registry_path: str = "data/vectorstore/index_registry.json"
 
+    html_rule_names: tuple[str, ...] = (
+        "publication_tip",
+        "exact_publications",
+        "department_bandi",
+        "calendar",
+        "news",
+        "404",
+        "nocontent",
+        "empty_body",
+        "filename",
+    )
+
+    pdf_rule_names: tuple[str, ...] = (
+        "domain_whitelist",
+        "semantic_trap",
+        "obsolete_year",
+        "english_pdf",
+    )
+
     def get_allowed_domains(self) -> set[str]:
         """Deriva i domini autorizzati a partire dai seed URL."""
         domains = set()
@@ -166,30 +185,24 @@ class LLMConfig:
     - groq_chat_api_key: chiave Groq dedicata al chat (usata solo se provider=groq).
     """
 
-    # --- Chat Model (primario) ---
     provider: str = "ollama"
     model_name: str = "nemotron-3-super:cloud"
     temperature: float = 0.0
     max_tokens: int = 1024
     ollama_base_url: str = "http://localhost:11434"
 
-    # --- Fallback locale (Ollama) ---
     fallback_model: str = "qwen2.5"
     fallback_base_url: str = "http://localhost:11434"
 
-    # --- Rewriter ---
     rewriter_provider: str = "groq"
     rewriter_model: str = "llama-3.3-70b-versatile"
     groq_rewriter_api_key: Optional[str] = field(default=None)
 
-    # --- Guardrails ---
     groq_guardrails_api_key: Optional[str] = field(default=None)
     guardrails_model: str = "llama-3.3-70b-versatile"
 
-    # --- Chat Groq (usata solo se provider=groq) ---
     groq_chat_api_key: Optional[str] = field(default=None)
 
-    # --- Legacy / altri provider ---
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
 
@@ -216,6 +229,9 @@ class ObservabilityConfig:
     log_retrieved_chunks: bool = True
     log_tool_invocations: bool = True
     max_chunk_preview_chars: int = 200
+
+    # --- FIX 2: percorso del report usato da scheduler_main.main() ---
+    report_path: str = "data/reports/ingestion_report.json"
 
 
 @dataclass(frozen=True)
@@ -286,7 +302,7 @@ def load_settings() -> AppSettings:
             openai_api_key=os.getenv("OPENAI_API_KEY"),
         ),
         embedding=EmbeddingConfig(
-            model_name=os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
+            model_name=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
         ),
         vectorstore=VectorStoreConfig(
             persist_directory=os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore/chroma"),
@@ -294,9 +310,10 @@ def load_settings() -> AppSettings:
         ),
         observability=ObservabilityConfig(
             enable_verbose_callbacks=os.getenv("ENABLE_VERBOSE_CALLBACKS", "true").lower() == "true",
+            report_path=os.getenv("INGESTION_REPORT_PATH", "data/reports/ingestion_report.json"),
         ),
         reranker=RerankerConfig(
-            model_name=os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-0.6B"),
+            model_name=os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L6-v2"),
             score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0")),
         ),
         guardrails=GuardrailsConfig(
