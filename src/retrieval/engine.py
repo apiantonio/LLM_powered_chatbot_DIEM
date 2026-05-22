@@ -12,8 +12,8 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-from config.settings import RerankerConfig
-from ingestion.router import CollectionTarget
+from src.config.settings import QueryOptimizerConfig, RerankerConfig
+from src.ingestion.router import CollectionTarget
 
 logger = logging.getLogger(__name__)
 
@@ -25,68 +25,35 @@ class QueryOptimizer:
     e per generare varianti semantiche utili al retrieval.
     """
 
-    REWRITE_PROMPT = ChatPromptTemplate.from_messages([
-        ("system",
-         "You are a coreference resolver for an Italian university Q&A system. "
-         "You receive the last interaction (user question + assistant answer) and a new query. "
-         "Replace any pronouns or implicit references (lui, lei, suo, suoi, questo, quella, "
-         "lì, ci, ne, quali sono i suoi, ecc.) with the explicit entity from the last interaction. "
-         "The entity can be anything: a person, a course, a classroom, a lab, a scholarship, etc. "
-         "If the new query is already self-contained, return it unchanged. "
-         "Do not answer the question. Output only the rewritten query.\n\n"
-         "Last Q: \"Chi è il prof. Rossi?\" Last A: \"Il prof. Rossi insegna...\" → "
-         "New query: \"Qual è il suo ricevimento?\" → "
-         "Output: Qual è il ricevimento del prof. Rossi?\n\n"
-         "Last Q: \"Parlami del corso di Informatica triennale\" Last A: \"Il corso prevede...\" → "
-         "New query: \"Quali sono i suoi contenuti?\" → "
-         "Output: Quali sono i contenuti del corso di Informatica triennale?\n\n"
-         "Last Q: \"Dove si trova l'aula 10?\" Last A: \"L'aula 10 è nel campus...\" → "
-         "New query: \"Quanti posti ha?\" → "
-         "Output: Quanti posti ha l'aula 10?\n\n"
-         "Last Q: \"Parlami di Ingegneria Informatica\" Last A: \"...\" → "
-         "New query: \"Dove si trova l'aula 10?\" → "
-         "Output: Dove si trova l'aula 10?"),
-        ("human",
-         "Last Q: \"{last_user_query}\"\nLast A: \"{last_assistant_answer}\"\n\n"
-         "New query: \"{question}\""),
-    ])
-
-    MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([
-        ("system",
-         "You generate Italian rephrasings of a question for semantic search in the knowledge base "
-         "of the DIEM department (Dipartimento di Ingegneria dell'Informazione ed Elettrica e "
-         "Matematica Applicata) at Universita degli Studi di Salerno.\n\n"
-         "STRICT RULES:\n"
-         "1. Generate exactly 3 rephrasings in Italian.\n"
-         "2. Preserve ALL proper nouns, acronyms (DIEM, UniSA, CFU), professor names, "
-         "course names, and the original intent EXACTLY.\n"
-         "3. Do NOT change, expand, or guess institutional names. "
-         "'DIEM' stays 'DIEM', NOT 'Dipartimento di Scienze dell'Informazione'. "
-         "Do NOT add university names like 'Bologna', 'Roma', 'Milano'.\n"
-         "4. Only vary the sentence structure and synonyms, not the entities.\n"
-         "5. Output one variant per line, no numbering, no explanations, no preamble.\n\n"
-         "Example input: 'Quali sono i corsi di laurea triennale offerti dal DIEM?'\n"
-         "Example output:\n"
-         "Quali corsi di laurea triennale sono disponibili presso il DIEM?\n"
-         "Elenco dei corsi triennali del DIEM\n"
-         "Offerta formativa triennale del DIEM"),
-        ("human", "{question}"),
-    ])
-
-    def __init__(self, llm_chat_model):
-        """Inizializza l'ottimizzatore con il modello LLM fornito.
+    def __init__(self, llm_chat_model, config: Optional[QueryOptimizerConfig] = None):
+        """Inizializza l'ottimizzatore con il modello LLM e la configurazione.
 
         Args:
             llm_chat_model: Modello di chat LangChain per la riscrittura e l'espansione.
+            config: Configurazione del QueryOptimizer. Se None, usa i default.
         """
         self._llm = llm_chat_model
+        self._config = config or QueryOptimizerConfig()
 
-        self._rewrite_chain = self.REWRITE_PROMPT | self._llm | RunnableLambda(
+        rewrite_prompt = ChatPromptTemplate.from_messages([
+            ("system", self._config.rewrite_system_prompt),
+            ("human", self._config.rewrite_human_template),
+        ])
+
+        multi_query_prompt = ChatPromptTemplate.from_messages([
+            ("system", self._config.multi_query_system_prompt),
+            ("human", self._config.multi_query_human_template),
+        ])
+
+        self._rewrite_chain = rewrite_prompt | self._llm | RunnableLambda(
             lambda msg: msg.content.strip().split('\n')[0].strip()
         )
 
-        self._multi_query_chain = self.MULTI_QUERY_PROMPT | self._llm | RunnableLambda(
-            lambda msg: [q.strip() for q in msg.content.strip().split("\n") if q.strip()]
+        max_variants = self._config.multi_query_max_variants
+        self._multi_query_chain = multi_query_prompt | self._llm | RunnableLambda(
+            lambda msg, _mv=max_variants: [
+                q.strip() for q in msg.content.strip().split("\n") if q.strip()
+            ][:_mv]
         )
 
     def rewrite(
@@ -110,8 +77,9 @@ class QueryOptimizer:
             logger.info("Nessun turno precedente, query invariata: '%s'", question)
             return question
 
-        truncated_answer = last_assistant_answer[:300]
-        if len(last_assistant_answer) > 300:
+        max_ctx = self._config.rewrite_max_context_chars
+        truncated_answer = last_assistant_answer[:max_ctx]
+        if len(last_assistant_answer) > max_ctx:
             truncated_answer += "..."
 
         try:
@@ -125,13 +93,14 @@ class QueryOptimizer:
                 logger.warning("Rewriting ha prodotto stringa vuota, uso l'originale")
                 return question
 
-            if len(result) > len(question) * 8:
+            max_factor = self._config.rewrite_max_expansion_factor
+            if len(result) > len(question) * max_factor:
                 logger.warning(
                     "Rewriting sospetto (%d chars vs %d), uso l'originale",
                     len(result), len(question),
                 )
                 return question
-            
+
             logger.info("Query rewritten: '%s' -> '%s'", question, result)
             return result
 
@@ -152,7 +121,7 @@ class QueryOptimizer:
             variants = self._multi_query_chain.invoke({"question": question})
             seen: Set[str] = {question.strip().lower()}
             unique_variants = []
-            for v in variants[:3]:
+            for v in variants:
                 v_clean = v.strip().lstrip('0123456789.-) ')
                 if v_clean and v_clean.lower() not in seen:
                     seen.add(v_clean.lower())
@@ -164,6 +133,7 @@ class QueryOptimizer:
         except Exception as e:
             logger.warning("Errore multi-query expansion: %s", e)
             return [question]
+
 
 class CrossEncoderReranker:
     """Reranker basato su Cross-Encoder per il riordinamento dei documenti candidati.
@@ -177,13 +147,14 @@ class CrossEncoderReranker:
         """Inizializza il reranker con il modello e i parametri configurati.
 
         Args:
-            config: Configurazione del reranker (modello, top_n, soglia).
+            config: Configurazione del reranker (modello, top_n, soglia, log_top_n).
         """
         from sentence_transformers import CrossEncoder
 
         self._model = CrossEncoder(config.model_name)
         self._top_n = config.top_n
         self._score_threshold = config.score_treshold
+        self._log_top_n = config.log_top_n
         logger.info("Cross-Encoder Reranker: %s", config.model_name)
 
     def rerank(
@@ -208,9 +179,10 @@ class CrossEncoderReranker:
         ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
 
         logger.info(
-            "--- TOP 5 CLASSIFICA (su %d CANDIDATI) ---", len(ranked)
+            "--- TOP %d CLASSIFICA (su %d CANDIDATI) ---",
+            self._log_top_n, len(ranked),
         )
-        for i, (doc, score) in enumerate(ranked[:5]):
+        for i, (doc, score) in enumerate(ranked[:self._log_top_n]):
             logger.info(
                 "[%d] Score: %.4f | Fonte: %s",
                 i + 1, score, doc.metadata.get("source_url", "N/D"),
@@ -249,17 +221,20 @@ class RetrievalEngine:
     collezioni Chroma e Parent-Child, deduplicazione e reranking finale.
     """
 
-    def __init__(self, indexer, reranker, query_optimizer=None):
+    def __init__(self, indexer, reranker, query_optimizer=None, dedup_hash_chars: int = 200):
         """Inizializza il motore di retrieval con le componenti necessarie.
 
         Args:
             indexer: Istanza di KnowledgeBaseIndexer per accesso ai retriever.
             reranker: Istanza di CrossEncoderReranker per il riordinamento.
             query_optimizer: Istanza opzionale di QueryOptimizer per l'espansione.
+            dedup_hash_chars: Numero di caratteri iniziali del contenuto usati
+                              per l'hash di deduplicazione.
         """
         self._indexer = indexer
         self._reranker = reranker
         self._optimizer = query_optimizer
+        self._dedup_hash_chars = dedup_hash_chars
 
         self._collection_retrievers = {}
         for target in CollectionTarget:
@@ -268,6 +243,17 @@ class RetrievalEngine:
             )
         self._pc_retriever = indexer.get_parent_child_retriever()
         self._pc_child_vectorstore = indexer._pc_child_vectorstore
+
+    def _content_hash(self, doc: Document) -> int:
+        """Calcola l'hash di deduplicazione per un documento.
+
+        Args:
+            doc: Documento di cui calcolare l'hash.
+
+        Returns:
+            Hash intero basato sui primi N caratteri del contenuto.
+        """
+        return hash(doc.page_content[:self._dedup_hash_chars])
 
     def retrieve(
         self,
@@ -311,7 +297,7 @@ class RetrievalEngine:
             try:
                 candidates = retriever.invoke(mq)
                 for doc in candidates:
-                    h = hash(doc.page_content[:200])
+                    h = self._content_hash(doc)
                     if h not in seen_hashes:
                         seen_hashes.add(h)
                         all_candidates.append(doc)
@@ -324,7 +310,7 @@ class RetrievalEngine:
                 try:
                     pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
                     for doc in pc_docs:
-                        h = hash(doc.page_content[:200])
+                        h = self._content_hash(doc)
                         if h not in seen_hashes:
                             seen_hashes.add(h)
                             all_candidates.append(doc)
@@ -373,7 +359,7 @@ class RetrievalEngine:
 
                     docs = retriever.invoke(mq)
                     for doc in docs:
-                        h = hash(doc.page_content[:200])
+                        h = self._content_hash(doc)
                         if h not in seen_hashes:
                             seen_hashes.add(h)
                             all_candidates.append(doc)
@@ -385,7 +371,7 @@ class RetrievalEngine:
             try:
                 pc_docs = self._retrieve_from_parent_child(mq, metadata_filter)
                 for doc in pc_docs:
-                    h = hash(doc.page_content[:200])
+                    h = self._content_hash(doc)
                     if h not in seen_hashes:
                         seen_hashes.add(h)
                         all_candidates.append(doc)

@@ -172,6 +172,67 @@ class RerankerConfig:
     score_treshold: float = 0.0
     model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     top_n: int = 5
+    log_top_n: int = 5
+
+
+@dataclass(frozen=True)
+class QueryOptimizerConfig:
+    """Configurazione del QueryOptimizer per riscrittura e espansione query."""
+
+    rewrite_max_context_chars: int = 300
+    rewrite_max_expansion_factor: int = 8
+    multi_query_max_variants: int = 3
+    dedup_hash_chars: int = 200
+
+    rewrite_system_prompt: str = (
+        "You are a coreference resolver for an Italian university Q&A system. "
+        "You receive the last interaction (user question + assistant answer) and a new query. "
+        "Replace any pronouns or implicit references (lui, lei, suo, suoi, questo, quella, "
+        "lì, ci, ne, quali sono i suoi, ecc.) with the explicit entity from the last interaction. "
+        "The entity can be anything: a person, a course, a classroom, a lab, a scholarship, etc. "
+        "If the new query is already self-contained, return it unchanged. "
+        "Do not answer the question. Output only the rewritten query.\n\n"
+        "Last Q: \"Chi è il prof. Rossi?\" Last A: \"Il prof. Rossi insegna...\" → "
+        "New query: \"Qual è il suo ricevimento?\" → "
+        "Output: Qual è il ricevimento del prof. Rossi?\n\n"
+        "Last Q: \"Parlami del corso di Informatica triennale\" Last A: \"Il corso prevede...\" → "
+        "New query: \"Quali sono i suoi contenuti?\" → "
+        "Output: Quali sono i contenuti del corso di Informatica triennale?\n\n"
+        "Last Q: \"Dove si trova l'aula 10?\" Last A: \"L'aula 10 è nel campus...\" → "
+        "New query: \"Quanti posti ha?\" → "
+        "Output: Quanti posti ha l'aula 10?\n\n"
+        "Last Q: \"Parlami di Ingegneria Informatica\" Last A: \"...\" → "
+        "New query: \"Dove si trova l'aula 10?\" → "
+        "Output: Dove si trova l'aula 10?"
+    )
+
+    rewrite_human_template: str = (
+        "Last Q: \"{last_user_query}\"\n"
+        "Last A: \"{last_assistant_answer}\"\n\n"
+        "New query: \"{question}\""
+    )
+
+    multi_query_system_prompt: str = (
+        "You generate Italian rephrasings of a question for semantic search in the knowledge base "
+        "of the DIEM department (Dipartimento di Ingegneria dell'Informazione ed Elettrica e "
+        "Matematica Applicata) at Universita degli Studi di Salerno.\n\n"
+        "STRICT RULES:\n"
+        "1. Generate exactly 3 rephrasings in Italian.\n"
+        "2. Preserve ALL proper nouns, acronyms (DIEM, UniSA, CFU), professor names, "
+        "course names, and the original intent EXACTLY.\n"
+        "3. Do NOT change, expand, or guess institutional names. "
+        "'DIEM' stays 'DIEM', NOT 'Dipartimento di Scienze dell'Informazione'. "
+        "Do NOT add university names like 'Bologna', 'Roma', 'Milano'.\n"
+        "4. Only vary the sentence structure and synonyms, not the entities.\n"
+        "5. Output one variant per line, no numbering, no explanations, no preamble.\n\n"
+        "Example input: 'Quali sono i corsi di laurea triennale offerti dal DIEM?'\n"
+        "Example output:\n"
+        "Quali corsi di laurea triennale sono disponibili presso il DIEM?\n"
+        "Elenco dei corsi triennali del DIEM\n"
+        "Offerta formativa triennale del DIEM"
+    )
+
+    multi_query_human_template: str = "{question}"
 
 
 @dataclass(frozen=True)
@@ -230,7 +291,6 @@ class ObservabilityConfig:
     log_tool_invocations: bool = True
     max_chunk_preview_chars: int = 200
 
-    # --- FIX 2: percorso del report usato da scheduler_main.main() ---
     report_path: str = "data/reports/ingestion_report.json"
 
 
@@ -247,6 +307,7 @@ class AppSettings:
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    query_optimizer: QueryOptimizerConfig = field(default_factory=QueryOptimizerConfig)
 
 
 def load_settings() -> AppSettings:
@@ -279,25 +340,19 @@ def load_settings() -> AppSettings:
             thread_max_workers=int(os.getenv("CRAWLER_MAX_WORKERS", "16")),
         ),
         llm=LLMConfig(
-            # Chat Model
             provider=os.getenv("LLM_PROVIDER", "ollama"),
             model_name=os.getenv("LLM_MODEL", "nemotron-3-super:cloud"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            # Fallback locale
             fallback_model=os.getenv("FALLBACK_MODEL", "qwen2.5"),
             fallback_base_url=os.getenv("FALLBACK_BASE_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
-            # Rewriter
             rewriter_provider=os.getenv("REWRITER_PROVIDER", "groq"),
             rewriter_model=os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
             groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
-            # Guardrails
             groq_guardrails_api_key=os.getenv("GROQ_GUARDRAILS_API_KEY"),
             guardrails_model=os.getenv("GUARDRAILS_MODEL", "llama-3.3-70b-versatile"),
-            # Chat Groq
             groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
-            # Legacy
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
         ),
@@ -315,6 +370,8 @@ def load_settings() -> AppSettings:
         reranker=RerankerConfig(
             model_name=os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L6-v2"),
             score_treshold=float(os.getenv("SCORE_TRESHOLD", "0.0")),
+            top_n=int(os.getenv("RERANKER_TOP_N", "5")),
+            log_top_n=int(os.getenv("RERANKER_LOG_TOP_N", "5")),
         ),
         guardrails=GuardrailsConfig(
             max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", "50")),
@@ -329,5 +386,11 @@ def load_settings() -> AppSettings:
                 "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             ),
             date_format=os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
+        ),
+        query_optimizer=QueryOptimizerConfig(
+            rewrite_max_context_chars=int(os.getenv("REWRITE_MAX_CONTEXT_CHARS", "300")),
+            rewrite_max_expansion_factor=int(os.getenv("REWRITE_MAX_EXPANSION_FACTOR", "8")),
+            multi_query_max_variants=int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3")),
+            dedup_hash_chars=int(os.getenv("DEDUP_HASH_CHARS", "200")),
         ),
     )
