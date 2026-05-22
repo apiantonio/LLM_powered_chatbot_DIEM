@@ -236,6 +236,19 @@ class QueryOptimizerConfig:
 
 
 @dataclass(frozen=True)
+class MemoryConfig:
+    """Configurazione della memoria conversazionale SmartConversationMemory."""
+
+    max_turns: int = 10
+    similarity_threshold: float = 0.55
+    max_token_limit: int = 1500
+    history_preview_chars: int = 150
+    langchain_history_max_chars: int = 300
+    summary_human_prefix: str = "Utente"
+    summary_ai_prefix: str = "Assistente"
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     """Configurazione del modello linguistico (provider, credenziali, parametri).
 
@@ -257,12 +270,18 @@ class LLMConfig:
 
     rewriter_provider: str = "groq"
     rewriter_model: str = "llama-3.3-70b-versatile"
+    rewriter_max_tokens: int = 256
+    rewriter_temperature: float = 0.0
+    rewriter_hf_temperature: float = 0.01
     groq_rewriter_api_key: Optional[str] = field(default=None)
 
     groq_guardrails_api_key: Optional[str] = field(default=None)
     guardrails_model: str = "llama-3.3-70b-versatile"
 
     groq_chat_api_key: Optional[str] = field(default=None)
+
+    groq_validation_model: str = "llama-3.3-70b-versatile"
+    groq_validation_max_tokens: int = 5
 
     huggingface_api_token: Optional[str] = field(default=None)
     openai_api_key: Optional[str] = field(default=None)
@@ -308,6 +327,7 @@ class AppSettings:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     query_optimizer: QueryOptimizerConfig = field(default_factory=QueryOptimizerConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
 
 def load_settings() -> AppSettings:
@@ -349,10 +369,15 @@ def load_settings() -> AppSettings:
             fallback_base_url=os.getenv("FALLBACK_BASE_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
             rewriter_provider=os.getenv("REWRITER_PROVIDER", "groq"),
             rewriter_model=os.getenv("REWRITER_MODEL", "llama-3.3-70b-versatile"),
+            rewriter_max_tokens=int(os.getenv("REWRITER_MAX_TOKENS", "256")),
+            rewriter_temperature=float(os.getenv("REWRITER_TEMPERATURE", "0.0")),
+            rewriter_hf_temperature=float(os.getenv("REWRITER_HF_TEMPERATURE", "0.01")),
             groq_rewriter_api_key=os.getenv("GROQ_REWRITER_API_KEY"),
             groq_guardrails_api_key=os.getenv("GROQ_GUARDRAILS_API_KEY"),
             guardrails_model=os.getenv("GUARDRAILS_MODEL", "llama-3.3-70b-versatile"),
             groq_chat_api_key=os.getenv("GROQ_CHAT_API_KEY"),
+            groq_validation_model=os.getenv("GROQ_VALIDATION_MODEL", "llama-3.3-70b-versatile"),
+            groq_validation_max_tokens=int(os.getenv("GROQ_VALIDATION_MAX_TOKENS", "5")),
             huggingface_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
         ),
@@ -392,5 +417,14 @@ def load_settings() -> AppSettings:
             rewrite_max_expansion_factor=int(os.getenv("REWRITE_MAX_EXPANSION_FACTOR", "8")),
             multi_query_max_variants=int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3")),
             dedup_hash_chars=int(os.getenv("DEDUP_HASH_CHARS", "200")),
+        ),
+        memory=MemoryConfig(
+            max_turns=int(os.getenv("MEMORY_MAX_TURNS", "10")),
+            similarity_threshold=float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.55")),
+            max_token_limit=int(os.getenv("MEMORY_MAX_TOKEN_LIMIT", "1500")),
+            history_preview_chars=int(os.getenv("MEMORY_HISTORY_PREVIEW_CHARS", "150")),
+            langchain_history_max_chars=int(os.getenv("MEMORY_LANGCHAIN_HISTORY_MAX_CHARS", "300")),
+            summary_human_prefix=os.getenv("MEMORY_SUMMARY_HUMAN_PREFIX", "Utente"),
+            summary_ai_prefix=os.getenv("MEMORY_SUMMARY_AI_PREFIX", "Assistente"),
         ),
     )

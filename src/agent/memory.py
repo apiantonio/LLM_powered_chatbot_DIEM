@@ -14,6 +14,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_classic.memory import ConversationSummaryBufferMemory
 from langchain_huggingface import HuggingFaceEmbeddings
 
+from src.config.settings import MemoryConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,22 +40,19 @@ class SmartConversationMemory:
         self,
         llm_for_summary,
         embedding_model: HuggingFaceEmbeddings,
-        max_turns: int = 10,
-        similarity_threshold: float = 0.3,
-        max_token_limit: int = 1500,
+        config: Optional[MemoryConfig] = None,
     ):
         """Inizializza la memoria conversazionale.
 
         Args:
             llm_for_summary: LLM utilizzato per la summarization dei turni.
             embedding_model: Modello di embedding per il calcolo della similarita.
-            max_turns: Numero massimo di turni mantenuti in memoria.
-            similarity_threshold: Soglia minima di similarita per includere un turno.
-            max_token_limit: Limite massimo di token per la summarization.
+            config: Configurazione della memoria. Se None, usa i default.
         """
-        self._max_turns = max_turns
-        self._similarity_threshold = similarity_threshold
-        self._max_token_limit = max_token_limit
+        self._config = config or MemoryConfig()
+        self._max_turns = self._config.max_turns
+        self._similarity_threshold = self._config.similarity_threshold
+        self._max_token_limit = self._config.max_token_limit
         self._turns: List[ConversationTurn] = []
         self._pending_user_message: str = ""
         self._turn_counter: int = 0
@@ -63,9 +62,9 @@ class SmartConversationMemory:
         logger.info(
             "SmartConversationMemory inizializzata: "
             "max_turns=%d, similarity_threshold=%.2f, max_token_limit=%d",
-            max_turns,
-            similarity_threshold,
-            max_token_limit,
+            self._max_turns,
+            self._similarity_threshold,
+            self._max_token_limit,
         )
 
     @property
@@ -223,8 +222,8 @@ class SmartConversationMemory:
             max_token_limit=self._max_token_limit,
             return_messages=True,
             memory_key="history",
-            human_prefix="Utente",
-            ai_prefix="Assistente",
+            human_prefix=self._config.summary_human_prefix,
+            ai_prefix=self._config.summary_ai_prefix,
         )
 
         for turn in filtered_turns:
@@ -371,10 +370,14 @@ class SmartConversationMemory:
             return []
 
         last_turn = self._turns[-1]
+        max_chars = self._config.langchain_history_max_chars
+        truncated = last_turn.assistant_message[:max_chars]
+        if len(last_turn.assistant_message) > max_chars:
+            truncated += "..."
+
         history = [
             HumanMessage(content=last_turn.user_message),
-            AIMessage(content=last_turn.assistant_message[:300]
-                      + ("..." if len(last_turn.assistant_message) > 300 else "")),
+            AIMessage(content=truncated),
         ]
         return history
 
@@ -387,13 +390,14 @@ class SmartConversationMemory:
         if not self._turns:
             return "(nessuno storico)"
 
+        preview_chars = self._config.history_preview_chars
         lines = []
         for turn in self._turns:
-            user_preview = turn.user_message[:150]
-            if len(turn.user_message) > 150:
+            user_preview = turn.user_message[:preview_chars]
+            if len(turn.user_message) > preview_chars:
                 user_preview += "..."
-            assistant_preview = turn.assistant_message[:150]
-            if len(turn.assistant_message) > 150:
+            assistant_preview = turn.assistant_message[:preview_chars]
+            if len(turn.assistant_message) > preview_chars:
                 assistant_preview += "..."
             lines.append(f"  [Turno {turn.turn_number}] Utente: {user_preview}")
             lines.append(f"                Assistente: {assistant_preview}")
@@ -409,12 +413,9 @@ class SmartConversationMemory:
 
 
 def create_conversation_memory(
-    max_turns: int = 10,
-    max_tokens: Optional[int] = None,
     llm_for_summary=None,
     embedding_model: Optional[HuggingFaceEmbeddings] = None,
-    similarity_threshold: float = 0.55,
-    max_token_limit: int = 1500,
+    config: Optional[MemoryConfig] = None,
 ) -> SmartConversationMemory:
     """Factory per la creazione di una SmartConversationMemory.
 
@@ -422,26 +423,28 @@ def create_conversation_memory(
     automaticamente a partire dalla configurazione dell'applicazione.
 
     Args:
-        max_turns: Numero massimo di turni da mantenere.
-        max_tokens: Limite token per summarization (sovrascrive max_token_limit).
         llm_for_summary: LLM per la summarization. Se None, viene creato automaticamente.
         embedding_model: Modello di embedding. Se None, viene creato automaticamente.
-        similarity_threshold: Soglia di similarita per il filtraggio dei turni.
-        max_token_limit: Limite token di default per la summarization.
+        config: Configurazione della memoria. Se None, viene caricata da settings.
 
     Returns:
         Istanza di SmartConversationMemory configurata.
     """
+    if config is None:
+        from src.config.settings import load_settings
+        settings = load_settings()
+        config = settings.memory
+
     if llm_for_summary is None:
-        from config.settings import load_settings
-        from agent.llm_providers import create_chat_model
+        from src.config.settings import load_settings
+        from src.agent.llm_providers import create_chat_model
 
         settings = load_settings()
         llm_for_summary = create_chat_model(settings.llm)
         logger.info("SmartMemory: LLM per summarization creato da settings")
 
     if embedding_model is None:
-        from config.settings import load_settings
+        from src.config.settings import load_settings
 
         settings = load_settings()
         embedding_model = HuggingFaceEmbeddings(
@@ -450,22 +453,16 @@ def create_conversation_memory(
         )
         logger.info("SmartMemory: Embedding model creato: %s", settings.embedding.model_name)
 
-    effective_token_limit = max_token_limit
-    if max_tokens is not None:
-        effective_token_limit = max_tokens
-
     memory = SmartConversationMemory(
         llm_for_summary=llm_for_summary,
         embedding_model=embedding_model,
-        max_turns=max_turns,
-        similarity_threshold=similarity_threshold,
-        max_token_limit=effective_token_limit,
+        config=config,
     )
     logger.info(
         "SmartConversationMemory creata: max_turns=%d, "
         "similarity_threshold=%.2f, max_token_limit=%d",
-        max_turns,
-        similarity_threshold,
-        effective_token_limit,
+        config.max_turns,
+        config.similarity_threshold,
+        config.max_token_limit,
     )
     return memory
