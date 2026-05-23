@@ -1,4 +1,4 @@
-# 🤖 DIEM Chatbot — LLM-Powered Virtual Assistant
+# <img src="assets/bot.ico" width="64"/> DIEM Chatbot  -  LLM-Powered Virtual Assistant
 
 <p align="center">
   <img src="https://www.diem.unisa.it/rescue/img/headerbg/logo-diem.png" alt="DIEM Logo" width="300"/>
