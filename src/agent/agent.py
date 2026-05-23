@@ -24,6 +24,7 @@ from src.agent.prompts import get_agent_system_prompt, get_meta_system_prompt
 from src.agent.guardrails import GuardrailsChecker, build_guardrails_checker
 from src.agent.tools import (
     set_retrieval_engine,
+    set_tools_config,
     set_chat_history,
     get_all_tools,
     get_last_search_meta,
@@ -522,6 +523,7 @@ class RAGAgentFactory:
         chat_model = create_chat_model(settings.llm)
 
         set_retrieval_engine(retrieval_engine)
+        set_tools_config(settings.tools)
 
         tools = get_all_tools()
         logger.info("    Tools registrati: %s", [t.name for t in tools])

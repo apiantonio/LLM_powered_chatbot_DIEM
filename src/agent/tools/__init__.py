@@ -20,15 +20,17 @@ from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
 from pydantic import BaseModel, Field
 from langchain.tools import tool
 
-from ingestion.router import CollectionTarget
+from src.config.settings import ToolsConfig
+from src.ingestion.router import CollectionTarget
 
 if TYPE_CHECKING:
-    from retrieval.engine import RetrievalEngine
+    from src.retrieval.engine import RetrievalEngine
 
 logger = logging.getLogger(__name__)
 
 _retrieval_engine: "RetrievalEngine | None" = None
 _chat_history: list = []
+_tools_config: ToolsConfig = ToolsConfig()
 
 _last_search_meta: Dict[str, Any] = {
     "rewritten_query": "",
@@ -45,6 +47,16 @@ def set_retrieval_engine(engine: "RetrievalEngine") -> None:
     """Inietta il RetrievalEngine nei tool."""
     global _retrieval_engine
     _retrieval_engine = engine
+
+
+def set_tools_config(config: ToolsConfig) -> None:
+    """Inietta la configurazione dei tool.
+
+    Args:
+        config: Configurazione ToolsConfig da settings.
+    """
+    global _tools_config
+    _tools_config = config
 
 
 def set_chat_history(history: list) -> None:
@@ -72,7 +84,7 @@ _VALID_SOTTO_AREA_PERSONE = frozenset({
 })
 
 _VALID_SOTTO_AREA_OFFERTA_FORMATIVA = frozenset({
-    "informazioni_corso", "didattica", "aule", "terza_missione",
+    "informazioni_corso", "didattica", "terza_missione",
     "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso",
 })
 
@@ -84,16 +96,6 @@ _VALID_SOTTO_AREA_DIPARTIMENTO = frozenset({
 })
 
 _tool_error_counts: Dict[str, int] = {}
-_MAX_TOOL_RETRIES = 2
-
-_DEFINITIVE_NOT_FOUND = (
-    "La ricerca su TUTTE le collection (persone, offerta formativa, "
-    "dipartimento) non ha prodotto risultati per: '{query}'. "
-    "L'informazione richiesta non e' presente nella knowledge base del DIEM. "
-    "NON invocare altri tool di ricerca: rispondi all'utente che "
-    "l'informazione non e' disponibile e suggerisci di consultare "
-    "direttamente il sito web del DIEM o contattare la segreteria."
-)
 
 
 def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
@@ -111,10 +113,12 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
     if _retrieval_engine is None:
         return None
 
+    preview = _tools_config.tool_key_preview_chars
+
     logger.info(
         "FALLBACK INTERNO search_all attivato da %s per query: '%s'",
         original_tool_name,
-        query[:80],
+        query[:preview],
     )
 
     try:
@@ -123,7 +127,7 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
         if not documents:
             logger.info(
                 "Anche il fallback search_all non ha trovato risultati per: '%s'",
-                query[:80],
+                query[:preview],
             )
             return None
 
@@ -142,7 +146,7 @@ def _fallback_search_all(query: str, original_tool_name: str) -> Optional[str]:
         logger.info(
             "Fallback search_all ha trovato %d documenti per: '%s'",
             len(documents),
-            query[:80],
+            query[:preview],
         )
 
         return _format_results(documents)
@@ -172,9 +176,10 @@ def _search_collection(
     global _last_search_meta
 
     if _retrieval_engine is None:
-        return "Errore interno: motore di ricerca non inizializzato."
+        return _tools_config.engine_not_initialized_message
 
-    tool_key = f"{collection.value}:{query[:50]}"
+    preview = _tools_config.tool_key_preview_chars
+    tool_key = f"{collection.value}:{query[:preview]}"
 
     logger.debug("Ricerca in collezione %s: %s", collection.value, query)
 
@@ -217,7 +222,7 @@ def _search_collection(
             if fallback_result:
                 return fallback_result
 
-            return _DEFINITIVE_NOT_FOUND.format(query=query)
+            return _tools_config.not_found_message.format(query=query)
 
         return _format_results(documents)
 
@@ -227,40 +232,33 @@ def _search_collection(
         _tool_error_counts[tool_key] = _tool_error_counts.get(tool_key, 0) + 1
         error_count = _tool_error_counts[tool_key]
 
-        if error_count >= _MAX_TOOL_RETRIES:
+        if error_count >= _tools_config.max_tool_retries:
             _tool_error_counts.pop(tool_key, None)
-            return (
-                "La ricerca non e' disponibile al momento. "
-                "NON riprovare con questo stesso tool. "
-                "Rispondi all'utente che le informazioni non sono al momento "
-                "reperibili e suggerisci di consultare il sito web del DIEM."
-            )
+            return _tools_config.error_exhausted_message
 
-        return (
-            "Problema temporaneo. Prova un tool diverso "
-            "(es. search_dipartimento o search_all)."
-        )
+        return _tools_config.error_temporary_message
 
 
-def _extract_top_links(documents, max_links: int = 5) -> List[str]:
+def _extract_top_links(documents, max_links: Optional[int] = None) -> List[str]:
     """Estrae i link principali dai documenti recuperati.
 
     Args:
         documents: Lista di documenti con metadati.
-        max_links: Numero massimo di link da estrarre.
+        max_links: Numero massimo di link da estrarre. Se None, usa config.
 
     Returns:
         Lista di URL univoci.
     """
+    effective_max = max_links if max_links is not None else _tools_config.max_top_links
     top_links = []
-    for doc in documents[:max_links]:
+    for doc in documents[:effective_max]:
         link = doc.metadata.get(
             "url_originale",
             doc.metadata.get("source_url", "N/D"),
         )
         if link not in top_links:
             top_links.append(link)
-    return top_links[:max_links]
+    return top_links[:effective_max]
 
 
 def _format_results(documents) -> str:
@@ -353,7 +351,7 @@ class SearchOffertaFormativaInput(BaseModel):
         )
     )
     sotto_area: Optional[Literal[
-        "informazioni_corso", "didattica", "aule", "terza_missione",
+        "informazioni_corso", "didattica", "terza_missione",
         "statistiche", "regolamenti", "piani_di_studio", "documentazione_corso"
     ]] = Field(
         default=None,
@@ -361,7 +359,6 @@ class SearchOffertaFormativaInput(BaseModel):
             "Optional filter on the degree program section. "
             "Use 'informazioni_corso' for general course info, objectives. "
             "Use 'didattica' for study plan, course list, CFU. "
-            "Use 'aule' for classrooms and teaching facilities. "
             "Use 'terza_missione' for third mission activities. "
             "Use 'statistiche' for enrollment, employment, graduate stats. "
             "Use 'regolamenti' for academic regulations, prerequisites. "
@@ -498,7 +495,7 @@ This tool does NOT contain information about who teaches a course or course syll
 For those queries, use search_persone instead.
 
 Pass the user's full question in the query parameter without abbreviation."""
-    
+
     if sotto_area and sotto_area.lower().strip() not in _VALID_SOTTO_AREA_OFFERTA_FORMATIVA:
         logger.warning("sotto_area non valido per OFFERTA_FORMATIVA: '%s'. Ignoro.", sotto_area)
         sotto_area = None
@@ -584,7 +581,7 @@ Never use this as a first choice. Pass the user's full question in the query par
     global _last_search_meta
 
     if _retrieval_engine is None:
-        return "Errore interno: motore di ricerca non inizializzato."
+        return _tools_config.engine_not_initialized_message
 
     try:
         documents, used_query = _retrieval_engine.retrieve_from_all(query)
@@ -602,7 +599,7 @@ Never use this as a first choice. Pass the user's full question in the query par
         }
 
         if not documents:
-            return f"Non ho trovato informazioni per: '{query}'."
+            return _tools_config.no_results_message.format(query=query)
 
         return _format_results(documents)
 

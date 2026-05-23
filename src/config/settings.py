@@ -335,6 +335,42 @@ class GuardrailsConfig:
 
 
 @dataclass(frozen=True)
+class ToolsConfig:
+    """Configurazione dei tool di ricerca dell'agente."""
+
+    max_tool_retries: int = 2
+    max_top_links: int = 5
+    tool_key_preview_chars: int = 50
+
+    not_found_message: str = (
+        "La ricerca su TUTTE le collection (persone, offerta formativa, "
+        "dipartimento) non ha prodotto risultati per: '{query}'. "
+        "L'informazione richiesta non e' presente nella knowledge base del DIEM. "
+        "NON invocare altri tool di ricerca: rispondi all'utente che "
+        "l'informazione non e' disponibile e suggerisci di consultare "
+        "direttamente il sito web del DIEM o contattare la segreteria."
+    )
+
+    engine_not_initialized_message: str = (
+        "Errore interno: motore di ricerca non inizializzato."
+    )
+
+    error_exhausted_message: str = (
+        "La ricerca non e' disponibile al momento. "
+        "NON riprovare con questo stesso tool. "
+        "Rispondi all'utente che le informazioni non sono al momento "
+        "reperibili e suggerisci di consultare il sito web del DIEM."
+    )
+
+    error_temporary_message: str = (
+        "Problema temporaneo. Prova un tool diverso "
+        "(es. search_dipartimento o search_all)."
+    )
+
+    no_results_message: str = "Non ho trovato informazioni per: '{query}'."
+
+
+@dataclass(frozen=True)
 class ObservabilityConfig:
     """Configurazione per l'osservabilita e il debug dell'applicazione."""
 
@@ -363,6 +399,7 @@ class AppSettings:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     query_optimizer: QueryOptimizerConfig = field(default_factory=QueryOptimizerConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    tools: ToolsConfig = field(default_factory=ToolsConfig)
 
 
 def load_settings() -> AppSettings:
@@ -459,5 +496,10 @@ def load_settings() -> AppSettings:
             langchain_history_max_chars=int(os.getenv("MEMORY_LANGCHAIN_HISTORY_MAX_CHARS", "300")),
             summary_human_prefix=os.getenv("MEMORY_SUMMARY_HUMAN_PREFIX", "Utente"),
             summary_ai_prefix=os.getenv("MEMORY_SUMMARY_AI_PREFIX", "Assistente"),
+        ),
+        tools=ToolsConfig(
+            max_tool_retries=int(os.getenv("MAX_TOOL_RETRIES", "2")),
+            max_top_links=int(os.getenv("MAX_TOP_LINKS", "5")),
+            tool_key_preview_chars=int(os.getenv("TOOL_KEY_PREVIEW_CHARS", "50")),
         ),
     )

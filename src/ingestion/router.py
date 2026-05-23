@@ -109,8 +109,6 @@ def _classify_offerta_sottoarea_html(source_url: str) -> str:
     """
     url_lower = source_url.lower()
 
-    if "/strutture-didattiche" in url_lower:
-        return "aule"
     if "/didattica" in url_lower:
         return "didattica"
     if "/terza-missione" in url_lower:
@@ -377,6 +375,13 @@ class DocumentRouter:
             anno = _extract_anno_from_url(source_url)
             if anno:
                 metadata["anno"] = anno
+        
+        elif collection == CollectionTarget.DIPARTIMENTO:
+            metadata["sotto_area"] = _classify_dipartimento_sottoarea(source_url)
+
+            anno = _extract_anno_from_url(source_url)
+            if anno:
+                metadata["anno"] = anno
 
         elif collection == CollectionTarget.OFFERTA_FORMATIVA:
             corso_match = re.search(r"corsi\.unisa\.it/([^/]+)", source_url)
@@ -386,13 +391,6 @@ class DocumentRouter:
                     metadata["corso_slug"] = slug
 
             metadata["sotto_area"] = _classify_offerta_sottoarea_html(source_url)
-
-            anno = _extract_anno_from_url(source_url)
-            if anno:
-                metadata["anno"] = anno
-
-        elif collection == CollectionTarget.DIPARTIMENTO:
-            metadata["sotto_area"] = _classify_dipartimento_sottoarea(source_url)
 
             anno = _extract_anno_from_url(source_url)
             if anno:
