@@ -279,7 +279,6 @@ class GuardrailsConfig:
         "corsi di laurea, docenti, orari, esami, regolamenti, tesi, borse di studio, "
         "laboratori, servizi dipartimentali, dottorato di ricerca."
     )
-    max_agent_iterations: int = 50
     enable_pii_filter: bool = True
     max_tool_calls: int = 3
 
@@ -307,17 +306,6 @@ class GuardrailsConfig:
     error_generic_message: str = (
         "Mi scuso, si e' verificato un errore. "
         "Riprova tra qualche istante."
-    )
-
-    error_loop_message: str = (
-        "Mi scuso, ho riscontrato difficolta nell'elaborare la tua "
-        "domanda. Prova a riformularla in modo piu specifico."
-    )
-
-    error_tool_limit_message: str = (
-        "Mi scuso, non sono riuscito a trovare informazioni sufficienti "
-        "per rispondere alla tua domanda. Ti consiglio di consultare "
-        "il sito web del DIEM o contattare la segreteria."
     )
 
     error_empty_response_message: str = (
@@ -469,7 +457,6 @@ def load_settings() -> AppSettings:
             log_top_n=int(os.getenv("RERANKER_LOG_TOP_N", "5")),
         ),
         guardrails=GuardrailsConfig(
-            max_agent_iterations=int(os.getenv("MAX_AGENT_ITER", "50")),
             max_tool_calls=int(os.getenv("MAX_TOOL_CALLS", "3")),
         ),
         logging=LoggingConfig(

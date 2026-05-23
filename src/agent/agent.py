@@ -179,7 +179,6 @@ class RAGAgent:
                 {"messages": messages},
                 config={
                     "callbacks": [obs_handler],
-                    "recursion_limit": self._settings.guardrails.max_agent_iterations,
                 },
             )
             response_text = self._extract_final_response(result)
@@ -198,25 +197,8 @@ class RAGAgent:
             logger.info("TESTO DI RISPOSTA AGENTE AL TURNO %d: %s", turn_number, response_text)
 
         except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-
-            if ("recursion" in error_str or "recursion" in error_type.lower()
-                    or "iteration" in error_str):
-                logger.error(
-                    "LOOP RILEVATO - Agente terminato forzatamente. Query: '%s'",
-                    user_query[:self._preview],
-                )
-                response_text = self._gr_cfg.error_loop_message
-            elif "toolcalllimit" in error_str or "tool call limit" in error_str:
-                logger.warning(
-                    "TOOL CALL LIMIT raggiunto (middleware). Query: '%s'",
-                    user_query[:self._preview],
-                )
-                response_text = self._gr_cfg.error_tool_limit_message
-            else:
-                logger.error("Errore agente: %s", e, exc_info=True)
-                response_text = self._gr_cfg.error_generic_message
+            logger.error("Errore agente: %s", e, exc_info=True)
+            response_text = self._gr_cfg.error_generic_message
 
         if self._guardrails_checker and response_text:
             output_allowed, block_message = self._guardrails_checker.check_output(response_text)
