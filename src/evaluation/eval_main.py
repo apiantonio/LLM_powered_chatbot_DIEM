@@ -20,6 +20,7 @@ Variabili d'ambiente rilevanti (oltre a quelle del sistema RAG):
     EVAL_BATCH_DELAY         - Pausa in secondi tra domande (rate limit)
     EVAL_MAX_RETRIES         - Max tentativi per chiamata Judge
     EVAL_RATE_LIMIT_WAIT     - Attesa su rate limit 429 (secondi)
+    EVAL_NORMALIZE_TEXT      - Se true, normalizza testo per confronto (default: true)
 """
 
 import sys
@@ -28,22 +29,14 @@ import logging
 import argparse
 from typing import Optional, Dict, Any
 
-# Assicura che src/ sia nel path per gli import relativi
-_src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _src_dir not in sys.path:
-    sys.path.insert(0, _src_dir)
-
-from config.settings import load_settings
-from config.logging_config import setup_logging
+from src.config.settings import load_settings
+from src.config.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
 
 def _bootstrap_agent(settings, disable_guardrails: bool = False):
     """Inizializza tutti i componenti e assembla l'agente RAG.
-
-    Replica la logica di bootstrap di agent_main.py per garantire
-    compatibilita' completa con il sistema di produzione.
 
     Args:
         settings: Configurazione dell'applicazione.
@@ -53,8 +46,8 @@ def _bootstrap_agent(settings, disable_guardrails: bool = False):
     Returns:
         Istanza di RAGAgent pronta per l'evaluation.
     """
-    from agent.agent_main import build_retrieval_engine, build_embedding_model
-    from agent.agent import RAGAgentFactory
+    from src.agent.agent_main import build_retrieval_engine, build_embedding_model
+    from src.agent.agent import RAGAgentFactory
 
     logger.info("[EVAL BOOT] Inizializzazione RetrievalEngine...")
     engine = build_retrieval_engine(settings)
@@ -67,7 +60,6 @@ def _bootstrap_agent(settings, disable_guardrails: bool = False):
         retrieval_engine=engine,
         settings=settings,
         enable_scope_guardrail=not disable_guardrails,
-        max_memory_turns=10,
         embedding_model=embedding_model,
     )
 
@@ -83,26 +75,15 @@ def run_evaluation(
 ) -> Dict[str, Any]:
     """Funzione principale per eseguire l'evaluation programmaticamente.
 
-    Inizializza tutti i componenti, esegue il flusso completo di
-    evaluation e restituisce il report.
-
     Args:
         input_file: Percorso del file JSON con domande e ground truth.
-            Se None, usa il valore dalla configurazione o env.
         output_dir: Directory per i file di output. Se None, usa il default.
-        disable_guardrails: Se True, disabilita i guardrails per evitare
-            che blocchino domande di test legittime.
+        disable_guardrails: Se True, disabilita i guardrails.
         log_level: Livello di logging (DEBUG, INFO, WARNING, ERROR).
 
     Returns:
         Dizionario con il report completo dell'evaluation.
-
-    Raises:
-        FileNotFoundError: Se il file di input non esiste.
-        ValueError: Se la configurazione non e' valida.
-        RuntimeError: Se il bootstrap dei componenti fallisce.
     """
-    # --- Configurazione logging ---
     settings = load_settings()
     setup_logging(
         level=log_level,
@@ -116,26 +97,21 @@ def run_evaluation(
     logger.info("  AVVIO EVALUATION RAG DIEM")
     logger.info("=" * 60)
 
-    # --- Configurazione evaluation ---
     from src.evaluation.config import load_evaluation_config
     eval_config = load_evaluation_config()
 
-    # Override da parametri espliciti
     if input_file:
         eval_config = _override_config(eval_config, input_file=input_file)
     if output_dir:
         eval_config = _override_config(eval_config, output_dir=output_dir)
 
-    # --- Bootstrap agente ---
     agent = _bootstrap_agent(settings, disable_guardrails=disable_guardrails)
 
-    # --- Esecuzione evaluation ---
     from src.evaluation.runner import EvaluationRunner
     runner = EvaluationRunner(config=eval_config)
 
     report = runner.run(agent=agent, input_file=input_file)
 
-    # --- Stampa riepilogo ---
     summary = runner.get_summary()
     print(summary)
 
@@ -144,9 +120,6 @@ def run_evaluation(
 
 def _override_config(config, input_file=None, output_dir=None):
     """Crea una nuova istanza di EvaluationConfig con override specifici.
-
-    Poiche' EvaluationConfig e' frozen (immutabile), questa funzione
-    ricrea l'oggetto con i valori modificati.
 
     Args:
         config: Configurazione originale.
@@ -172,6 +145,7 @@ def _override_config(config, input_file=None, output_dir=None):
         judge=config.judge,
         retry=config.retry,
         metrics=config.metrics,
+        normalization=config.normalization,
         output=new_output,
         pipeline=config.pipeline,
         input_file=input_file or config.input_file,
@@ -179,11 +153,7 @@ def _override_config(config, input_file=None, output_dir=None):
 
 
 def parse_args() -> argparse.Namespace:
-    """Parsing degli argomenti da linea di comando.
-
-    Returns:
-        Namespace con gli argomenti parsati.
-    """
+    """Parsing degli argomenti da linea di comando."""
     parser = argparse.ArgumentParser(
         description="Evaluation del sistema RAG DIEM con framework RAGAS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -201,6 +171,9 @@ Esempi di utilizzo:
 
   # Evaluation con output in directory specifica
   python -m evaluation.eval_main --input questions.json --output results/run_01
+
+  # Evaluation senza normalizzazione testo
+  python -m evaluation.eval_main --no-normalize
 
   # Evaluation con logging verboso
   python -m evaluation.eval_main --input questions.json --log-level DEBUG
@@ -229,6 +202,13 @@ Esempi di utilizzo:
     )
 
     parser.add_argument(
+        "--no-normalize",
+        action="store_true",
+        default=False,
+        help="Disabilita la normalizzazione testo (markdown, URL, case) per il confronto RAGAS.",
+    )
+
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -242,6 +222,9 @@ def main() -> None:
     """Entry point principale per l'esecuzione da terminale."""
     args = parse_args()
 
+    if args.no_normalize:
+        os.environ["EVAL_NORMALIZE_TEXT"] = "false"
+
     try:
         report = run_evaluation(
             input_file=args.input,
@@ -250,7 +233,6 @@ def main() -> None:
             log_level=args.log_level,
         )
 
-        # Stampa percorsi dei file generati
         output_files = report.get("metadata", {}).get("run", {}).get("output_files", {})
         if output_files:
             print("\nFile generati:")

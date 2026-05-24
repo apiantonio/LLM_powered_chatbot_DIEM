@@ -9,6 +9,7 @@ t6_4_report.json
 src/pdf_chunk.py
 src/script_chunk.py
 logs/*
+/results/**/*
 ingestion_log/*
 data/raw/pdfs
 data/log/

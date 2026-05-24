@@ -28,10 +28,6 @@ from src.evaluation.dataset import EvaluationDatasetBuilder
 logger = logging.getLogger(__name__)
 
 
-# --------------------------------------------------------------------------- #
-#  Costruzione delle metriche RAGAS
-# --------------------------------------------------------------------------- #
-
 def _build_ragas_metrics(config: EvaluationConfig) -> list:
     """Costruisce la lista di metriche RAGAS in base alla configurazione.
 
@@ -87,10 +83,6 @@ def _build_ragas_metrics(config: EvaluationConfig) -> list:
     return metrics
 
 
-# --------------------------------------------------------------------------- #
-#  Mappatura nomi colonne
-# --------------------------------------------------------------------------- #
-
 _RAGAS_COLUMN_MAP = {
     "user_input": "question",
     "retrieved_contexts": "retrieved_contexts",
@@ -104,10 +96,6 @@ _RAGAS_COLUMN_MAP = {
     "factual_correctness": "factual_correctness",
 }
 
-
-# --------------------------------------------------------------------------- #
-#  Runner principale
-# --------------------------------------------------------------------------- #
 
 class EvaluationRunner:
     """Orchestratore completo del flusso di evaluation.
@@ -170,49 +158,41 @@ class EvaluationRunner:
         start_time = time.time()
 
         try:
-            # --- Step 1: Caricamento dataset ---
             logger.info("=" * 60)
             logger.info("  STEP 1/6 — Caricamento dataset")
             logger.info("=" * 60)
             num_samples = self.dataset_builder.load_from_json(input_file)
             logger.info("Caricate %d domande.", num_samples)
 
-            # --- Step 2: Creazione Judge LLM ---
             logger.info("=" * 60)
             logger.info("  STEP 2/6 — Inizializzazione Judge LLM")
             logger.info("=" * 60)
             self.judge_llm = create_judge_llm(self.config)
 
-            # --- Step 3: Elaborazione domande ---
             logger.info("=" * 60)
             logger.info("  STEP 3/6 — Elaborazione domande tramite agente RAG")
             logger.info("=" * 60)
             processed = self.dataset_builder.process_with_agent(agent)
             logger.info("Elaborate %d domande.", len(processed))
 
-            # --- Step 4: Costruzione EvaluationDataset ---
             logger.info("=" * 60)
             logger.info("  STEP 4/6 — Costruzione EvaluationDataset RAGAS")
             logger.info("=" * 60)
             eval_dataset = self.dataset_builder.build_ragas_dataset()
 
-            # --- Step 5: Valutazione RAGAS ---
             logger.info("=" * 60)
             logger.info("  STEP 5/6 — Esecuzione valutazione RAGAS")
             logger.info("=" * 60)
             self.ragas_result = self._run_ragas_evaluation(eval_dataset)
 
-            # --- Step 6: Report e esportazione ---
             logger.info("=" * 60)
             logger.info("  STEP 6/6 — Generazione report e esportazione")
             logger.info("=" * 60)
             report = self._build_full_report()
             self._export_outputs(report)
 
-            # Pulizia intermedi
             self.dataset_builder.clear_intermediate()
 
-            # Statistiche Judge
             if self.judge_llm:
                 self.judge_llm.print_stats()
 
@@ -265,11 +245,10 @@ class EvaluationRunner:
         from ragas.llms import LangchainLLMWrapper
         from langchain_huggingface import HuggingFaceEmbeddings
 
-        from config.settings import load_settings
+        from src.config.settings import load_settings
 
         settings = load_settings()
 
-        # Embedding per le metriche che lo richiedono (es. ResponseRelevancy)
         embedding_model = HuggingFaceEmbeddings(
             model_name=settings.embedding.model_name,
             encode_kwargs={
@@ -279,15 +258,8 @@ class EvaluationRunner:
 
         metrics = _build_ragas_metrics(self.config)
 
-        # Wrappa il Judge robusto per RAGAS
         wrapped_judge = LangchainLLMWrapper(self.judge_llm)
 
-        # --- ESECUZIONE SEQUENZIALE FORZATA ---
-        # RunConfig controlla il parallelismo interno di RAGAS:
-        #   max_workers=1    -> un solo thread/task alla volta
-        #   max_wait=180     -> timeout generoso per singola operazione
-        #   timeout=360      -> timeout complessivo alto per sample lenti
-        #   log_tenacity=True -> logga i retry interni di RAGAS
         run_config = RunConfig(
             max_workers=1,
             max_wait=180,
@@ -313,8 +285,6 @@ class EvaluationRunner:
             self.config.judge.model_name,
         )
 
-        # batch_size=1: RAGAS processa un sample alla volta
-        # run_config: forza single-thread
         result = evaluate(
             dataset=eval_dataset,
             metrics=metrics,
@@ -338,23 +308,19 @@ class EvaluationRunner:
         Returns:
             Dizionario strutturato con il report completo.
         """
-        # Converti risultato RAGAS in DataFrame
+
         ragas_df = self.ragas_result.to_pandas()
 
-        # Rinomina colonne RAGAS per leggibilita'
         ragas_df = ragas_df.rename(columns={
             col: _RAGAS_COLUMN_MAP.get(col, col) for col in ragas_df.columns
         })
 
-        # Identifica le colonne delle metriche
         non_metric_cols = {"question", "retrieved_contexts", "response", "ground_truth"}
         metric_columns = [c for c in ragas_df.columns if c not in non_metric_cols]
 
-        # Riallinea con la lista completa dei sample
         valid_indices = self.dataset_builder.get_valid_indices()
         all_processed = self.dataset_builder.get_all_processed()
 
-        # Costruisci DataFrame completo
         full_rows = []
         ragas_row_idx = 0
 
@@ -381,7 +347,6 @@ class EvaluationRunner:
 
         self.report_df = pd.DataFrame(full_rows)
 
-        # Calcola aggregati solo su sample validi
         valid_df = self.report_df[
             (self.report_df["was_blocked"] == False) &
             (self.report_df["error"].isna())
@@ -400,10 +365,8 @@ class EvaluationRunner:
                     "count": int(len(values)),
                 }
 
-        # Statistiche Judge
         judge_stats = self.judge_llm.get_stats() if self.judge_llm else {}
 
-        # Report completo
         report = {
             "metadata": {
                 "run": self.run_metadata,
@@ -455,7 +418,6 @@ class EvaluationRunner:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         generated_files = {}
 
-        # --- JSON ---
         if self.config.output.export_json:
             json_path = output_dir / f"eval_{timestamp}_metrics.json"
             with open(json_path, "w", encoding="utf-8") as f:
@@ -463,14 +425,12 @@ class EvaluationRunner:
             generated_files["json"] = str(json_path)
             logger.info("Report JSON esportato: %s", json_path)
 
-        # --- CSV ---
         if self.config.output.export_csv and self.report_df is not None:
             csv_path = output_dir / f"eval_{timestamp}_report.csv"
             self.report_df.to_csv(csv_path, index=False, encoding="utf-8-sig")
             generated_files["csv"] = str(csv_path)
             logger.info("Report CSV esportato: %s", csv_path)
 
-        # --- Excel ---
         if self.config.output.export_excel and self.report_df is not None:
             xlsx_path = output_dir / f"eval_{timestamp}_report.xlsx"
             try:
@@ -512,7 +472,6 @@ class EvaluationRunner:
         ws = wb.active
         ws.title = "Evaluation Report"
 
-        # Stili
         header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=11)
         header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -523,7 +482,6 @@ class EvaluationRunner:
             bottom=Side(style="thin"),
         )
 
-        # Formatta header
         for col_idx, col_name in enumerate(df.columns, 1):
             cell = ws.cell(row=1, column=col_idx)
             cell.fill = header_fill
@@ -531,7 +489,6 @@ class EvaluationRunner:
             cell.alignment = header_align
             cell.border = thin_border
 
-        # Identifica colonne metriche
         non_metric_cols = {"index", "question", "ground_truth", "response",
                           "was_blocked", "error", "processing_time_ms"}
         metric_col_indices = [
@@ -539,7 +496,6 @@ class EvaluationRunner:
             if col not in non_metric_cols
         ]
 
-        # Formatta celle dati
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
         cell_align = Alignment(vertical="top", wrap_text=True)
@@ -550,7 +506,6 @@ class EvaluationRunner:
                 cell.border = thin_border
                 cell.alignment = cell_align
 
-                # Formattazione condizionale per metriche
                 if col_idx in metric_col_indices and cell.value is not None:
                     try:
                         val = float(cell.value)
@@ -562,7 +517,6 @@ class EvaluationRunner:
                     except (ValueError, TypeError):
                         pass
 
-        # Larghezza colonne automatica
         for col_idx, col_name in enumerate(df.columns, 1):
             letter = get_column_letter(col_idx)
             if col_name in ("question", "ground_truth", "response"):
@@ -572,7 +526,6 @@ class EvaluationRunner:
             else:
                 ws.column_dimensions[letter].width = 18
 
-        # Riga di freeze per header
         ws.freeze_panes = "A2"
 
         wb.save(filepath)
@@ -597,7 +550,6 @@ class EvaluationRunner:
         lines.append(f"  Judge:       {self.config.judge.provider}/{self.config.judge.model_name}")
         lines.append("")
 
-        # Metriche aggregate
         non_metric = {"index", "question", "ground_truth", "response",
                       "was_blocked", "error", "processing_time_ms"}
         metric_cols = [c for c in self.report_df.columns if c not in non_metric]
@@ -617,7 +569,6 @@ class EvaluationRunner:
                     lines.append(f"  {mc:<25s} {mean_val:.4f}")
             lines.append("")
 
-        # Statistiche Judge
         if self.judge_llm:
             stats = self.judge_llm.get_stats()
             lines.append("  STATISTICHE JUDGE:")

@@ -20,9 +20,6 @@ logger = logging.getLogger(__name__)
 class JudgeLLMConfig:
     """Configurazione del modello LLM utilizzato come Judge per RAGAS.
 
-    Il Judge e' il modello che valuta la qualita' delle risposte.
-    Deve essere affidabile nella produzione di output JSON strutturato.
-
     Attributes:
         provider: Provider del Judge ('groq' raccomandato per affidabilita' JSON).
         model_name: Nome del modello Judge.
@@ -43,9 +40,6 @@ class JudgeLLMConfig:
 @dataclass(frozen=True)
 class RetryConfig:
     """Configurazione della policy di retry per le chiamate al Judge LLM.
-
-    Gestisce i tentativi di ripetizione in caso di errori di parsing JSON
-    o di rate limiting da parte del provider API.
 
     Attributes:
         max_retries: Numero massimo di tentativi per singola chiamata.
@@ -81,6 +75,21 @@ class MetricsConfig:
     enable_faithfulness: bool = True
     enable_factual_correctness: bool = True
     factual_correctness_mode: str = "f1"
+
+
+@dataclass(frozen=True)
+class NormalizationConfig:
+    """Configurazione della normalizzazione testo per il confronto RAGAS.
+
+    Quando abilitata, response e ground_truth vengono normalizzati
+    prima di essere passati a RAGAS, rimuovendo formattazione markdown,
+    URL e differenze di case che abbassano artificialmente i punteggi.
+
+    Attributes:
+        enable_normalization: Se True, attiva la normalizzazione.
+    """
+
+    enable_normalization: bool = True
 
 
 @dataclass(frozen=True)
@@ -129,6 +138,7 @@ class EvaluationConfig:
         judge: Configurazione del modello Judge LLM.
         retry: Policy di retry per le chiamate API.
         metrics: Metriche RAGAS da calcolare.
+        normalization: Configurazione normalizzazione testo per confronto.
         output: Percorsi e formati di output.
         pipeline: Comportamento della pipeline.
         input_file: Percorso del file JSON con domande e ground truth.
@@ -137,6 +147,7 @@ class EvaluationConfig:
     judge: JudgeLLMConfig = field(default_factory=JudgeLLMConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
+    normalization: NormalizationConfig = field(default_factory=NormalizationConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     input_file: str = "data/evaluation/questions.json"
@@ -200,6 +211,9 @@ def load_evaluation_config() -> EvaluationConfig:
             enable_factual_correctness=os.getenv("EVAL_METRIC_FACTUAL", "true").lower() == "true",
             factual_correctness_mode=os.getenv("EVAL_FACTUAL_MODE", "f1"),
         ),
+        normalization=NormalizationConfig(
+            enable_normalization=os.getenv("EVAL_NORMALIZE_TEXT", "true").lower() == "true",
+        ),
         output=OutputConfig(
             output_dir=os.getenv("EVAL_OUTPUT_DIR", "results/evaluation"),
             export_csv=os.getenv("EVAL_EXPORT_CSV", "true").lower() == "true",
@@ -219,6 +233,7 @@ def load_evaluation_config() -> EvaluationConfig:
     logger.info("  Judge: %s/%s (temperature=%.1f)", config.judge.provider, config.judge.model_name, config.judge.temperature)
     logger.info("  API Key: %s", "CONFIGURATA" if config.judge.api_key else "MANCANTE")
     logger.info("  Retry: max=%d, base_delay=%.1fs", config.retry.max_retries, config.retry.base_delay_seconds)
+    logger.info("  Normalizzazione testo: %s", "ATTIVA" if config.normalization.enable_normalization else "DISATTIVA")
     logger.info("  Input: %s", config.input_file)
     logger.info("  Output: %s", config.output.output_dir)
 

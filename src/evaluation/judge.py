@@ -33,11 +33,6 @@ from src.evaluation.config import EvaluationConfig, JudgeLLMConfig, RetryConfig
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------- #
-#  Utilita' di riparazione JSON
-# --------------------------------------------------------------------------- #
-
-# Pattern per estrarre blocchi JSON da risposte con testo extra
 _JSON_BLOCK_RE = re.compile(
     r"```(?:json)?\s*\n?(.*?)\n?\s*```",
     re.DOTALL,
@@ -92,12 +87,10 @@ def repair_json_output(raw_text: str) -> str:
 
     text = raw_text.strip()
 
-    # Strategia 1: parsing diretto
     parsed = _try_parse_json(text)
     if parsed is not None:
         return text
 
-    # Strategia 2: estrazione da blocchi markdown
     md_match = _JSON_BLOCK_RE.search(text)
     if md_match:
         candidate = md_match.group(1).strip()
@@ -106,7 +99,6 @@ def repair_json_output(raw_text: str) -> str:
             logger.debug("JSON estratto da blocco markdown.")
             return candidate
 
-    # Strategia 3: ricerca oggetto JSON
     obj_match = _JSON_OBJECT_RE.search(text)
     if obj_match:
         candidate = obj_match.group(0)
@@ -115,7 +107,6 @@ def repair_json_output(raw_text: str) -> str:
             logger.debug("JSON oggetto estratto dalla risposta.")
             return candidate
 
-    # Strategia 4: ricerca array JSON
     arr_match = _JSON_ARRAY_RE.search(text)
     if arr_match:
         candidate = arr_match.group(0)
@@ -124,12 +115,11 @@ def repair_json_output(raw_text: str) -> str:
             logger.debug("JSON array estratto dalla risposta.")
             return candidate
 
-    # Strategia 5: pulizia prefissi/suffissi comuni
     cleaning_patterns = [
-        (r"^[^{\[]*", ""),       # rimuovi tutto prima di { o [
-        (r"[^}\]]*$", ""),       # rimuovi tutto dopo } o ]
-        (r",\s*([}\]])", r"\1"), # rimuovi virgole finali
-        (r"'", '"'),             # apici singoli -> doppi
+        (r"^[^{\[]*", ""),       
+        (r"[^}\]]*$", ""),       
+        (r",\s*([}\]])", r"\1"), 
+        (r"'", '"'),             
     ]
 
     cleaned = text
@@ -141,7 +131,6 @@ def repair_json_output(raw_text: str) -> str:
         logger.debug("JSON riparato dopo pulizia pattern.")
         return cleaned
 
-    # Strategia 6: tentativo con json_repair se disponibile
     try:
         import json_repair
         repaired = json_repair.repair_json(text)
@@ -159,10 +148,6 @@ def repair_json_output(raw_text: str) -> str:
     )
     return raw_text
 
-
-# --------------------------------------------------------------------------- #
-#  Classificazione errori per retry intelligente
-# --------------------------------------------------------------------------- #
 
 def _is_rate_limit_error(error: Exception) -> bool:
     """Determina se un'eccezione e' causata da rate limiting (HTTP 429).
@@ -217,10 +202,6 @@ def _is_transient_error(error: Exception) -> bool:
     return any(indicator in error_str for indicator in transient_indicators)
 
 
-# --------------------------------------------------------------------------- #
-#  Wrapper LLM robusto
-# --------------------------------------------------------------------------- #
-
 class RobustJudgeLLM(BaseChatModel):
     """Wrapper trasparente attorno al Judge LLM con retry e JSON-repair.
 
@@ -246,7 +227,6 @@ class RobustJudgeLLM(BaseChatModel):
     inner_llm: BaseChatModel
     retry_config: RetryConfig = RetryConfig()
 
-    # Contatori di osservabilita' (non frozen, aggiornati a runtime)
     total_calls: int = 0
     total_retries: int = 0
     total_repairs: int = 0
@@ -402,10 +382,6 @@ class RobustJudgeLLM(BaseChatModel):
         logger.info("  Tasso riparazione:  %s", stats["repair_rate"])
         logger.info("=" * 50)
 
-
-# --------------------------------------------------------------------------- #
-#  Factory
-# --------------------------------------------------------------------------- #
 
 def _create_groq_judge(config: JudgeLLMConfig) -> BaseChatModel:
     """Crea un'istanza di ChatGroq per il Judge.

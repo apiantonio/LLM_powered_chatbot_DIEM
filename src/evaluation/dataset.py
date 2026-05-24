@@ -20,6 +20,7 @@ Formato JSON di input atteso:
 """
 
 import json
+import re
 import time
 import logging
 from pathlib import Path
@@ -31,9 +32,96 @@ from src.evaluation.config import EvaluationConfig
 logger = logging.getLogger(__name__)
 
 
-# --------------------------------------------------------------------------- #
-#  Validazione del file JSON di input
-# --------------------------------------------------------------------------- #
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]+\)")
+
+_STANDALONE_URL_RE = re.compile(
+    r"https?://[^\s<>\"\')}\]]+",
+    re.IGNORECASE,
+)
+
+_MD_HEADER_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+
+_MD_BOLD_ITALIC_RE = re.compile(r"(\*{1,3}|_{1,3})(.*?)\1")
+
+_MD_STRIKETHROUGH_RE = re.compile(r"~~(.*?)~~")
+
+_MD_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+
+_MD_CODE_BLOCK_RE = re.compile(r"```[a-z]*\n?.*?\n?```", re.DOTALL)
+
+_MD_LIST_RE = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", re.MULTILINE)
+
+_MD_BLOCKQUOTE_RE = re.compile(r"^\s*>\s?", re.MULTILINE)
+
+_MD_HR_RE = re.compile(r"^\s*[-*_]{3,}\s*$", re.MULTILINE)
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+_MULTI_SPACE_RE = re.compile(r"[ \t]+")
+
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+
+
+def normalize_text_for_comparison(text: str) -> str:
+    """Normalizza il testo rimuovendo formattazione markdown e link URL.
+
+    Trasformazioni applicate (in ordine):
+    1. Blocchi di codice rimossi
+    2. Link markdown [testo](url) -> testo (preserva il testo informativo)
+    3. URL standalone rimossi
+    4. Header markdown (# ## ###) rimossi
+    5. Bold/italic (** * __ _) rimossi, testo preservato
+    6. Strikethrough (~~) rimosso, testo preservato
+    7. Inline code (``) rimosso, testo preservato
+    8. Marcatori di lista (- * + 1.) rimossi
+    9. Blockquote (>) rimossi
+    10. Linee orizzontali (--- ***) rimosse
+    11. Tag HTML residui rimossi
+    12. Normalizzazione case -> lowercase
+    13. Normalizzazione spazi e righe vuote
+
+    Args:
+        text: Testo da normalizzare (response o ground_truth).
+
+    Returns:
+        Testo normalizzato pronto per il confronto.
+    """
+    if not text:
+        return ""
+
+    result = text
+
+    result = _MD_CODE_BLOCK_RE.sub("", result)
+
+    result = _MD_LINK_RE.sub(r"\1", result)
+
+    result = _STANDALONE_URL_RE.sub("", result)
+
+    result = _MD_HEADER_RE.sub("", result)
+
+    for _ in range(3):
+        result = _MD_BOLD_ITALIC_RE.sub(r"\2", result)
+
+    result = _MD_STRIKETHROUGH_RE.sub(r"\1", result)
+
+    result = _MD_INLINE_CODE_RE.sub(r"\1", result)
+
+    result = _MD_LIST_RE.sub("", result)
+
+    result = _MD_BLOCKQUOTE_RE.sub("", result)
+
+    result = _MD_HR_RE.sub("", result)
+
+    result = _HTML_TAG_RE.sub("", result)
+
+    result = result.lower()
+
+    result = _MULTI_SPACE_RE.sub(" ", result)
+    result = _MULTI_NEWLINE_RE.sub("\n\n", result)
+    result = result.strip()
+
+    return result
+
 
 class DatasetValidationError(Exception):
     """Eccezione sollevata quando il file JSON di input non e' valido."""
@@ -100,9 +188,6 @@ def _validate_input_schema(data: dict) -> None:
             )
 
 
-# --------------------------------------------------------------------------- #
-#  Record intermedio per singolo sample elaborato
-# --------------------------------------------------------------------------- #
 
 class ProcessedSample:
     """Rappresenta un singolo sample elaborato dal sistema RAG.
@@ -140,17 +225,31 @@ class ProcessedSample:
         self.block_reason: Optional[str] = None
         self.error: Optional[str] = None
 
-    def to_ragas_dict(self) -> Dict[str, Any]:
+    def to_ragas_dict(self, enable_normalization: bool = True) -> Dict[str, Any]:
         """Converte il sample nel formato atteso da RAGAS EvaluationDataset.
+
+        Quando la normalizzazione e' abilitata, response e reference
+        vengono ripuliti da formattazione markdown, link URL e differenze
+        di case prima del confronto RAGAS.
+
+        Args:
+            enable_normalization: Se True, normalizza response e reference.
 
         Returns:
             Dizionario con chiavi user_input, retrieved_contexts, response, reference.
         """
+        response = self.response if self.response else ""
+        reference = self.ground_truth
+
+        if enable_normalization:
+            response = normalize_text_for_comparison(response)
+            reference = normalize_text_for_comparison(reference)
+
         return {
             "user_input": self.question,
             "retrieved_contexts": self.retrieved_contexts if self.retrieved_contexts else [""],
-            "response": self.response if self.response else "",
-            "reference": self.ground_truth,
+            "response": response,
+            "reference": reference,
         }
 
     def to_full_dict(self) -> Dict[str, Any]:
@@ -164,6 +263,8 @@ class ProcessedSample:
             "question": self.question,
             "ground_truth": self.ground_truth,
             "response": self.response,
+            "response_normalized": normalize_text_for_comparison(self.response),
+            "ground_truth_normalized": normalize_text_for_comparison(self.ground_truth),
             "retrieved_contexts": self.retrieved_contexts,
             "was_blocked": self.was_blocked,
             "block_reason": self.block_reason,
@@ -182,10 +283,6 @@ class ProcessedSample:
             },
         }
 
-
-# --------------------------------------------------------------------------- #
-#  Builder principale
-# --------------------------------------------------------------------------- #
 
 class EvaluationDatasetBuilder:
     """Costruisce un EvaluationDataset RAGAS a partire dal file JSON di input.
@@ -285,7 +382,7 @@ class EvaluationDatasetBuilder:
                 "Nessun sample caricato. Chiama load_from_json() prima di process_with_agent()."
             )
 
-        from agent.tools import get_last_search_meta
+        from src.agent.tools import get_last_search_meta
 
         total = len(self._raw_samples)
         self.processed_samples = []
@@ -306,7 +403,6 @@ class EvaluationDatasetBuilder:
                 i + 1, total, sample.question[:80],
             )
 
-            # Reset memoria agente per ogni domanda (evaluation indipendente)
             agent.reset_memory()
 
             start_time = time.time()
@@ -318,11 +414,9 @@ class EvaluationDatasetBuilder:
                 sample.was_blocked = result.get("blocked", False)
                 sample.block_reason = result.get("block_reason")
 
-                # Estrai contesti recuperati dal modulo tools
                 search_meta = get_last_search_meta()
                 sample.retrieved_contexts = search_meta.get("retrieved_texts", [])
 
-                # Estrai trace dall'agente
                 traces = agent.get_all_traces()
                 if traces:
                     sample.trace = traces[-1]
@@ -353,11 +447,9 @@ class EvaluationDatasetBuilder:
 
             self.processed_samples.append(sample)
 
-            # Salvataggio intermedio per recovery
             if self.config.pipeline.save_intermediate:
                 self._save_intermediate(sample)
 
-            # Pausa tra domande per rispettare rate limit
             if i < total - 1 and self.config.pipeline.batch_delay_seconds > 0:
                 time.sleep(self.config.pipeline.batch_delay_seconds)
 
@@ -372,6 +464,10 @@ class EvaluationDatasetBuilder:
 
         Filtra i sample con errori o bloccati dai guardrail, poiche'
         non hanno risposte valide per la valutazione.
+
+        La normalizzazione del testo (rimozione markdown, URL, case)
+        viene applicata in base alla configurazione
+        (config.normalization.enable_normalization).
 
         Returns:
             Istanza di EvaluationDataset pronta per evaluate().
@@ -392,7 +488,6 @@ class EvaluationDatasetBuilder:
                 "ragas non installato. Installa con: pip install ragas"
             ) from e
 
-        # Filtra sample validi (non bloccati e senza errori)
         valid_samples = [
             s for s in self.processed_samples
             if not s.was_blocked and s.error is None and s.response.strip()
@@ -412,7 +507,19 @@ class EvaluationDatasetBuilder:
                 "Tutti i sample sono stati bloccati o hanno generato errori."
             )
 
-        ragas_list = [s.to_ragas_dict() for s in valid_samples]
+        enable_norm = self.config.normalization.enable_normalization
+        if enable_norm:
+            logger.info(
+                "Normalizzazione testo ATTIVA: rimozione markdown, URL, "
+                "normalizzazione case per confronto RAGAS."
+            )
+        else:
+            logger.info("Normalizzazione testo DISATTIVA: confronto raw.")
+
+        ragas_list = [
+            s.to_ragas_dict(enable_normalization=enable_norm)
+            for s in valid_samples
+        ]
 
         dataset = EvaluationDataset.from_list(ragas_list)
 

@@ -193,6 +193,15 @@ class QueryOptimizerConfig:
         "Last Q: \"Parlami di Ingegneria Informatica\" Last A: \"...\" → "
         "New query: \"Dove si trova l'aula 10?\" → "
         "Output: Dove si trova l'aula 10?"
+        "CRITICAL LANGUAGE RULE: The output MUST always be in Italian, "
+        "regardless of the input language. If the query is in English or any "
+        "other language, translate it to Italian while resolving coreferences.\n"
+        "Last Q: \"Chi è il prof. Rossi?\" Last A: \"Il prof. Rossi insegna...\" → "
+        "New query: \"What are his office hours?\" → "
+        "Output: Qual è il ricevimento del prof. Rossi?\n\n"
+        "Last Q: \"Parlami del corso di Informatica triennale\" Last A: \"Il corso prevede...\" → "
+        "New query: \"What are its contents?\" → "
+        "Output: Quali sono i contenuti del corso di Informatica triennale?"
     )
 
     rewrite_human_template: str = (
@@ -214,11 +223,19 @@ class QueryOptimizerConfig:
         "Do NOT add university names like 'Bologna', 'Roma', 'Milano'.\n"
         "4. Only vary the sentence structure and synonyms, not the entities.\n"
         "5. Output one variant per line, no numbering, no explanations, no preamble.\n\n"
+        "6. CRITICAL: If the input question is in English or any other language, "
+        "translate it to Italian FIRST, then generate the Italian rephrasings. "
+        "ALL output must be in Italian regardless of input language.\n\n"
         "Example input: 'Quali sono i corsi di laurea triennale offerti dal DIEM?'\n"
         "Example output:\n"
         "Quali corsi di laurea triennale sono disponibili presso il DIEM?\n"
         "Elenco dei corsi triennali del DIEM\n"
-        "Offerta formativa triennale del DIEM"
+        "Offerta formativa triennale del DIEM\n\n"
+        "Example input (English): 'Who teaches Machine Learning at DIEM?'\n"
+        "Example output:\n"
+        "Chi insegna Machine Learning al DIEM?\n"
+        "Qual è il docente del corso di Machine Learning al DIEM?\n"
+        "Chi è il professore di Machine Learning presso il DIEM?"
     )
 
     multi_query_human_template: str = "{question}"
