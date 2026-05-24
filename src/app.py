@@ -56,7 +56,6 @@ def init_session_agent():
                 settings=settings,
                 engine=engine,
                 enable_scope_guardrail=True,
-                max_memory_turns=10,
                 embedding_model=embedding_model,
             )
             status.update(label="Motore AI pronto!", state="complete", expanded=False)
@@ -387,7 +386,7 @@ def render_chat_interface():
         prompt = chat_input_prompt
 
     for msg in st.session_state.messages:
-        avatar = "assets/user.ico" if msg["role"] == "user" else "assets/chat.ico"
+        avatar = "assets/student.ico" if msg["role"] == "user" else "assets/chat.ico"
         with st.chat_message(msg["role"], avatar=avatar):
             anchor = "<span class='user-msg-anchor'></span>" if msg["role"] == "user" else "<span class='bot-msg-anchor'></span>"
             content_to_render = format_latex(msg['content']) if msg["role"] == "assistant" else msg['content']
@@ -414,7 +413,7 @@ def render_chat_interface():
 
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user", avatar="assets/user.ico"):
+        with st.chat_message("user", avatar="assets/student.ico"):
             st.markdown(f"<span class='user-msg-anchor'></span>{prompt}", unsafe_allow_html=True)
         
         with st.chat_message("assistant", avatar="assets/chat.ico"):
