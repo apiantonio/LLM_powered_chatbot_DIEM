@@ -1,0 +1,69 @@
+﻿index,question,ground_truth,response,was_blocked,error,processing_time_ms,ctx_precision,ctx_recall,response_relevancy,faithfulness,factual_correctness(mode=f1)
+1,Chi è Antonio Greco e quali corsi insegna nel 2025?,"Antonio Greco e' Professore Associato presso il Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) dell'Universita' degli Studi di Salerno. Si e' laureato con lode in Ingegneria Informatica nel 2014 e ha conseguito il dottorato nel 2018 presso la stessa universita'. Dal novembre 2022 e' Ricercatore RTD/B e ricopre il ruolo di Delegato all'Orientamento in Ingresso; dal maggio 2024 e' membro del Collegio di Dottorato in Ingegneria dell'Informazione. E' membro del laboratorio MIVIA e le sue ricerche si concentrano su Computer Vision, Deep Learning e riconoscimento automatico di volti, emozioni, attivita' umane e oggetti, anche in contesti robotici e di veicoli autonomi. Nel 2025 i corsi di cui e' titolare includono: Advanced Machine Learning, Artificial Intelligence for Cybersecurity, Autonomous and Connected Vehicles, Medical Image Processing and Visualization e Natural Language Processing and Large Language Models.","Antonio Greco (matricola 026557) è un professore del DIEM. Nel 2025 insegna i seguenti corsi:
+
+- **Advanced Machine Learning** (corso di dottorato, cod. 8860500002, SSD ING‑INF/05, 3 CFU, 18 h lezione, secondo semestre)【1†L1-L13】  
+- **Artificial Intelligence for Cybersecurity** (corso di laurea magistrale in Ingegneria Informatica, cod. 0622700094, SSD ING‑INF/05, 3 CFU, 24 h lezione + 16 h esercitazione + 8 h laboratorio, secondo semestre, a scelta dello studente)【2†L1-L12】【3†L1-L12】  
+- **Autonomous and Connected Vehicles** (corso di laurea magistrale in Ingegneria Informatica, cod. 0622700127, SSD ING‑INF/05, 3 CFU lezione 24 h, 1 h laboratorio 8 h, 2 h esercitazione 16 h, primo semestre, curriculum Artificial Intelligence and Intelligent Robotics)【4†L1-L13】【5†L1-L4】【7†L1-L4】  
+
+Le informazioni sono tratte dalle schede didattiche dei corsi per l’anno accademico 2025/2026.",False,,9331.3,0.9761904761742063,0.2,0.8542932813675508,1.0,0.31
+2,Quali sono i requisiti di propedeuticità per sostenere l'esame di Basi di Dati nella laurea triennale in Ingegneria Informatica?,"Secondo il piano degli studi della laurea triennale in Ingegneria Informatica per l'A.A. 2025/2026, per sostenere l'esame di Basi di Dati e' necessario aver preventivamente superato i seguenti tre esami: Algoritmi e Strutture Dati, Analisi dei Segnali e Elettrotecnica.","Per sostenere l’esame di **Basi di dati** nella laurea triennale in Ingegneria Informatica è necessario aver superato i seguenti esami propedeutici:
+
+- Algoritmi e Strutture Dati  
+- Analisi dei Segnali  
+- Elettrotecnica  
+
+Questa indicazione è riportata nel regolamento del corso di laurea per l’anno accademico 2025/2026【2†L26-L30】.",False,,9221.0,0.9999999999,0.5,0.7130667218415468,0.3333333333333333,0.5
+3,In quali progetti è attualmente coinvolto il professore Pierluigi Ritrovato?,"Il professor Pierluigi Ritrovato e' attualmente coinvolto in due progetti attivi, entrambi finanziati dalla Commissione Europea nell'ambito del POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA: nel primo ricopre il ruolo di Coordinatore di Progetto, con un finanziamento di 317.915,18 EUR per il periodo ottobre 2022 - dicembre 2027; nel secondo (variante DI) ricopre il ruolo di Responsabile Finanziario, con un finanziamento di 116.000,00 EUR per lo stesso periodo.","Il professore Pierluigi Ritrovato è attualmente coinvolto nei seguenti progetti di ricerca:
+
+1. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA**  
+   - Ruolo: Coordinatore del progetto  
+   - Finanziamento: Commissione Europea (fondi europei e internazionali)  
+   - Importo: 317.915,18 €  
+   - Periodo: 1 ottobre 2022 – 31 dicembre 2027  
+   - Fonte: documento 3  
+
+2. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA – DI**  
+   - Ruolo: Responsabile finanziario  
+   - Finanziamento: Commissione Europea (fondi europei e internazionali)  
+   - Importo: 116.000,00 €  
+   - Periodo: 1 ottobre 2022 – 31 dicembre 2027  
+   - Fonte: documento 6  
+
+Gli altri progetti presenti nella bacheca del professore risultano conclusi (ad esempio, TBIZ: RESEARCH AND IDEAS FOR BUSINESS, ESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT, INTERNAZIONALIZZAZIONE DELL’ECONOMIA ITALIANA, SEMANTIC VIDEO ANALYSIS AND BIG DATA).  
+
+Per ulteriori dettagli, è possibile consultare la pagina dedicata ai progetti del professore Ritrovato sul sito del DIEM.",False,,11982.9,0.4444444444296296,1.0,0.7607330019892311,0.6428571428571429,0.89
+4,Quali sono gli strumenti disponibili nel laboratorio di Robotica?,"Il laboratorio di Robotica (LabROB) dispone della seguente strumentazione: 2 robot antropomorfi Comau Smart-Six montati su slitta attuata, 1 robot UR10 (Universal Robot), 1 robot Franka Emika a 7 gradi di liberta', 1 robot Clearpath Husky customizzato a trazione differenziale, 3 stereo camere intelligenti Zed, 1 endoscopio, 1 unita' di misura inerziale (IMU), 1 laser scanner 2D, 4 sensori di forza/coppia, 3 gripper pneumatici a due e tre dita, 1 gripper elettrico a due dita, 1 end-effector per l'ablazione dentale, 1 stampante 3D e 9 postazioni PC con Matlab e ROS2.","Nel laboratorio di Robotica del DIEM sono disponibili i seguenti strumenti:
+
+- 2 robot antropomorfi Comau Smart-Six montati su slitta attuata  
+- 1 robot UR10 (Universal Robot)  
+- 1 robot Franka Emika a 7 gradi di libertà  
+- 1 robot Clearpath Husky customizzato a trazione differenziale  
+- 3 stereo camere intelligenti ZED  
+- 1 endoscopio  
+- 1 unità di misurazioni inerziali (IMU)  
+- 1 laser scanner 2D  
+- 4 sensori di forza/coppia  
+- 3 gripper pneumatici a due e tre dita  
+- 1 gripper elettrico a due dita  
+- 1 end-effector per l’ablazione dentale  
+- 1 stampante 3D  
+- 9 postazioni PC con Matlab e ROS2  
+
+Fonte: elenco di strumentazione del laboratorio di Robotica (ID 2) disponibile sul sito del DIEM【0†L1-L15】.",False,,7619.7,0.9999999999,1.0,0.6693576901320256,1.0,1.0
+5,Parlami dei percorsi di eccellenza del dipartimento e delle iniziative per le scuole.,"I percorsi di eccellenza si articolano in tre azioni principali. La prima riguarda i percorsi dedicati agli studenti piu' meritevoli, che includono attivita' di approfondimento sulla medicina digitale, potenziamento di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita') e tirocini curriculari presso aziende e istituzioni di rilievo. La seconda azione riguarda il rafforzamento dell'offerta formativa del dottorato, con l'introduzione di un curriculum specifico in medicina digitale, visiting professor internazionali e un periodo obbligatorio all'estero di almeno 6 mesi, con possibilita' di conseguire il titolo Doctor Europaeus. La terza azione riguarda il potenziamento dei corsi di laurea, in particolare del Corso di Laurea in Ingegneria dell'Informazione per la Medicina Digitale (L-8) e del Corso di Laurea Magistrale in Information Engineering for Digital Medicine (LM-32), con l'obiettivo di formare professionisti capaci di progettare sistemi e applicazioni per la medicina digitale. Per quanto riguarda le iniziative per le scuole, il DIEM promuove progetti di PCTO (alternanza scuola-lavoro) rivolti agli studenti delle scuole superiori, tutti inseriti nell'ambito del programma nazionale Programma il Futuro (MIUR) per la diffusione del pensiero computazionale. I progetti basati su Code.org comprendono unita' didattiche come Algoritmi e Programmazione e Realizzazione di App, in cui gli studenti seguono lezioni online su AppLab e realizzano un elaborato finale con incontri preparatori presso il DIEM. Il progetto RobotCup@School e' invece una competizione di programmazione di robot umanoidi aperta agli studenti del quinto anno, che include seminari introduttivi, formazione sulla programmazione del robot e la gara vera e propria; il referente e' il prof. Gennaro Percannella, coordinatore della RobotCup@School 2020 e delegato del DIEM per l'orientamento in ingresso. Tutte le attivita' sono gratuite per le scuole, che sostengono unicamente le spese di viaggio e trasferimento verso i laboratori e le aule dell'Universita' di Salerno.","**Percorsi di eccellenza del DIEM**  
+- Il DIEM è stato riconosciuto **Dipartimento di Eccellenza** per il quinquennio 2023‑2027 dal MUR, con un finanziamento di oltre 7 milioni di euro per il progetto **IT4DiMe – Information Technologies for Digital Medicine**【2†L1-L4】.  
+- Le attività di eccellenza si articolano in due principali direttrici:  
+  1. **Rafforzamento del dottorato di ricerca in Ingegneria dell’Informazione** (curriculum specifico sulla medicina digitale, visiting professor internazionali, periodo obbligatorio all’estero ≥ 6 mesi, possibilità di conseguire il titolo *Doctor Europaeus*)【3†L1-L6】.  
+  2. **Potenziamento dei percorsi di laurea magistrale (LM‑32) in Information Engineering for Digital Medicine** e del corso di laurea triennale (L‑8) in Ingegneria dell’Informazione per la Medicina Digitale, con:  
+     - introduzione di **percorsi di eccellenza** per gli studenti con migliori risultati (approfondimento sulla medicina digitale, sviluppo di competenze trasversali – lingua inglese, progetti di ricerca, innovazione tecnologica, iniziative imprenditoriali);  
+     - coinvolgimento di **esperti qualificati** di enti e aziende nel programma didattico;  
+     - realizzazione di **tirocin formativi curriculari** presso aziende e istituzioni di rilievo【1†L1-L6】.  
+
+**Iniziative per le scuole (PCTO / orientamento)**  
+- **Programma il Futuro** (MIUR): diffusione dei concetti di base dell’informatica e del pensiero computazionale. Il DIEM propone due unità del corso *Princìpi dell’Informatica* di Code.org:  
+  - unità 3 “Algoritmi e Programmazione”;  
+  - unità 5 “La realizzazione di App”.  
+  Ogni progetto prevede 20 studenti, 50 ore di attività e segue le fasi di adesione, formazione a scuola e incontro in università【4†L1-L8】【5†L1-L8】.  
+- **RobotCup@School**: competizione di programmazione di robot umanoidi per interazione e manipolazione di oggetti, rivolta esclusivamente agli studenti del quinto anno delle scuole superiori. Promossa dal corso di laurea in Ingegneria Informatica del DIEM, con coordinatore **Prof. Gennaro Percannella** (delegato all’orientamento in ingresso). L’iniziativa ha finalità di orientamento verso una scelta universitaria consapevole e tratta tematiche di robotica cognitiva, visione e intelligenza artificiale【6†L1-L8】【7†L1-L8】.  
+
+Per ulteriori dettagli sui percorsi di eccellenza e sulle iniziative scolastiche, è possibile consultare le pagine del sito del DIEM dedicate alla sezione *Eccellenza* e *Alternanza scuola‑lavoro*.",False,,10532.8,0.3333333333,0.375,0.5267977956348703,0.5555555555555556,

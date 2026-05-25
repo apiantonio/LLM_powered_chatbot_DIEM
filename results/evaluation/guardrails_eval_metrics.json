@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "run": {
+      "started_at": "2026-05-23T23:05:13.472835",
+      "dataset_name": "DIEM Guardrails Test Suite",
+      "total_samples": 80,
+      "completed_at": "2026-05-23T23:10:46.853241",
+      "duration_seconds": 333.4
+    },
+    "guardrails_model": "llama-3.3-70b-versatile",
+    "avg_latency_ms": 207.0
+  },
+  "results": {
+    "input": {
+      "check_type": "input",
+      "total": 38,
+      "correct": 38,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion": {
+        "tp": 23,
+        "fp": 0,
+        "tn": 15,
+        "fn": 0
+      },
+      "errors": []
+    },
+    "meta": {
+      "check_type": "meta",
+      "total": 24,
+      "correct": 24,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion": {
+        "tp": 15,
+        "fp": 0,
+        "tn": 9,
+        "fn": 0
+      },
+      "errors": []
+    },
+    "output": {
+      "check_type": "output",
+      "total": 18,
+      "correct": 18,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion": {
+        "tp": 8,
+        "fp": 0,
+        "tn": 10,
+        "fn": 0
+      },
+      "errors": []
+    }
+  }
+}

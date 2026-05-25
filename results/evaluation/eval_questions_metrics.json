@@ -1,0 +1,1011 @@
+{
+  "metadata": {
+    "run": {
+      "started_at": "2026-05-23T17:49:12.597554",
+      "completed_at": null,
+      "duration_seconds": 0,
+      "status": "running"
+    },
+    "dataset": {
+      "dataset_name": "Nome descrittivo del tuo dataset",
+      "description": "Descrizione opzionale del run di evaluation",
+      "source_file": "data\\evaluation\\questions.json",
+      "num_samples": 24,
+      "loaded_at": "2026-05-23T17:49:12.598554"
+    },
+    "judge": {
+      "provider": "ollama",
+      "model": "qwen2.5",
+      "temperature": 0.0,
+      "stats": {
+        "total_calls": 390,
+        "total_retries": 0,
+        "total_repairs": 25,
+        "total_rate_limits": 0,
+        "repair_rate": "6.4%"
+      }
+    },
+    "metrics_enabled": [
+      "ContextPrecision",
+      "ContextRecall",
+      "ResponseRelevancy",
+      "Faithfulness",
+      "FactualCorrectness"
+    ],
+    "total_samples": 24,
+    "valid_samples": 24,
+    "blocked_samples": 0,
+    "error_samples": 0
+  },
+  "aggregated_metrics": {
+    "ctx_precision": {
+      "mean": 0.5701,
+      "median": 0.4762,
+      "std": 0.4173,
+      "min": 0.0,
+      "max": 1.0,
+      "count": 23
+    },
+    "ctx_recall": {
+      "mean": 0.6238,
+      "median": 0.7143,
+      "std": 0.3993,
+      "min": 0.0,
+      "max": 1.0,
+      "count": 23
+    },
+    "response_relevancy": {
+      "mean": 0.6492,
+      "median": 0.7124,
+      "std": 0.2206,
+      "min": 0.0,
+      "max": 0.8491,
+      "count": 24
+    },
+    "faithfulness": {
+      "mean": 0.6395,
+      "median": 0.5,
+      "std": 0.3282,
+      "min": 0.0,
+      "max": 1.0,
+      "count": 23
+    },
+    "factual_correctness(mode=f1)": {
+      "mean": 0.6245,
+      "median": 0.71,
+      "std": 0.3201,
+      "min": 0.0,
+      "max": 1.0,
+      "count": 22
+    }
+  },
+  "per_sample_results": [
+    {
+      "index": 1,
+      "question": "Quali corsi di laurea sono offerti dal DIEM?",
+      "ground_truth": "Il DIEM offre i seguenti corsi di laurea: due lauree triennali (classe L-8) in Ingegneria Informatica e in Ingegneria dell'Informazione per la Medicina Digitale; tre lauree magistrali in Electrical Engineering for Digital Energy (LM-28), Information Engineering for Digital Medicine (LM-32) e Ingegneria Informatica (LM-32).",
+      "response": "Il DIEM offre i seguenti corsi di laurea:\n\n- **Ingegneria dell'Informazione per la Medicina Digitale** (presente sia come laurea triennale che magistrale, come indicato dal percorso di eccellenza che si affianca alla didattica ordinaria per entrambi i livelli)\n- **Ingegneria Informatica** (laurea triennale) e **Ingegneria Informatica Magistrale** (laurea magistrale)\n- **Information Engineering for Digital Medicine** (corso di laurea con percorso di eccellenza per laurea triennale e magistrale)\n- **Electrical Engineering for Digital Energy** (corso di laurea con percorso di eccellenza per laurea triennale e magistrale)\n- **Laurea magistrale in Digital Health and Bioinformatic Engineering** (menzionata nella sezione di internazionalizzazione come corso di laurea magistrale cui possono accedere gli studenti dei corsi in Ingegneria dell'Informazione per la Medicina Digitale)",
+      "response_normalized": "il diem offre i seguenti corsi di laurea:\ningegneria dell'informazione per la medicina digitale (presente sia come laurea triennale che magistrale, come indicato dal percorso di eccellenza che si affianca alla didattica ordinaria per entrambi i livelli)\ningegneria informatica (laurea triennale) e ingegneria informatica magistrale (laurea magistrale)\ninformation engineering for digital medicine (corso di laurea con percorso di eccellenza per laurea triennale e magistrale)\nelectrical engineering for digital energy (corso di laurea con percorso di eccellenza per laurea triennale e magistrale)\nlaurea magistrale in digital health and bioinformatic engineering (menzionata nella sezione di internazionalizzazione come corso di laurea magistrale cui possono accedere gli studenti dei corsi in ingegneria dell'informazione per la medicina digitale)",
+      "ground_truth_normalized": "il diem offre i seguenti corsi di laurea: due lauree triennali (classe l-8) in ingegneria informatica e in ingegneria dell'informazione per la medicina digitale; tre lauree magistrali in electrical engineering for digital energy (lm-28), information engineering for digital medicine (lm-32) e ingegneria informatica (lm-32).",
+      "retrieved_contexts": [
+        "Corso di Laurea: ingegneria dell informazione per la medicina digitale | Sezione: informazioni_corso\n\nPer gli studenti a cui, in base al punteggio, è attribuibile l’OFA di  Matematica di Base , il DIEM organizza un corso intensivo a settembre, nei giorni immediatamente precedenti l’avvio dei corsi regolari del primo anno. Nella seconda metà di ottobre, immediatamente dopo la chiusura delle immatricolazioni, vengono altresì erogati due ulteriori corsi: uno di  Matematica di Base  e uno di  Fisica di Base.",
+        "Corso di Laurea: ingegneria informatica | Sezione: informazioni_corso\n\nPer gli studenti a cui, in base al punteggio, è attribuibile l’OFA di  Matematica di Base , il DIEM organizza un corso intensivo a settembre, nei giorni immediatamente precedenti l’avvio dei corsi regolari del primo anno. Nella seconda metà di ottobre, immediatamente dopo la chiusura delle immatricolazioni, vengono altresì erogati due ulteriori corsi: uno di  Matematica di Base  e uno di  Fisica di Base .",
+        "Corso di Laurea: ingegneria informatica magistrale | Sezione: informazioni_corso\n\nPercorso di Eccellenza - Laurea Triennale e Laurea Magistrale \n \n \n \n   Sommario \n \n \n \n Il DIEM prevede, per gli studenti più meritevoli delle Lauree Triennali e Magistrali, percorsi di potenziamento che si affiancano alla didattica ordinaria e offrono la possibilità di acquisire conoscenze e competenze avanzate e interdisciplinari nell’ambito dell’Ingegneria Informatica. \n Esso si articola in attività formative aggiuntive tenute in forma seminariale e dal carattere fortemente applicativo, dove la valutazione avviene in forma di brevi test e/o previa presentazione di un breve elaborato finale.",
+        "Corso di Laurea: information engineering for digital medicine | Sezione: informazioni_corso\n\nPresentazione   Il DIEM svolge una intensa attività di  Internazionalizzazione  grazie alla quale tutti gli studenti dei Corsi di laurea in Ingegneria dell'Informazione per la Medicina Digitale e magistrale in Digital Health and Bioinformatic Engineering possono studiare e svolgere la propria tesi o tirocinio all'estero o conseguire un doppio titolo.   Inoltre, il Dipartimento è dotato di una apposita  Commissione Internazionalizzazione  che promuove le attività di internazionalizzazione sul piano della didattica (corsi di laurea a doppio titolo), della mobilità studentesca (in ingresso e in uscita) della mobilità del personale docente e della ricerca promuovendo collaborazioni con altri",
+        "Corso di Laurea: information engineering for digital medicine | Sezione: informazioni_corso\n\nPercorso di Eccellenza - Laurea Triennale e Laurea Magistrale \n \n \n \n   Sommario \n \n \n \n Il DIEM prevede, per gli studenti più meritevoli delle Lauree Triennali e Magistrali, percorsi di potenziamento che si affiancano alla didattica ordinaria e offrono la possibilità di acquisire conoscenze e competenze avanzate e interdisciplinari nell’ambito dell’Ingegneria Informatica. \n Esso si articola in attività formative aggiuntive tenute in forma seminariale e dal carattere fortemente applicativo, dove la valutazione avviene in forma di brevi test e/o previa presentazione di un breve elaborato finale.",
+        "Corso di Laurea: electrical engineering for digital energy | Sezione: informazioni_corso\n\nPercorso di Eccellenza - Laurea Triennale e Laurea Magistrale \n \n \n \n   Sommario \n \n \n \n Il DIEM prevede, per gli studenti più meritevoli delle Lauree Triennali e Magistrali, percorsi di potenziamento che si affiancano alla didattica ordinaria e offrono la possibilità di acquisire conoscenze e competenze avanzate e interdisciplinari nell’ambito dell’Ingegneria Informatica. \n Esso si articola in attività formative aggiuntive tenute in forma seminariale e dal carattere fortemente applicativo, dove la valutazione avviene in forma di brevi test e/o previa presentazione di un breve elaborato finale.",
+        "Corso di Laurea: ingegneria informatica | Sezione: informazioni_corso\n\nPercorso di Eccellenza - Laurea Triennale e Laurea Magistrale \n \n \n \n   Sommario \n \n \n \n Il DIEM prevede, per gli studenti più meritevoli delle Lauree Triennali e Magistrali, percorsi di potenziamento che si affiancano alla didattica ordinaria e offrono la possibilità di acquisire conoscenze e competenze avanzate e interdisciplinari nell’ambito dell’Ingegneria Informatica. \n Esso si articola in attività formative aggiuntive tenute in forma seminariale e dal carattere fortemente applicativo, dove la valutazione avviene in forma di brevi test e/o previa presentazione di un breve elaborato finale."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 60794.6,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa",
+          "search_offerta_formativa",
+          "search_offerta_formativa",
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 9,
+        "total_duration_ms": 60124.4
+      },
+      "metrics": {
+        "ctx_precision": 0.19999999998,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.7341649891300984,
+        "faithfulness": 0.875,
+        "factual_correctness(mode=f1)": 0.46
+      }
+    },
+    {
+      "index": 2,
+      "question": "Se ho un punteggio di 20 al mio TOLC, con punteggio 3 in matematica, posso iscrivermi alla laurea triennale in ingegneria informatica nel 2025 oppure devo eseguire gli OFA?",
+      "ground_truth": "Con un punteggio totale TOLC-I di 20/50 e un punteggio nella sezione Matematica di 3/15, non viene soddisfatto il requisito di Matematica >= 5 necessario per l'immatricolazione senza Obblighi Formativi Aggiuntivi. Secondo i criteri del corso di laurea triennale in Ingegneria Informatica per l'A.A. 2025/2026, l'immatricolazione senza OFA richiede un punteggio totale >= 20 insieme a un punteggio in Matematica >= 5, oppure un punteggio totale compreso tra 16 e 19 insieme a un punteggio in Matematica >= 8. Poiche' il punteggio matematico e' inferiore a 5, sara' necessario assolvere gli OFA di Matematica di Base durante il primo anno tramite corsi di recupero o test specifici. L'immatricolazione resta comunque possibile, ma con l'obbligo di colmare le lacune matematiche previsto dal regolamento.",
+      "response": "Per immatricolarsi alla laurea triennale in Ingegneria Informatica senza Obblighi Formativi Aggiuntivi (OFA) nel 2025 è necessario ottenere un punteggio totale TOLC‑I **≥ 20/50** **e** un punteggio nella sezione di Matematica **≥ 5/15**【5†L1-L4】.  \n\nCon un punteggio totale di 20 ma solo 3 in Matematica, il requisito sulla sezione Matematica non è soddisfatto; pertanto **dovrai sostenere gli OFA**.  \n\nPer ulteriori dettagli consulta il regolamento del corso di laurea per l’a.a. 2025/2026.",
+      "response_normalized": "per immatricolarsi alla laurea triennale in ingegneria informatica senza obblighi formativi aggiuntivi (ofa) nel 2025 è necessario ottenere un punteggio totale tolc‑i ≥ 20/50 e un punteggio nella sezione di matematica ≥ 5/15【5†l1-l4】. \n\ncon un punteggio totale di 20 ma solo 3 in matematica, il requisito sulla sezione matematica non è soddisfatto; pertanto dovrai sostenere gli ofa. \n\nper ulteriori dettagli consulta il regolamento del corso di laurea per l’a.a. 2025/2026.",
+      "ground_truth_normalized": "con un punteggio totale tolc-i di 20/50 e un punteggio nella sezione matematica di 3/15, non viene soddisfatto il requisito di matematica >= 5 necessario per l'immatricolazione senza obblighi formativi aggiuntivi. secondo i criteri del corso di laurea triennale in ingegneria informatica per l'a.a. 2025/2026, l'immatricolazione senza ofa richiede un punteggio totale >= 20 insieme a un punteggio in matematica >= 5, oppure un punteggio totale compreso tra 16 e 19 insieme a un punteggio in matematica >= 8. poiche' il punteggio matematico e' inferiore a 5, sara' necessario assolvere gli ofa di matematica di base durante il primo anno tramite corsi di recupero o test specifici. l'immatricolazione resta comunque possibile, ma con l'obbligo di colmare le lacune matematiche previsto dal regolamento.",
+      "retrieved_contexts": [
+        "del test di accesso CISIA TOLC-I utilizzato per l’immatricolazione al corso di laurea triennale con il punteggio di almeno 28/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la",
+        "derivano le regole sull’attribuzione degli Obblighi Formativi Aggiuntivi (OFA) descritte nel seguito.  2. Possono immatricolarsi al Corso di Laurea in Ingegneria Informatica senza Obblighi Formativi Aggiuntivi (OFA) gli studenti che hanno partecipato al TOLC-I ottenendo una votazione assoluta (esclusa la votazione riportata nella sezione di lingua inglese) non inferiore a 20/50 insieme a una",
+        "le regole sull’attribuzione degli Obblighi Formativi Aggiuntivi (OFA) descritte nel seguito. 2. Possono immatricolarsi al Corso di Laurea in Ingegneria Informatica senza Obblighi Formativi Aggiuntivi (OFA) gli studenti che hanno partecipato al TOLC-I ottenendo una votazione assoluta (esclusa l’eventuale votazione riportata nella sezione di lingua inglese) non inferiore a 20/50 insieme a una",
+        "dal Centro Linguistico di Ateneo, con le modalità dallo stesso Centro stabilite ● Sezione di lingua inglese del test di accesso CISIA TOLC-I utilizzato per l’immatricolazione al corso di laurea triennale con il punteggio di almeno 28/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la possibilità di effettuare l’accertamento mediante una apposita commissione",
+        "I criteri per l’attribuzione degli OFA sono indicati nella tabella:   Tabella 1: Attribuzione OFA in base all’esito del test TOLC-I Punteggio totale del test Punteggio della sezione Matematica  Esito Maggiore di o uguale a 20 Maggiore di o uguale a 5 Immatricolazione senza OFA Minore di 20 e maggiore di o uguale a 16 Maggiore di o uguale a 8 Maggiore di o uguale a 20 Minore di 5 Immatricolazione",
+        "al corso di laurea triennale con il punteggio di almeno 28/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la possibilità di effettuare l’accertamento mediante una apposita commissione nominata dal Consiglio stesso. 3. Per gli studenti stranieri che partecipano al programma internazionale di studio integrato, l’accesso è regolamentato da regole specifiche definite",
+        "livello B1 predisposto dal Centro Linguistico di Ateneo, con le modalità dallo stesso Centro stabilite ● Sezione di lingua inglese del test di accesso CISIA TOLC-I utilizzato per l’immatricolazione al corso di laurea triennale con il punteggio di almeno 24/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la possibilità di effettuare l’accertamento mediante una"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 14357.0,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 13726.2
+      },
+      "metrics": {
+        "ctx_precision": 0.36666666664833336,
+        "ctx_recall": 0.0,
+        "response_relevancy": 0.6418354491510772,
+        "faithfulness": 0.25,
+        "factual_correctness(mode=f1)": 0.8
+      }
+    },
+    {
+      "index": 3,
+      "question": "Quali sono i requisiti di ammissione per il corso di laurea magistrale in Information Engineering for Digital Medicine?",
+      "ground_truth": "Per immatricolarsi alla laurea magistrale in Information Engineering for Digital Medicine e' necessario possedere un titolo di studio adeguato (laurea triennale o equivalente in ambito affine) e superare una prova di verifica dei requisiti di preparazione personale, le cui sessioni vengono calendarizzate annualmente e pubblicate sul sito del Dipartimento. Il punteggio minimo per il superamento e' 60/100, cosi' ripartiti: fino a 20 punti per i titoli relativi alla carriera universitaria pregressa e fino a 80 punti per la prova di verifica, composta da 5 esercizi basati sul Syllabus ufficiale. In caso di superamento, l'immatricolazione deve avvenire entro 12 mesi dal mese in cui la prova e' stata superata; in caso di mancato superamento, e' possibile ripetere la prova nelle sessioni successive. L'esonero dalla prova e' previsto solo in casi specifici, come indicato nel documento ufficiale sulle modalita' di verifica dei requisiti di ingresso.",
+      "response": "Per accedere al corso di laurea magistrale in **Information Engineering for Digital Medicine** è richiesto il possesso di:\n\n- una laurea o diploma universitario di durata triennale (o altro titolo conseguito all'estero riconosciuto idoneo);\n- **requisiti curriculari** (almeno 45 CFU acquisiti in specifici settori scientifico-disciplinari, i quali non sono dettagliatamente specificati nei documenti recuperati);\n- **adeguata preparazione personale**;\n- **adeguata conoscenza della lingua inglese**.\n\nLe informazioni dettagliate sui settori e sul numero esatto di CFU richiesti per i requisiti curriculari non sono completamente presenti nei documenti consultati. Per ottenere il quadro completo e aggiornato, si consiglia di consultare il regolamento ufficiale del corso o di contattare direttamente la segreteria didattica del DIEM.\n\n[Fonti: Regolamento 2025 (doc_id: 58d7ca30-6ef1-4619-9718-8420fa8c8128) e Regolamento 2024 (doc_id: 3a559471-3d17-4e9e-b6d2-e9419b330cee)]",
+      "response_normalized": "per accedere al corso di laurea magistrale in information engineering for digital medicine è richiesto il possesso di:\nuna laurea o diploma universitario di durata triennale (o altro titolo conseguito all'estero riconosciuto idoneo);\nrequisiti curriculari (almeno 45 cfu acquisiti in specifici settori scientifico-disciplinari, i quali non sono dettagliatamente specificati nei documenti recuperati);\nadeguata preparazione personale;\nadeguata conoscenza della lingua inglese.\n\nle informazioni dettagliate sui settori e sul numero esatto di cfu richiesti per i requisiti curriculari non sono completamente presenti nei documenti consultati. per ottenere il quadro completo e aggiornato, si consiglia di consultare il regolamento ufficiale del corso o di contattare direttamente la segreteria didattica del diem.\n\n[fonti: regolamento 2025 (docid: 58d7ca30-6ef1-4619-9718-8420fa8c8128) e regolamento 2024 (docid: 3a559471-3d17-4e9e-b6d2-e9419b330cee)]",
+      "ground_truth_normalized": "per immatricolarsi alla laurea magistrale in information engineering for digital medicine e' necessario possedere un titolo di studio adeguato (laurea triennale o equivalente in ambito affine) e superare una prova di verifica dei requisiti di preparazione personale, le cui sessioni vengono calendarizzate annualmente e pubblicate sul sito del dipartimento. il punteggio minimo per il superamento e' 60/100, cosi' ripartiti: fino a 20 punti per i titoli relativi alla carriera universitaria pregressa e fino a 80 punti per la prova di verifica, composta da 5 esercizi basati sul syllabus ufficiale. in caso di superamento, l'immatricolazione deve avvenire entro 12 mesi dal mese in cui la prova e' stata superata; in caso di mancato superamento, e' possibile ripetere la prova nelle sessioni successive. l'esonero dalla prova e' previsto solo in casi specifici, come indicato nel documento ufficiale sulle modalita' di verifica dei requisiti di ingresso.",
+      "retrieved_contexts": [
+        "ALLEGATO 3  CORSO DI LAUREA MAGISTRALE IN  INFORMATION ENGINEERING FOR DIGITAL MEDICINE Modalità di verifica dei requisiti di preparazione personale  per l’accesso al corso di studi   A3.1. Il presente allegato descrive le modalità di verifica dei requisiti di preparazione personale per l’accesso al corso di Laurea Magistrale in Information Engineering for Digital Medicine, secondo quanto",
+        "organizzativi del corso di laurea magistrale in Information Engineering for Digital Medicine (classe LM-32), in \nconformità all’Ordinamento didattico dello stesso.  \n2. Il corso di studio ha come Dipartimento di riferimento il Dipartimento di Ingegneria dell’Informazione ed \nElettrica e Matematica Applicata.",
+        "riconosciuto idoneo ai sensi della normativa vigente.  2. Per poter accedere alla laurea magistrale in Information Engineering for Digital Medicine è altresì richiesto il possesso di: a)     requisiti curriculari b)    adeguata preparazione personale  c)     adeguata conoscenza della lingua inglese. Requisiti curriculari I requisiti curriculari richiesti sono: 1. almeno 45 CFU acquisiti in",
+        "1. L’iscrizione al corso di laurea magistrale richiede il possesso della laurea o del diploma universitario di \ndurata triennale o di altro titolo conseguito all'estero, riconosciuto idoneo ai sensi della normativa vigente.  \n2. Per poter accedere alla laurea magistrale in Information Engineering for Digital Medicine è altresì richiesto \nil possesso di: \na)     requisiti curriculari",
+        "REQUISITI DI AMMISSIONE E MODALITÀ DI VERIFICA \n1. Per essere ammessi al Corso di Laurea occorre essere in possesso di un diploma di scuola secondaria \nsuperiore o di altro titolo di studio conseguito all'estero, riconosciuto idoneo ai sensi delle leggi vigenti. Per \nessere ammessi al Corso di Laurea in Ingegneria dell’Informazione per la Medicina Digitale è, altresì, richiesto",
+        "Corso, il presente Regolamento disciplina gli asp etti organizzativi del Corso di Laurea Magistrale  in \nInformation Engineering for Digital Medicine (classe LM-32). \n2. Il Corso di  Laurea Magistrale ha come Dipartimento di riferimento il Dipartimento  di Ingegneria \ndell’Informazione ed Elettrica e Matematica Applicata.",
+        "ALLEGATO 3  CORSO DI LAUREA IN  INGEGNERIA DELL’INFORMAZIONE PER LA MEDICINA DIGITALE Regolamento di accesso   Il presente Regolamento di accesso definisce i requisiti necessari per l’immatricolazione al corso di laurea in Ingegneria dell’Informazione per la Medicina Digitale, le modalità di verifica del loro possesso e quelle per l’attribuzione e l’assolvimento degli eventuali Obblighi Formativi"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 19354.1,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 18546.1
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 0.0,
+        "response_relevancy": 0.0,
+        "faithfulness": 0.875,
+        "factual_correctness(mode=f1)": 0.37
+      }
+    },
+    {
+      "index": 4,
+      "question": "Qual è il syllabus completo del corso di Ingegneria del Software nel 2025?",
+      "ground_truth": "Il corso di Ingegneria del Software (9 CFU, SSD ING-INF/05) e' erogato in italiano nel primo semestre del terzo anno, ed e' valido per tutti e tre i curriculum (Networks, Software, Systems). I docenti titolari sono Nicola Capuano per gli studenti con cognome iniziale A-H e Pasquale Foggia per quelli con iniziale I-Z. Il carico didattico e' di 72 ore totali: 32 di lezione, 16 di esercitazione e 24 di laboratorio. Il corso presenta modelli, metodi e strumenti per la documentazione, progettazione, realizzazione e testing di componenti software. Le propedeuticita' obbligatorie sono Algoritmi e Strutture Dati, Analisi dei Segnali ed Elettrotecnica; e' inoltre fortemente consigliata la frequenza di Programmazione ad Oggetti. I contenuti sono organizzati in sei unita' didattiche: (1) Il ciclo di vita del software modelli di processo a cascata e iterativo (4 ore lezione); (2) Requisiti, specifica e documentazione casi d'uso, UML, metodologia Design by Contract, uso di Doxygen (4 ore lezione, 4 esercitazione, 2 laboratorio); (3) Progettazione di un componente software decomposizione, coesione, accoppiamento, diagrammi UML di classi, oggetti, stati e sequenze, principi KISS e DRY (8 ore lezione, 8 esercitazione); (4) Testing e debugging testing funzionale e strutturale, uso di CUnit/JUnit e debugger simbolico (4 ore lezione, 4 esercitazione, 2 laboratorio); (5) Strumenti per il build e il controllo delle revisioni Make, Maven, Git (laboratorio); (6) Project work sviluppo in team di un progetto software completo (24 ore laboratorio). La frequenza e' obbligatoria con un minimo del 70% delle ore. L'esame consiste nella discussione di un elaborato progettuale di gruppo e in un colloquio orale, con peso uguale per entrambe le componenti. I testi di riferimento sono: I. Sommerville, Ingegneria del Software, 10a ed., Pearson, 2017 (testo principale) e M. Fowler, UML Distilled, 4a ed., Pearson, 2018 (consultazione). Materiale integrativo e' disponibile sulla piattaforma e-learning di Ateneo (https://elearning.unisa.it). Gli appelli d'esame per il 2026 sono fissati nelle seguenti date (ore 9:00), valide per entrambi i docenti: 03/06/2026 e 30/06/2026 (Sessione Ordinaria), 27/08/2026 (Sessione di Recupero).",
+      "response": "Il syllabus del corso di **Ingegneria del Software** (cod. 0612700121) per l’anno accademico 2025/2026 comprende le seguenti informazioni:\n\n- **CFU e ore di attività formativa**  \n  - Lezione: 4 CFU – 32 ore  \n  - Esercitazione: 2 CFU – 16 ore  \n  - Laboratorio: 3 CFU – 24 ore  \n  - Totale: **9 CFU** (72 ore)【1†L1-L24】  \n\n- **Settore scientifico‑disciplinare (SSD)** e tipologia: **ING‑INF/05**, attività **caratterizzante**【1†L1-L24】.  \n\n- **Periodo di erogazione**: primo semestre, terzo anno di corso (curricula *Networks*, *Software* e *Systems*, coorte 2023/2024)【1†L1-L24】.  \n\n- **Prerequisiti / propedeuticità**:  \n  - Algoritmi e Strutture Dati  \n  - Analisi dei Segnali  \n  - Elettrotecnica  \n  - È fortemente consigliata la frequenza del corso di **Programmazione ad Oggetti**【5†L1-L4】.  \n\n- **Testi di riferimento**:  \n  - I. Sommerville, *Ingegneria del Software* (10ª ed.), Pearson, 2017  \n  - M. Fowler, *UML Distilled* (4ª ed.), Pearson, 2018  \n  - Materiale didattico integrativo disponibile sulla piattaforma e‑learning di Ateneo (https://elearning.unisa.it)【6†L1-L4】【7†L1-L4】.  \n\n- **Lingua di insegnamento**: italiano【6†L1-L4】.  \n\n- **Obiettivi formativi**: presenti nella sezione “Obiettivi” del syllabus (il contenuto dettagliato non è riportato nello estratto)【3†L1-L4】.  \n\n- **Appelli d’esame** (per gli studenti con cognome A‑H e I‑Z):  \n  - 03/06/2026 – 09:00 (sessione ordinaria)  \n  - 30/06/2026 – 09:00 (sessione ordinaria)  \n  - 27/08/2026 – 09:00 (sessione di recupero)【3†L1-L4】【4†L1-L4】.  \n\nQuesti dati sono estratti dai documenti ufficiali del corso per l’anno 2025, disponibili presso le pagine didattiche dei docenti Nicola Capuano e Pasquale Foggia.  \n\n**Fonti**:  \n[1] Tabella CFU/ore (docente Nicola Capuano, sezione didattica, anno 2025)  \n[5] Prerequisiti (docente Pasquale Foggia, sezione didattica, anno 2025)  \n[6] Testi di riferimento e lingua (docente Nicola Capuano, sezione didattica, anno 2025)  \n[7] Testi di riferimento e lingua (docente Pasquale Foggia, sezione didattica, anno 2025)  \n[3] Appelli (A‑H) e sezione Obiettivi (docente Nicola Capuano, sezione didattica, anno 2025)  \n[4] Appelli (I‑Z) (docente Pasquale Foggia, sezione didattica, anno 2025)",
+      "response_normalized": "il syllabus del corso di ingegneria del software (cod. 0612700121) per l’anno accademico 2025/2026 comprende le seguenti informazioni:\ncfu e ore di attività formativa \nlezione: 4 cfu – 32 ore \nesercitazione: 2 cfu – 16 ore \nlaboratorio: 3 cfu – 24 ore \ntotale: 9 cfu (72 ore)【1†l1-l24】 \nsettore scientifico‑disciplinare (ssd) e tipologia: ing‑inf/05, attività caratterizzante【1†l1-l24】. \nperiodo di erogazione: primo semestre, terzo anno di corso (curricula networks, software e systems, coorte 2023/2024)【1†l1-l24】. \nprerequisiti / propedeuticità: \nalgoritmi e strutture dati \nanalisi dei segnali \nelettrotecnica \nè fortemente consigliata la frequenza del corso di programmazione ad oggetti【5†l1-l4】. \ntesti di riferimento: \ni. sommerville, ingegneria del software (10ª ed.), pearson, 2017 \nm. fowler, uml distilled (4ª ed.), pearson, 2018 \nmateriale didattico integrativo disponibile sulla piattaforma e‑learning di ateneo ()【6†l1-l4】【7†l1-l4】. \nlingua di insegnamento: italiano【6†l1-l4】. \nobiettivi formativi: presenti nella sezione “obiettivi” del syllabus (il contenuto dettagliato non è riportato nello estratto)【3†l1-l4】. \nappelli d’esame (per gli studenti con cognome a‑h e i‑z): \n03/06/2026 – 09:00 (sessione ordinaria) \n30/06/2026 – 09:00 (sessione ordinaria) \n27/08/2026 – 09:00 (sessione di recupero)【3†l1-l4】【4†l1-l4】. \n\nquesti dati sono estratti dai documenti ufficiali del corso per l’anno 2025, disponibili presso le pagine didattiche dei docenti nicola capuano e pasquale foggia. \n\nfonti: \n[1] tabella cfu/ore (docente nicola capuano, sezione didattica, anno 2025) \n[5] prerequisiti (docente pasquale foggia, sezione didattica, anno 2025) \n[6] testi di riferimento e lingua (docente nicola capuano, sezione didattica, anno 2025) \n[7] testi di riferimento e lingua (docente pasquale foggia, sezione didattica, anno 2025) \n[3] appelli (a‑h) e sezione obiettivi (docente nicola capuano, sezione didattica, anno 2025) \n[4] appelli (i‑z) (docente pasquale foggia, sezione didattica, anno 2025)",
+      "ground_truth_normalized": "il corso di ingegneria del software (9 cfu, ssd ing-inf/05) e' erogato in italiano nel primo semestre del terzo anno, ed e' valido per tutti e tre i curriculum (networks, software, systems). i docenti titolari sono nicola capuano per gli studenti con cognome iniziale a-h e pasquale foggia per quelli con iniziale i-z. il carico didattico e' di 72 ore totali: 32 di lezione, 16 di esercitazione e 24 di laboratorio. il corso presenta modelli, metodi e strumenti per la documentazione, progettazione, realizzazione e testing di componenti software. le propedeuticita' obbligatorie sono algoritmi e strutture dati, analisi dei segnali ed elettrotecnica; e' inoltre fortemente consigliata la frequenza di programmazione ad oggetti. i contenuti sono organizzati in sei unita' didattiche: (1) il ciclo di vita del software modelli di processo a cascata e iterativo (4 ore lezione); (2) requisiti, specifica e documentazione casi d'uso, uml, metodologia design by contract, uso di doxygen (4 ore lezione, 4 esercitazione, 2 laboratorio); (3) progettazione di un componente software decomposizione, coesione, accoppiamento, diagrammi uml di classi, oggetti, stati e sequenze, principi kiss e dry (8 ore lezione, 8 esercitazione); (4) testing e debugging testing funzionale e strutturale, uso di cunit/junit e debugger simbolico (4 ore lezione, 4 esercitazione, 2 laboratorio); (5) strumenti per il build e il controllo delle revisioni make, maven, git (laboratorio); (6) project work sviluppo in team di un progetto software completo (24 ore laboratorio). la frequenza e' obbligatoria con un minimo del 70% delle ore. l'esame consiste nella discussione di un elaborato progettuale di gruppo e in un colloquio orale, con peso uguale per entrambe le componenti. i testi di riferimento sono: i. sommerville, ingegneria del software, 10a ed., pearson, 2017 (testo principale) e m. fowler, uml distilled, 4a ed., pearson, 2018 (consultazione). materiale integrativo e' disponibile sulla piattaforma e-learning di ateneo (). gli appelli d'esame per il 2026 sono fissati nelle seguenti date (ore 9:00), valide per entrambi i docenti: 03/06/2026 e 30/06/2026 (sessione ordinaria), 27/08/2026 (sessione di recupero).",
+      "retrieved_contexts": [
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nNicola CAPUANO |  INGEGNERIA DEL SOFTWARE \n \n \n \n \n \n cod. 0612700121 INGEGNERIA DEL SOFTWARE \n \n \n \n \n 0612700121 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   3 \n NETWORKS  Coorte 2023/2024 \n SOFTWARE  Coorte 2023/2024 \n SYSTEMS  Coorte 2023/2024 \n \n \n \n CURRICULUM  NETWORKS  Coorte 2023/2024 \n \n \n \n ANNO CORSO 3 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n PRIMO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 4 \n 32 \n LEZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 3 \n 24 \n LABORATORIO \n CARATTERIZZANTE",
+        "Docente: pasquale foggia | Matricola: 005768 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nPasquale FOGGIA |  INGEGNERIA DEL SOFTWARE \n \n \n \n \n \n cod. 0612700121 INGEGNERIA DEL SOFTWARE \n \n \n \n \n 0612700121 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   3 \n NETWORKS  Coorte 2023/2024 \n SOFTWARE  Coorte 2023/2024 \n SYSTEMS  Coorte 2023/2024 \n \n \n \n CURRICULUM  NETWORKS  Coorte 2023/2024 \n \n \n \n ANNO CORSO 3 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n PRIMO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 4 \n 32 \n LEZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 3 \n 24 \n LABORATORIO \n CARATTERIZZANTE",
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nCARATTERIZZANTE \n \n \n \n ING-INF/05 \n 3 \n 24 \n LABORATORIO \n CARATTERIZZANTE \n \n \n \n \n INIZIALI COGNOME A-H \n INIZIALI COGNOME I-Z \n \n \n DOCENTI \n \n \n \n PASQUALE FOGGIA   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n INGEGNERIA DEL SOFTWARE (A-H) \n 03/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n INGEGNERIA DEL SOFTWARE (A-H) \n 30/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n INGEGNERIA DEL SOFTWARE (A-H) \n 27/08/2026 - 09:00 \n SESSIONE DI RECUPERO \n \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: pasquale foggia | Matricola: 005768 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nCARATTERIZZANTE \n \n \n \n ING-INF/05 \n 3 \n 24 \n LABORATORIO \n CARATTERIZZANTE \n \n \n \n \n INIZIALI COGNOME A-H \n INIZIALI COGNOME I-Z \n \n \n DOCENTI \n \n \n \n NICOLA CAPUANO   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n INGEGNERIA DEL SOFTWARE (I-Z) \n 03/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n INGEGNERIA DEL SOFTWARE (I-Z) \n 30/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n INGEGNERIA DEL SOFTWARE (I-Z) \n 27/08/2026 - 09:00 \n SESSIONE DI RECUPERO \n \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: pasquale foggia | Matricola: 005768 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nPrerequisiti \n \n \n \n PROPEDEUTICITÀ: ALGORITMI E STRUTTURE DATI, ANALISI DEI SEGNALI, ELETTROTECNICA PER IL PROFICUO RAGGIUNGIMENTO DEGLI OBIETTIVI PREFISSATI È FORTEMENTE CONSIGLIATA LA FREQUENZA DEL CORSO DI PROGRAMMAZIONE AD OGGETTI. \n \n \n \n \n \n Contenuti",
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nTesti \n \n \n \n TESTO DI RIFERIMENTO: I. SOMMERVILLE: “INGEGNERIA DEL SOFTWARE” (10A ED.), PEARSON, 2017 TESTO DI CONSULTAZIONE: M. FOWLER: \"UML DISTILLED\" (4A ED.), PEARSON, 2018 MATERIALE DIDATTICO INTEGRATIVO SARA' DISPONIBILE NELLA SEZIONE DEDICATA DELL'INSEGNAMENTO ALL'INTERNO DELLA PIATTAFORMA E-LEARNING DI ATENEO (HTTPS://ELEARNING.UNISA.IT) ACCESSIBILE AGLI STUDENTI DEL CORSO TRAMITE LE CREDENZIALI UNICHE DI ATENEO. \n \n \n \n \n \n Altre Informazioni \n \n \n \n L'INSEGNAMENTO È EROGATO IN ITALIANO. \n \n \n \n \n \n Orari Lezioni \n    BETA VERSION  Fonte dati  ESSE3   [Ultima Sincronizzazione: 2026-05-15]",
+        "Docente: pasquale foggia | Matricola: 005768 | Sezione: didattica | Insegnamento: ingegneria del software | Anno: 2025\n\nTesti \n \n \n \n TESTO DI RIFERIMENTO: I. SOMMERVILLE: “INGEGNERIA DEL SOFTWARE” (10A ED.), PEARSON, 2017 TESTO DI CONSULTAZIONE: M. FOWLER: \"UML DISTILLED\" (4A ED.), PEARSON, 2018 MATERIALE DIDATTICO INTEGRATIVO SARA' DISPONIBILE NELLA SEZIONE DEDICATA DELL'INSEGNAMENTO ALL'INTERNO DELLA PIATTAFORMA E-LEARNING DI ATENEO (HTTPS://ELEARNING.UNISA.IT) ACCESSIBILE AGLI STUDENTI DEL CORSO TRAMITE LE CREDENZIALI UNICHE DI ATENEO. \n \n \n \n \n \n Altre Informazioni \n \n \n \n L'INSEGNAMENTO È EROGATO IN ITALIANO. \n \n \n \n \n \n Orari Lezioni \n    BETA VERSION  Fonte dati  ESSE3   [Ultima Sincronizzazione: 2026-05-15]"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 20518.0,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 19893.6
+      },
+      "metrics": {
+        "ctx_precision": 0.43035714284638393,
+        "ctx_recall": NaN,
+        "response_relevancy": 0.7050150512642487,
+        "faithfulness": NaN,
+        "factual_correctness(mode=f1)": NaN
+      }
+    },
+    {
+      "index": 5,
+      "question": "Quali sono gli orari di ricevimento del professore Capuano?",
+      "ground_truth": "Il professor Capuano riceve gli studenti il mercoledi' dalle 11:00 alle 13:00.",
+      "response": "Il professore Nicola Capuano riceve gli studenti il **mercoledì dalle 11:00 alle 13:00** (fonte: https://docenti.unisa.it/004322/home).",
+      "response_normalized": "il professore nicola capuano riceve gli studenti il mercoledì dalle 11:00 alle 13:00 (fonte: ).",
+      "ground_truth_normalized": "il professor capuano riceve gli studenti il mercoledi' dalle 11:00 alle 13:00.",
+      "retrieved_contexts": [
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n Mercoledì \n 11:00 - 13:00",
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: profilo\n\nNicola CAPUANO |  Home \n \n \n \n \n \n Professore Associato \n \n \n \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n 4292 \n \n \n \n 089 964292 \n \n \n \n ncapuano@unisa.it \n \n \n \n ncapuano@unisa.it \n \n \n \n Campus di Fisciano, Edificio E, Piano Secondo, Stanza 007 (U.FSTEC-05.P02.007) \n \n \n \n \n \n \n \n \n \n Pagina personale (link esterno) \n \n \n \n \n \n \n \n ORCID 0000-0003-0862-3643 \n \n \n \n \n \n \n \n Research Gate \n \n \n \n \n \n \n Web of Science ResearcherID \n \n \n \n \n \n \n Scopus",
+        "Docente: enza de lauro | Matricola: 020741 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n \n Martedì \n 9:00 - 11:00 \n \n \n \n \n Giovedì \n 9:00 - 11:00",
+        "Docente: sabrina senatore | Matricola: 005133 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n \n Lunedì \n 11:00 - 13:00 \n \n \n \n \n Venerdì \n 15:00 - 17:00 \n \n \n \n \n Contact the teacher for appointments outside of office hours.",
+        "Docente: ettore napoli | Matricola: 054591 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n Venerdì \n 15:00 - 17:00",
+        "Docente: nicola femia | Matricola: 001257 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n \n Lunedì \n 16:30 - 18:30 \n \n \n \n \n Venerdì \n 16:30 - 18:30 \n \n \n \n \n Gli studenti sono invitati a contattare il docente utilizzando l'indirizzo e-mail fornito dall'università, per avere conferma della disponibilità e per eventuali variazioni di orario.",
+        "Docente: vittorio zampoli | Matricola: 020763 | Sezione: profilo\n\nOrario di Ricevimento \n \n \n \n Giovedì \n 12:30 - 14:00 \n \n \n \n \n Venerdì \n 12:30 - 14:00 \n \n \n \n \n Gli studenti sono invitati ad inviare preventivamente un'email all'indirizzo vzampoli@unisa.it per avere conferma della disponibilità del docente."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 7731.5,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 7372.3
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.78536663421997,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 6,
+      "question": "Dove si trova l'aula I?",
+      "ground_truth": "L'aula I (codice FINV-07EP01014) si trova al primo piano dell'Edificio E2 del Campus di Fisciano. E' un'aula molto grande con capienza di 200 posti, dotata di videoproiettore, microfono/presa, rete Wi-Fi, lavagna a gessi e prese elettriche/video PC.",
+      "response": "L'aula I si trova nell'edificio E2, stanza F INV-07E P01 014, nel Campus.  \nFonte: aule-didattiche.pdf (https://corsi.unisa.it/uploads/rescue/499/2693/aule-didattiche.pdf)",
+      "response_normalized": "l'aula i si trova nell'edificio e2, stanza f inv-07e p01 014, nel campus. \nfonte: aule-didattiche.pdf ()",
+      "ground_truth_normalized": "l'aula i (codice finv-07ep01014) si trova al primo piano dell'edificio e2 del campus di fisciano. e' un'aula molto grande con capienza di 200 posti, dotata di videoproiettore, microfono/presa, rete wi-fi, lavagna a gessi e prese elettriche/video pc.",
+      "retrieved_contexts": [
+        "Sezione: aule | Anno: 2024\n\nNome Aula H \nUbicazione Campus Tipo di edificio \n(INV/STEC/CORPO) \nPiano \n(Pn/Sn) \nn. stanza \nF INV-07E P01 001 \nEdificio E2 \nAttrezzature Postazione Docente, sistema audio video \nCapienza 200 posti \nAccessibile ai \ndisabili \n \n \n \n \nNome Aula I \nUbicazione Campus Tipo di edificio \n(INV/STEC/CORPO) \nPiano \n(Pn/Sn) \nn. stanza \nF INV-07E P01 014 \nEdificio E2 \nAttrezzature Postazione Docente, sistema audio video \nCapienza 200 posti \nAccessibile ai \ndisabili  \n \n \nNome Aula L \nUbicazione Campus Tipo di edificio \n(INV/STEC/CORPO) \nPiano \n(Pn/Sn) \nn. stanza \nF INV-07E P01 022 \nEdificio E2 \nAttrezzature Postazione Docente, sistema audio video \nCapienza 121 posti \nAccessibile ai \ndisabili \n \n \n \n \nNome Aula M \nUbicazione Campus Tipo di edificio \n(INV/STEC/CORPO) \nPiano \n(Pn/Sn) \nn. stanza \nF INV-07E P01 022 \nEdificio E2 \nAttrezzature Postazione Docente, sistema audio video \nCapienza 121 posti \nAccessibile ai \ndisabili"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 63846.9,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 63419.5
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.5531977557757144,
+        "faithfulness": 0.5,
+        "factual_correctness(mode=f1)": 0.0
+      }
+    },
+    {
+      "index": 7,
+      "question": "Se la mia media è 26.2, qual è il voto massimo di laurea che posso ottenere per la laurea in ingegneria informatica magistrale?",
+      "ground_truth": "Con una media di 26,2/30, il voto base ottenuto dalla conversione in centodecimi e' circa 96,07. Sommando il contributo massimo della tesi e della carriera (variabile tra 5 e 6 punti a seconda del regolamento) e il fattore correttivo pesato (circa 2,55-3,55 punti), il voto finale massimo raggiungibile risulta pari a circa 104,6/110. Tale valore e' inferiore alla soglia necessaria per l'attribuzione della lode, che richiede un punteggio di almeno 112 prima dell'arrotondamento.",
+      "response": "Il voto di laurea per il Corso di Laurea Magistrale in Ingegneria Informatica è calcolato con la formula  \n\n\\[\n\\text{Voto di laurea}= \\text{VMIN}+\\min\\{(\\text{PT}+\\text{PCP}),\\,C\\}+ \\text{FCP}\n\\]\n\ndove  \n\n- **VMIN** = \\(\\dfrac{\\text{media ponderata in trentesimi}\\times 110}{30}\\)  \n- **PT** = punteggio tesi  \n- **PCP** = punteggio carriera pesato  \n- **C** = limite del sommatorio PT + PCP (6 per alcuni ordinamenti, 5 per altri)  \n- **FCP** = fattore correttivo × \\(\\dfrac{\\text{PT}}{4}\\), con  \n  \\(\\text{fattore correttivo}= (4,1\\times\\text{media in trentesimi}-8,8)-\\text{VMIN}\\).\n\nCon una media di **26,2/30** si ha:\n\n\\[\n\\text{VMIN}= \\frac{26,2\\times110}{30}=96,07\\; \\text{centodecimi}\n\\]\n\\[\n\\text{fattore correttivo}= (4,1\\times26,2-8,8)-96,07 = 2,55\n\\]\n\nIl termine \\(\\min\\{(\\text{PT}+\\text{PCP}),C\\}\\) può arrivare al valore massimo consentito dal regolamento (6 punti negli ordinamenti che prevedono il cap a 6, 5 punti negli ordinamenti con cap a 5).  \nIl termine **FCP** aumenta con il punteggio della tesi (PT); per massimizzare il voto si vuole quindi PT il più alto possibile, rispettando comunque il limite sul sommatorio PT + PCP.\n\nAnche assegnando il punteggio massimo teorico alla tesi e massimizzando il contributo del fattore correttivo, il voto non può superare il limite previsto dal sistema di valutazione italiano, ovvero **110/110** (con eventuale lode assegnata unanimemente dalla commissione).\n\n**Quindi, con una media di 26,2/30, il voto massimo di laurea ottenibile per la Laurea Magistrale in Ingegneria Informatica è 110/110 (eventualmente con lode).**",
+      "response_normalized": "il voto di laurea per il corso di laurea magistrale in ingegneria informatica è calcolato con la formula \n\n\\[\n\\text{voto di laurea}= \\text{vmin}+\\min\\{(\\text{pt}+\\text{pcp}),\\,c\\}+ \\text{fcp}\n\\]\n\ndove \nvmin = \\(\\dfrac{\\text{media ponderata in trentesimi}\\times 110}{30}\\) \npt = punteggio tesi \npcp = punteggio carriera pesato \nc = limite del sommatorio pt + pcp (6 per alcuni ordinamenti, 5 per altri) \nfcp = fattore correttivo × \\(\\dfrac{\\text{pt}}{4}\\), con \n \\(\\text{fattore correttivo}= (4,1\\times\\text{media in trentesimi}-8,8)-\\text{vmin}\\).\n\ncon una media di 26,2/30 si ha:\n\n\\[\n\\text{vmin}= \\frac{26,2\\times110}{30}=96,07\\; \\text{centodecimi}\n\\]\n\\[\n\\text{fattore correttivo}= (4,1\\times26,2-8,8)-96,07 = 2,55\n\\]\n\nil termine \\(\\min\\{(\\text{pt}+\\text{pcp}),c\\}\\) può arrivare al valore massimo consentito dal regolamento (6 punti negli ordinamenti che prevedono il cap a 6, 5 punti negli ordinamenti con cap a 5). \nil termine fcp aumenta con il punteggio della tesi (pt); per massimizzare il voto si vuole quindi pt il più alto possibile, rispettando comunque il limite sul sommatorio pt + pcp.\n\nanche assegnando il punteggio massimo teorico alla tesi e massimizzando il contributo del fattore correttivo, il voto non può superare il limite previsto dal sistema di valutazione italiano, ovvero 110/110 (con eventuale lode assegnata unanimemente dalla commissione).\n\nquindi, con una media di 26,2/30, il voto massimo di laurea ottenibile per la laurea magistrale in ingegneria informatica è 110/110 (eventualmente con lode).",
+      "ground_truth_normalized": "con una media di 26,2/30, il voto base ottenuto dalla conversione in centodecimi e' circa 96,07. sommando il contributo massimo della tesi e della carriera (variabile tra 5 e 6 punti a seconda del regolamento) e il fattore correttivo pesato (circa 2,55-3,55 punti), il voto finale massimo raggiungibile risulta pari a circa 104,6/110. tale valore e' inferiore alla soglia necessaria per l'attribuzione della lode, che richiede un punteggio di almeno 112 prima dell'arrotondamento.",
+      "retrieved_contexts": [
+        "centodecimi. Lo svolgimento della prova finale e la proclamazione del risultato finale sono pubblici.  5. Il voto di laurea è calcolato a partire da diversi contributi secondo la seguente formula:  Voto di laurea = VMIN + min{(PT + PCP), 5} + FCP dove: 1. VMIN è il voto minimo, corrispondente alla media ponderata dei voti conseguiti negli esami di profitto (quindi escluse le idoneità) espressa in",
+        "espressa in centodecimi, e non s uperiore al Voto_Base aumentato fino a cinque centodecimi tenendo dei \nfattori indicati nella seguente tabella:  \nFattore  Punti aggiuntivi  \nTempo impiegato per il conseguimento del titolo  \n \n2 centodecimi se lo studente si laurea entro il 31 \nmaggio del quarto anno solare successivo all’anno \ndi immatricolazione (ad es., per uno studente",
+        "espressa in centodecimi, e non superiore al Voto_Base aumentato fino a cinque centodecimi tenendo dei \nfattori indicati nella seguente tabella:  \n \nFattore  Punti aggiuntivi  \nTempo impiegato per il conseguimento del titolo  \n \n2 centodecimi se lo studente si laurea entro il 31 \nmaggio del quarto anno solare successivo all’anno \ndi immatricolazione (ad es., per uno studente",
+        "finale espressa in centodecimi, e non superiore al Voto_Base aumentato fino a cinque centodecimi tenendo \ndei fattori indicati nella seguente tabella: \nFattore Punti aggiuntivi \nTempo impiegato per il conseguimento del \ntitolo \n \n3 centodecimi se si laurea entro il 31 maggio del \nquarto anno solare successivo all’anno di \nimmatricolazione (ad es., per uno studente",
+        "● presso un Corso di Laurea che abbia gli stessi standard di certificazione del Corso di Laurea Magistrale \nin Information Engineering for Digital Medicine. \nPer i laureati in Ingegneria all’estero si procederà alla determinazione del voto di laurea conseguito sulla base \ndi tabelle di conversione dei voti applicati nei Paesi in cui è stata conseguita la laurea.",
+        "in Ingegneria Informatica. \nPer i laureati in Ingegneria all’estero si procederà alla determinazione del voto di laurea conseguito sulla base \ndi tabelle di conversione dei voti applicati nei Paesi in cui è stata conseguita la laurea. \n \nA4.3. Coloro che non soddisfano le condizioni del comma precedente devono superare una prova di verifica",
+        "● presso un Corso di Laurea che abbia gli stessi standard di certificazione del Corso di Laurea Magistrale \nin Electrical Engineering for Digital Energy. \nPer i laureati in Ingegneria all’estero si procederà alla determinazione del voto di laurea conseguito sulla base \ndi tabelle di conversione dei voti applicati nei Paesi in cui è stata conseguita la laurea."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 133121.9,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa",
+          "search_offerta_formativa",
+          "search_offerta_formativa",
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 10,
+        "total_duration_ms": 132520.2
+      },
+      "metrics": {
+        "ctx_precision": 0.0,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.6674167384041731,
+        "faithfulness": 0.25,
+        "factual_correctness(mode=f1)": 0.78
+      }
+    },
+    {
+      "index": 8,
+      "question": "Chi è il responsabile del dipartimento per l'Orientamento in ingresso?",
+      "ground_truth": "Il responsabile del dipartimento per l'Orientamento in ingresso e' Antonio Greco.",
+      "response": "Il responsabile del dipartimento per l'Orientamento in ingresso è il Prof. Antonio Greco, delegato del dipartimento per l’Orientamento in ingresso.  \nFonte: https://www.diem.unisa.it/dipartimento/commissioni?dettaglio=2096",
+      "response_normalized": "il responsabile del dipartimento per l'orientamento in ingresso è il prof. antonio greco, delegato del dipartimento per l’orientamento in ingresso. \nfonte:",
+      "ground_truth_normalized": "il responsabile del dipartimento per l'orientamento in ingresso e' antonio greco.",
+      "retrieved_contexts": [
+        "Sezione: generale\n\nComponenti \n \n \n \n BASILE Francesco  (Coordinatore) \n \n Coordinatore \n \n \n \n \n CARLETTI VINCENZO  (Delegato del Dipartimento per l’orientamento in itinere) \n \n Membro \n \n \n \n \n D'ANIELLO GIUSEPPE  (Delegato del Dipartimento per il Monitoraggio annuale comprensivo delle carriere, analisi opinioni studenti) \n \n Membro \n \n \n \n \n FORGIONE Cinzia  (Rappresentante del PTA – Ufficio Didattica e Carriere) \n \n Membro \n \n \n \n \n GRAGNANIELLO Diego  (Delegato del Dipartimento per l’internalizzazione) \n \n Membro \n \n \n \n \n GRECO ANTONIO  (Delegato del dipartimento per l’Orientamento in ingresso) \n \n Membro \n \n \n \n \n GRECO Luca  (Delegato del Dipartimento per la formazione esterna) \n \n Membro \n \n \n \n \n MAROTTA Giuseppe  (Rappresentante degli studenti fino a scadenza naturale di mandato)",
+        "Sezione: generale\n\nMAROTTA Giuseppe  (Rappresentante degli studenti fino a scadenza naturale di mandato) \n \n Rappresentante degli Studenti \n \n \n \n \n PERCANNELLA Gennaro  (Presidente del CDINF) \n \n Presidente \n \n \n \n \n SAGGESE Alessia  (Delegata del Dipartimento per l’orientamento in uscita) \n \n Membro \n \n \n \n \n VENTO Mario  (Coordinatore della commissione di promozione e monitoraggio tutorato didattico e di supporto agli studenti) \n \n Membro"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 12122.3,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 11621.2
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.7666893592665565,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 9,
+      "question": "Quali sono le opportunità di mobilità internazionale disponibili per gli studenti del diem?",
+      "ground_truth": "Il Programma Erasmus+ consente periodi di studio o tirocinio all'estero fino a 12 mesi per ogni ciclo di studio (triennale, magistrale, dottorato). La domanda si presenta online tramite il portale UNISA International, indicando fino a cinque universita' partner in ordine di preferenza tra quelle con cui il DIEM ha accordi bilaterali. I bandi vengono pubblicati con due scadenze annuali: prima call a gennaio (studio) e maggio (tirocinio), seconda call a luglio (studio) e novembre (tirocinio). Alla scadenza, viene assegnata una delle universita' indicate e si definisce un Learning Agreement con il docente responsabile dell'accordo. Gli studenti dei corsi di laurea triennale e magistrale in Ingegneria Informatica possono inoltre svolgere all'estero la tesi o un tirocinio, oppure conseguire un doppio titolo di laurea magistrale, grazie alle attivita' di internazionalizzazione del DIEM. Il DIEM ha inoltre attivi accordi bilaterali di cooperazione internazionale per la mobilita' di studenti e docenti con la Salahaddin University-Erbil (Iraq), coordinato dal Prof. Michele Guida e valido fino al 02/02/2029, e con la National University of Lomas de Zamora (Argentina), coordinato dai Proff. Vincenzo Auletta, Salvatore Barba e Francesco Colace e valido fino al 23/10/2028. Per ulteriori informazioni e' possibile consultare la sezione DIEM International, il sito dell'Ufficio Internazionalizzazione di Ateneo oppure contattare direttamente l'ufficio (tel. +39 089 962469, responsabile Maria Rizzo).",
+      "response": "Le opportunità di mobilità internazionale per gli studenti del DIEM includono principalmente:\n\n- **Programma ERASMUS+**: permette di svolgere un periodo di studio o tirocinio all’estero per un massimo di 12 mesi per ciascun ciclo di studio (laurea triennale, magistrale, dottorato). Per accedere, è necessario presentare la domanda on‑line sul sito UNISA International (sezione Studio o Tirocinio), indicando fino a cinque università estere in ordine di preferenza tra quelle con cui il DIEM ha accordi bilaterali. Dopo l’assegnazione della sede, lo studente deve definire un Learning Agreement insieme al docente DIEM responsabile dell’accordo con l’università ospitante【3†L1-L12】【2†L1-L8】.\n\n- **Doppio titolo**: il DIEM promuove attività di internazionalizzazione che consentono agli studenti di conseguire un doppio titolo presso università partner【2†L9-L12】.\n\n- **Accordi di cooperazione internazionale**: il dipartimento ha attivi protocolli di scambio studentesco e docente con varie istituzioni straniere, tra cui:\n  - Salahaddin University‑Erbil (Iraq) – cooperazione scientifica e programmi di scambio【5†L1-L12】;\n  - National University of Lomas de Zamora (Argentina) – programmi di mobilità di studenti e docenti【5†L13-L24】;\n  - Albanian University (Albania) – International Credit Mobility【6†L1-L12】.\n\n- **Supporto organizzativo**: per informazioni dettagliate e assistenza nella pratica della mobilità, ci si può rivolgere al **delegato all’Internazionalizzazione** del DIEM e all’**Ufficio Internazionalizzazione di Ateneo**; inoltre, è utile consultare la sezione **DIEM International** e il sito UNISA International per conoscere tutte le altre opportunità di studio all’estero【1†L1-L6】【2†L1-L8】.\n\nPer procedere, si consiglia di verificare le scadenze dei bandi ERASMUS+ e di prendere contatto con il delegato all’Internazionalizzazione per definire il Learning Agreement e scegliere la destinazione più adeguata al proprio piano di studi.",
+      "response_normalized": "le opportunità di mobilità internazionale per gli studenti del diem includono principalmente:\nprogramma erasmus+: permette di svolgere un periodo di studio o tirocinio all’estero per un massimo di 12 mesi per ciascun ciclo di studio (laurea triennale, magistrale, dottorato). per accedere, è necessario presentare la domanda on‑line sul sito unisa international (sezione studio o tirocinio), indicando fino a cinque università estere in ordine di preferenza tra quelle con cui il diem ha accordi bilaterali. dopo l’assegnazione della sede, lo studente deve definire un learning agreement insieme al docente diem responsabile dell’accordo con l’università ospitante【3†l1-l12】【2†l1-l8】.\ndoppio titolo: il diem promuove attività di internazionalizzazione che consentono agli studenti di conseguire un doppio titolo presso università partner【2†l9-l12】.\naccordi di cooperazione internazionale: il dipartimento ha attivi protocolli di scambio studentesco e docente con varie istituzioni straniere, tra cui:\nsalahaddin university‑erbil (iraq) – cooperazione scientifica e programmi di scambio【5†l1-l12】;\nnational university of lomas de zamora (argentina) – programmi di mobilità di studenti e docenti【5†l13-l24】;\nalbanian university (albania) – international credit mobility【6†l1-l12】.\nsupporto organizzativo: per informazioni dettagliate e assistenza nella pratica della mobilità, ci si può rivolgere al delegato all’internazionalizzazione del diem e all’ufficio internazionalizzazione di ateneo; inoltre, è utile consultare la sezione diem international e il sito unisa international per conoscere tutte le altre opportunità di studio all’estero【1†l1-l6】【2†l1-l8】.\n\nper procedere, si consiglia di verificare le scadenze dei bandi erasmus+ e di prendere contatto con il delegato all’internazionalizzazione per definire il learning agreement e scegliere la destinazione più adeguata al proprio piano di studi.",
+      "ground_truth_normalized": "il programma erasmus+ consente periodi di studio o tirocinio all'estero fino a 12 mesi per ogni ciclo di studio (triennale, magistrale, dottorato). la domanda si presenta online tramite il portale unisa international, indicando fino a cinque universita' partner in ordine di preferenza tra quelle con cui il diem ha accordi bilaterali. i bandi vengono pubblicati con due scadenze annuali: prima call a gennaio (studio) e maggio (tirocinio), seconda call a luglio (studio) e novembre (tirocinio). alla scadenza, viene assegnata una delle universita' indicate e si definisce un learning agreement con il docente responsabile dell'accordo. gli studenti dei corsi di laurea triennale e magistrale in ingegneria informatica possono inoltre svolgere all'estero la tesi o un tirocinio, oppure conseguire un doppio titolo di laurea magistrale, grazie alle attivita' di internazionalizzazione del diem. il diem ha inoltre attivi accordi bilaterali di cooperazione internazionale per la mobilita' di studenti e docenti con la salahaddin university-erbil (iraq), coordinato dal prof. michele guida e valido fino al 02/02/2029, e con la national university of lomas de zamora (argentina), coordinato dai proff. vincenzo auletta, salvatore barba e francesco colace e valido fino al 23/10/2028. per ulteriori informazioni e' possibile consultare la sezione diem international, il sito dell'ufficio internazionalizzazione di ateneo oppure contattare direttamente l'ufficio (tel. +39 089 962469, responsabile maria rizzo).",
+      "retrieved_contexts": [
+        "Sezione: internazionale\n\nNovembre           Al termine del bando ERASMUS, ti verrà assegnata una delle 5 scelte come sede della mobilità. Per finalizzare la mobilità è necessario definire un  Learning Agreement , ovvero la lista delle attività didattiche che lo studente deve svolgere all’estero e la corrispondenza con le attività didattiche originariamente presenti nel suo piano di studio. Ricorda di confrontarti con il docente del DIEM responsabile dell’accordo con la sede assegnata per individuare gli insegnamenti da inserire nel Learning Agreement.     Altre Opportunità   Ti invitiamo a consultare la sezione  DIEM International  e il sito dell’ Ufficio Internazionalizzazione  di Ateneo per conoscere tutte le altre opportunità di studio all’estero offerte. Tra queste, un’importante opportunità da programmare",
+        "Sezione: internazionale\n\nInternational |  Informazioni Bando Erasmus+ \n \n \n \n \n \n \n \n   Il DIEM svolge una intensa attività di  Internazionalizzazione  grazie alla quale tutti gli studenti dei Corsi di laurea triennale e magistrale in Ingegneria Informatica possono studiare e svolgere la propria tesi o tirocinio all'estero o conseguire un doppio titolo.   Inoltre, il Dipartimento è dotato di un  delegato all’Internazionalizzazione  per supportare e promuovere le attività di internazionalizzazione sul piano della didattica (corsi di laurea a doppio titolo), della mobilità studentesca (in ingresso e in uscita) della mobilità del personale docente e della ricerca promuovendo collaborazioni con altri università e enti di ricerca stranieri.",
+        "Sezione: internazionale\n\nOutgoing   Questa sezione è dedicata agli studenti del DIEM che vogliono conoscere le opportunità di studio all’estero che avviene principalmente tramite il programma ERASMUS+     Programma ERASMUS+   Il programma  Erasmus+  permette ad ogni studente di usufruire di un periodo di studio o tirocinio all'estero per un massimo di 12 mesi per ogni ciclo di studio (laurea triennale, magistrale e dottorato).   L'accesso al programma è molto semplice. Basta compilare la domanda on-line nella sezione del sito UNISA International per  Studio  o per  Tirocinio . Nella domanda dovrai specificare una lista di cinque Università estere, in ordine di preferenza, scegliendole tra quelle con cui il nostro Dipartimento ha siglato un accordo bilaterale per  Studio  o per  Tirocinio .   I  bandi ERASMUS+",
+        "Sezione: internazionale\n\nIncoming   Questa sezione è dedicata alle opportunità offerte agli studenti stranieri che vogliono trascorrere un periodo di studio al DIEM.   Consulta la  lista degli insegnamenti  per definire il tuo Learning Agreement e consulta il docente referente della tua Università referente dell’accordo con il DIEM per stabilire un contatto. Contatta il  delegato all’Internazionalizzazione  oppure l’ ufficio internazionalizzazione  per chiedere supporto.   For the English version of this page,  click here .",
+        "Sezione: internazionale\n\nData Stipula \n 02-02-2024 \n \n \n Data Scadenza \n 02-02-2029 \n \n \n \n \n Dipartimento \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n Coordinatore \n GUIDA MICHELE \n \n \n Paese \n Iraq \n \n \n Università Partner \n Salahaddin University-Erbil (SUE) \n \n \n Attività \n Cooperazione scientifica e programmi di scambio \n \n \n Data Stipula \n 23-10-2023 \n \n \n Data Scadenza \n 23-10-2028 \n \n \n \n \n Dipartimento \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n Coordinatore \n \n AULETTA Vincenzo BARBA Salvatore COLACE Francesco \n \n \n \n Paese \n Argentina \n \n \n Università Partner \n National University of Lomas de Zamora \n \n \n Attività \n Programmi di mobilità di studenti e docenti \n \n \n Data Stipula \n 21-01-2021",
+        "Sezione: internazionale\n\nInternational |  International Credit Mobility \n \n \n \n Tutti i Paesi \n \n  Attivi e Terminati  \n Attivi \n Terminati \n \n Attivi e Terminati \n \n \n \n \n \n Dipartimento \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Corsi afferenti al Consiglio Didattico di  Informatica  \n \n \n \n Coordinatore \n ALBANO Giovannina \n \n \n Paese \n Albania \n \n \n Università Partner \n Albanian University \n \n \n Data Stipula \n 05-11-2020 \n \n \n Data Scadenza \n 31-07-2023 \n \n \n \n \n Elenco degli Accordi",
+        "Sezione: internazionale\n\nInternational |  International Credit Mobility \n \n \n \n Tutti i Paesi \n \n  Terminati  \n Attivi \n Terminati \n \n Attivi e Terminati \n \n \n \n \n \n Dipartimento \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Corsi afferenti al Consiglio Didattico di  Informatica  \n \n \n \n Coordinatore \n ALBANO Giovannina \n \n \n Paese \n Albania \n \n \n Università Partner \n Albanian University \n \n \n Data Stipula \n 05-11-2020 \n \n \n Data Scadenza \n 31-07-2023 \n \n \n \n \n Elenco degli Accordi"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 12671.7,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 12291.0
+      },
+      "metrics": {
+        "ctx_precision": 0.9150793650641138,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.8491192976934454,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.76
+      }
+    },
+    {
+      "index": 10,
+      "question": "Dove si trova il DIEM?",
+      "ground_truth": "Il DIEM - Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata - si trova presso l'Universita' degli Studi di Salerno, in Via Giovanni Paolo II, 132 - 84084 Fisciano (SA).",
+      "response": "Il DIEM si trova nel Campus di Fisciano dell’Università degli Studi di Salerno, precisamente all’indirizzo **Via Giovanni Paolo II, 132 – 84084 Fisciano (SA), Italia**. Le aule, i laboratori e gli uffici dei docenti sono ubicati prevalentemente negli **Edifici E, E1 e E2**【Documento 2†L1-L6】【Documento 4†L1-L6】.",
+      "response_normalized": "il diem si trova nel campus di fisciano dell’università degli studi di salerno, precisamente all’indirizzo via giovanni paolo ii, 132 – 84084 fisciano (sa), italia. le aule, i laboratori e gli uffici dei docenti sono ubicati prevalentemente negli edifici e, e1 e e2【documento 2†l1-l6】【documento 4†l1-l6】.",
+      "ground_truth_normalized": "il diem - dipartimento di ingegneria dell'informazione ed elettrica e matematica applicata - si trova presso l'universita' degli studi di salerno, in via giovanni paolo ii, 132 - 84084 fisciano (sa).",
+      "retrieved_contexts": [
+        "Sezione: generale\n\nè Research Affiliate presso il Massachusetts institute of Technology (MIT). Il DIEM inoltre esprime il coordinatore del dottorato nazionale “Photovoltaics” e annovera tra i suoi membri scienziati che ricoprono o hanno ricoperto ruoli di governo in associazioni internazionali e compaiono nelle liste dei top scientist a livello globale e nazionale.   Gran parte della ricerca del DIEM è finanziata tramite bandi competitivi a livello europeo, nazionale e regionale. Il Dipartimento ha partecipato a circa 20 progetti finanziati dalla Commissione Europea (tra cui AIROBOTS, DCODE, DESIGN, ECHORD, ENABLE-S3, EUROC, FELICE, GENIUS, GRAPHENE 3D, GRAPHENE Flagship, HEALTH CODE, INSIGHT, LABOR, LOCOMACHS, OPTEMUS, REACTT, RUBY, SMARTGYsum), sia come partner diretto che attraverso i propri membri.",
+        "Sezione: generale\n\n# Informazioni Generali e Contatti, Posizione e Indirizzo - DIEM\n\n## Sede, Posizione, Indirizzo\n\n* **Università**: Università degli Studi di Salerno\n* **Campus:** Campus di Fisciano\n* **Indirizzo:** Via Giovanni Paolo II, 132 - 84084 Fisciano (SA), Italia\n* **Edifici Principali:** Le aule, i laboratori e gli uffici dei docenti del DIEM si trovano prevalentemente presso l'**Edificio E**, **Edificio E1** e **Edificio E2**.\n\n## Contatti Istituzionali\n\n* **Ufficio Ricerca, Contratti Convenzioni e Trasferimento Tecnologico III (D2)/DICIV-DIEM**: <uffricercadis2@unisa.it>\n* **Ufficio Carriere Studenti:** <carrierestudenti.diem@unisa.it>\n* **P.IVA**: 00851300657\n* **C.F.**: 80018670655\n\n## Come Raggiungerci\n\nIl Campus di Fisciano è facilmente raggiungibile:",
+        "Sezione: generale\n\nper la diagnostica medica, la salute e il digital health, rappresentando un esempio virtuoso di sinergia tra competenze accademiche e applicazioni industriali.   I ricercatori del DIEM sono co-titolari di quasi trenta brevetti attivi o in fase di approvazione, tra cui 18 statunitensi, 5 europei, 3 internazionali e 2 italiani. Sul fronte della collaborazione con le imprese, il DIEM ha stipulato numerose convenzioni di ricerca con aziende distribuite su tutto il territorio nazionale. Queste attività hanno generato, nell’ultimo decennio, contratti per un valore complessivo di circa 3,5 milioni di euro, confermando il ruolo del Dipartimento come partner strategico per l’innovazione industriale.   Rilevanti sono anche le iniziative di impatto sociale promosse dal DIEM. Tra le molteplici",
+        "Sezione: generale | Documento: Informazioni Generali E Contatti, Posizione E Indirizzo - Diem\n\n* **Università**: Università degli Studi di Salerno\n* **Campus:** Campus di Fisciano\n* **Indirizzo:** Via Giovanni Paolo II, 132 - 84084 Fisciano (SA), Italia\n* **Edifici Principali:** Le aule, i laboratori e gli uffici dei docenti del DIEM si trovano prevalentemente presso l'**Edificio E**, **Edificio E1** e **Edificio E2**.",
+        "Sezione: generale\n\ndella sua produzione scientifica è confermata dalla valutazione dell’ANVUR per il quinquennio 2015-2019, in cui il DIEM ha ottenuto il punteggio massimo, con un indicatore ISPD pari a 100/100, replicando il risultato raggiunto nella precedente campagna di valutazione. A livello nazionale, solo un altro dipartimento operante nell’ambito dell’Ingegneria dell’Informazione ha ottenuto lo stesso riconoscimento in entrambe le valutazioni.   Ulteriore testimonianza dell’eccellenza del DIEM è il finanziamento ottenuto dal MUR nell’ambito del Programma  Dipartimenti di Eccellenza  per il quinquennio 2023-2027. Questo prestigioso riconoscimento supporta il progetto  Information Technologies for Digital Medicine (IT4DiMe) , consolidando il ruolo del Dipartimento come punto di riferimento nella",
+        "Sezione: generale\n\nRicerca di eccellenza, didattica di qualità e una naturale propensione al trasferimento tecnologico: questi sono i pilastri su cui si fonda il Dipartimento di Ingegneria dell’Informazione, Elettrica e Matematica Applicata (DIEM), diretto dal prof.  Francesco Tortorella . Un ambiente vivace e stimolante, votato alla creatività e all’innovazione, che ha permesso al DIEM di distinguersi a livello nazionale nella più recente valutazione della ricerca.   Il Dipartimento riunisce prevalentemente docenti e ricercatori delle Aree CUN 09 (Ingegneria Industriale e dell’Informazione) e 01 (Scienze Matematiche e Informatiche), rappresentando un centro di competenze interdisciplinari.   La  qualità  della sua produzione scientifica è confermata dalla valutazione dell’ANVUR per il quinquennio",
+        "Sezione: generale\n\nRilevanti sono anche le iniziative di impatto sociale promosse dal DIEM. Tra le molteplici attività realizzate, spicca la partecipazione del Dipartimento alla fondazione del Polo di Salerno della rete nazionale dell'Accademia dei Lincei con il progetto \"I Lincei per una nuova didattica nella scuola”. Attraverso questo impegno, il DIEM contribuisce attivamente al miglioramento della didattica nelle scuole, evidenziando una forte attenzione alla diffusione della conoscenza e alla promozione culturale nel territorio.   Grazie a queste iniziative, il DIEM consolida il proprio ruolo non solo come eccellenza accademica, ma anche come motore di innovazione tecnologica e sociale."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 7079.2,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 6597.5
+      },
+      "metrics": {
+        "ctx_precision": 0.4761904761746032,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.6770167310981751,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.57
+      }
+    },
+    {
+      "index": 11,
+      "question": "Quali aree di ricerca sono attive al DIEM?",
+      "ground_truth": "Le aree di ricerca attive al DIEM sono: Automatica, Campi elettromagnetici, Elettrotecnica, Fisica, Informatica, Ingegneria Informatica, Matematica applicata, Organizzazione e Pianificazione del Territorio, Telecomunicazioni e Statistica.",
+      "response": "Le principali aree di ricerca attive al DIEM includono:\n\n- **Valutazione radiologica delle sorgenti termali** – progetto “CONtursi THErmal SpringS radiological Assessment (CONTHESSA)” in collaborazione con l’Università di Novi Sad, l’Università di Kirklareii (Turchia) e il CUGRI.  \n- **Conservazione del patrimonio culturale tramite tecniche avanzate di radiazioni** – progetto “Advanced Innovative techniques with Radiations for the Cultural HEritage Conservation and preservation (A.I.RA for CHEC)” con il DICIV, l’Università di Novi Sad, l’Università di Kragujevac (Serbia), l’Università di Kirklareii (Turchia), l’Università di Messina e il CUGRI.  \n- **Monitoraggio del radon** – progetto “Advanced Innovative techniques for RAdon” (menzionato nello stesso contesto).  \n- **Attività di formazione e collaborazione con il Consorzio Elis** – convenzioni per attività conto terzi di formazione tra DIEM e CONSEL‑Consorzio Elis.  \n- **Progetti di data analysis e analisi avanzata** – contratti con l’Analist Group SRL per attività di ricerca conto terzi.  \n- **Tecnologie per la salute** – convenzione con Healthware Group S.r.l. per progetti di ricerca e sviluppo.  \n\nQueste aree emergono dai progetti e dalle convenzioni attualmente attive nel dipartimento, che evidenziano l’impegno del DIEM nella ricerca applicata a settori quali la fisica ambientale, la tutela del patrimonio culturale, il monitoraggio ambientale, la formazione tecnica, l’analisi dei dati e la salute digitale.  \n\n*Fonti: descrizioni dei progetti CONTHESSA, A.I.RA for CHEC e radon (primo risultato di ricerca); convenzioni CONSEL (secondo risultato); contratti Analist Group e Healthware Group (terzo risultato).*",
+      "response_normalized": "le principali aree di ricerca attive al diem includono:\nvalutazione radiologica delle sorgenti termali – progetto “contursi thermal springs radiological assessment (conthessa)” in collaborazione con l’università di novi sad, l’università di kirklareii (turchia) e il cugri. \nconservazione del patrimonio culturale tramite tecniche avanzate di radiazioni – progetto “advanced innovative techniques with radiations for the cultural heritage conservation and preservation (a.i.ra for chec)” con il diciv, l’università di novi sad, l’università di kragujevac (serbia), l’università di kirklareii (turchia), l’università di messina e il cugri. \nmonitoraggio del radon – progetto “advanced innovative techniques for radon” (menzionato nello stesso contesto). \nattività di formazione e collaborazione con il consorzio elis – convenzioni per attività conto terzi di formazione tra diem e consel‑consorzio elis. \nprogetti di data analysis e analisi avanzata – contratti con l’analist group srl per attività di ricerca conto terzi. \ntecnologie per la salute – convenzione con healthware group s.r.l. per progetti di ricerca e sviluppo. \n\nqueste aree emergono dai progetti e dalle convenzioni attualmente attive nel dipartimento, che evidenziano l’impegno del diem nella ricerca applicata a settori quali la fisica ambientale, la tutela del patrimonio culturale, il monitoraggio ambientale, la formazione tecnica, l’analisi dei dati e la salute digitale. \n\nfonti: descrizioni dei progetti conthessa, a.i.ra for chec e radon (primo risultato di ricerca); convenzioni consel (secondo risultato); contratti analist group e healthware group (terzo risultato).",
+      "ground_truth_normalized": "le aree di ricerca attive al diem sono: automatica, campi elettromagnetici, elettrotecnica, fisica, informatica, ingegneria informatica, matematica applicata, organizzazione e pianificazione del territorio, telecomunicazioni e statistica.",
+      "retrieved_contexts": [
+        "Docente: luca greco | Matricola: 023586 | Sezione: ricerca | Progetto: progetti\n\nCONTRATTO TRA DIEM E ANALIST GROUP SRL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n ANALIST GROUP SRL \n \n \n \n \n Importo \n 165.000,00 euro \n \n \n \n Periodo \n 3 Agosto 2018 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nCONTRATTO TRA DIEM E ANALIST GROUP SRL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n ANALIST GROUP SRL \n \n \n \n \n Importo \n 165.000,00 euro \n \n \n \n Periodo \n 3 Agosto 2018 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Docente: mario vento | Matricola: 005501 | Sezione: ricerca | Progetto: progetti\n\nCONTRATTO TRA DIEM E ANALIST GROUP SRL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n ANALIST GROUP SRL \n \n \n \n \n Importo \n 165.000,00 euro \n \n \n \n Periodo \n 3 Agosto 2018 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Docente: nicola capuano | Matricola: 004322 | Sezione: ricerca | Progetto: progetti\n\nCONTRATTO TRA DIEM E ANALIST GROUP SRL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n ANALIST GROUP SRL \n \n \n \n \n Importo \n 165.000,00 euro \n \n \n \n Periodo \n 3 Agosto 2018 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Sezione: documentazione_corso | Anno: 2023\n\n?\n?\nIl DIEM è in vetta all'ultima classifica dei\ndipartimenti italiani per la qualità della ricerca,\npubblicata dal MUR e lo classifica come \n “dipartimento italiano di eccellenza”.\nTirocinio \nIl DIEM  prevede lo svolgimento di un tirocinio  \nda svolgere presso aziende del settore che\nfornisce allo studente competenze di natura\ningegneristica ad elevata complessità.                     \n                                 Orientamento al lavoro \nIl percorso di studi prevede seminari con le\naziende per informare gli studenti sui profili\nprofessionali e sugli sbocchi lavorativi.          \n                                 \nIl Corso di Laurea è finalizzato alla formazione di\ncompetenze e abilità direttamente spendibili nel\nmondo del lavoro.                                 \n[Sistema di visione artificiale per la verifica in tempo reale della corretta esecuzione del lavaggio preoperatorio delle mani]",
+        "Docente: gennaro percannella | Matricola: 004491 | Sezione: ricerca | Progetto: progetti\n\nCONVENZIONE DIEM - CONSORZIO CONSEL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n PERCANNELLA Gennaro   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n CONSEL - CONSORZIO ELIS - SOCIETA' CONSORTILE A.R.L. \n \n \n \n \n Importo \n 15.000,00 euro \n \n \n \n Periodo \n 8 Luglio 2019 - 31 Gennaio 2020 \n \n \n \n \n  Dettaglio",
+        "Docente: mario vento | Matricola: 005501 | Sezione: ricerca | Progetto: progetti\n\nCONVENZIONE TRA DIEM E HEALTHWARE GROUP SRL \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n VENTO Mario   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Attività Conto Terzi - Ricerca \n \n \n \n Finanziatori \n Healthware Group S.r.l.  \n \n \n \n \n Importo \n 22.000,00 euro \n \n \n \n Periodo \n 1 Marzo 2019 - 30 Aprile 2019 \n \n \n \n \n  Dettaglio"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 226925.2,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento",
+          "search_dipartimento",
+          "search_dipartimento",
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 14,
+        "total_duration_ms": 226384.9
+      },
+      "metrics": {
+        "ctx_precision": 0.0,
+        "ctx_recall": 0.0,
+        "response_relevancy": 0.6214309064834624,
+        "faithfulness": 0.0,
+        "factual_correctness(mode=f1)": 0.43
+      }
+    },
+    {
+      "index": 12,
+      "question": "Dammi un elenco di tutti i laboratori disponibili al DIEM?",
+      "ground_truth": "Il DIEM dispone dei seguenti laboratori: Caratterizzazione Elettromagnetica dei Materiali (LCEM), Circuiti Elettronici di Potenza (LCEP), Computazione Naturale (NCLab), Computer Science Research Lab (CORE), Embedded Intelligent Systems (EIS), Energy Storage and Energy Sources (ESES), Geofisica e Analisi dei Segnali (LAGEO), Ingegneria dei Sistemi di Controllo (LabCont), Intelligent Bioengineering Technologies (INBIT), Knowledge Management and Information Systems (KnowMIS), Macchine Intelligenti per il Riconoscimento di Video, Immagini e Audio (MIVIA), Robotica (LabROB), Security, Semantics and Social Networks (S^3), Tecnologie Elettriche per la Digital Energy (TE4DE) e il Laboratorio di Telecomunicazioni e Teoria dell'Informazione (TETI).",
+      "response": "Secondo le informazioni disponibili nel knowledge base del DIEM, i laboratori attualmente elencati sono:\n\n1. **Tecnologie Elettriche per la Digital Energy**  \n   - ID laboratorio: 733  \n   - Descrizione: Oltre al personale docente e ricercatore, il laboratorio ospita laureandi, laureati e dottorandi per attività di tesi e post-laurea, con partecipazione a progetti di ricerca e sviluppo supportati da borse di studio, assegni di ricerca e contratti di collaborazione. L'obiettivo è promuovere competenze avanzate nella produzione e gestione dell'energia da fonti rinnovabili e nelle problematiche di interconnessione con la rete di distribuzione.  \n   - Fonte: https://www.diem.unisa.it/dipartimento/strutture?id=733\n\n2. **Energy Storage and Energy Sources**  \n   - ID laboratorio: 738  \n   - Descrizione: Oltre al personale docente e ricercatore, assegnisti e borsisti, il laboratorio ospita laureandi e dottorandi di Ateneo e di Atenei partner per attività di ricerca relative a tesi di dottorato, magistrali e triennali o attività post-laurea, con partecipazione a progetti di ricerca e sviluppo supportati da borse di studio, assegni di ricerca e contratti di collaborazione. Inoltre, ospita alcune lezioni del corso \"Batteries and energy storage\" della laurea magistrale in Electrical engineering for digital energy.  \n   - Fonte: https://www.diem.unisa.it/dipartimento/strutture?id=738\n\nQuesti sono i laboratori risultanti dalla ricerca effettuata. Per un elenco completo e aggiornato, si consiglia di contattare direttamente la segreteria del DIEM o consultare il sito ufficiale del dipartimento.",
+      "response_normalized": "secondo le informazioni disponibili nel knowledge base del diem, i laboratori attualmente elencati sono:\ntecnologie elettriche per la digital energy \nid laboratorio: 733 \ndescrizione: oltre al personale docente e ricercatore, il laboratorio ospita laureandi, laureati e dottorandi per attività di tesi e post-laurea, con partecipazione a progetti di ricerca e sviluppo supportati da borse di studio, assegni di ricerca e contratti di collaborazione. l'obiettivo è promuovere competenze avanzate nella produzione e gestione dell'energia da fonti rinnovabili e nelle problematiche di interconnessione con la rete di distribuzione. \nfonte: \nenergy storage and energy sources \nid laboratorio: 738 \ndescrizione: oltre al personale docente e ricercatore, assegnisti e borsisti, il laboratorio ospita laureandi e dottorandi di ateneo e di atenei partner per attività di ricerca relative a tesi di dottorato, magistrali e triennali o attività post-laurea, con partecipazione a progetti di ricerca e sviluppo supportati da borse di studio, assegni di ricerca e contratti di collaborazione. inoltre, ospita alcune lezioni del corso \"batteries and energy storage\" della laurea magistrale in electrical engineering for digital energy. \nfonte: \n\nquesti sono i laboratori risultanti dalla ricerca effettuata. per un elenco completo e aggiornato, si consiglia di contattare direttamente la segreteria del diem o consultare il sito ufficiale del dipartimento.",
+      "ground_truth_normalized": "il diem dispone dei seguenti laboratori: caratterizzazione elettromagnetica dei materiali (lcem), circuiti elettronici di potenza (lcep), computazione naturale (nclab), computer science research lab (core), embedded intelligent systems (eis), energy storage and energy sources (eses), geofisica e analisi dei segnali (lageo), ingegneria dei sistemi di controllo (labcont), intelligent bioengineering technologies (inbit), knowledge management and information systems (knowmis), macchine intelligenti per il riconoscimento di video, immagini e audio (mivia), robotica (labrob), security, semantics and social networks (s^3), tecnologie elettriche per la digital energy (te4de) e il laboratorio di telecomunicazioni e teoria dell'informazione (teti).",
+      "retrieved_contexts": [
+        "Laboratorio: tecnologie elettriche per la digital energy | Sezione: laboratori\n\nDidattica   Oltre al personale inquadrato come docenti, ricercatori ed assegnisti di ricerca, il laboratorio ospita laureandi e laureati dei corsi di laurea magistrale e dottorandi di ricerca istituiti presso il DIEM per lo svolgimento delle loro attività di tesi e attività post-laurea. Alcune attività prevedono la partecipazione da parte degli studenti a progetti di ricerca e sviluppo e sono supportate da borse di studio, assegni di ricerca e contratti di collaborazione finanziati dall'Università e da aziende. L'obiettivo è quello di promuovere lo sviluppo di competenze di livello elevato nell’ambito della produzione e gestione dell’energia da fonti rinnovabili nonché sulle problematiche di interconnessione con la rete di distribuzione dell’energia al fine di favorirne il loro inserimento",
+        "Laboratorio: energy storage and energy sources | Sezione: laboratori\n\nDidattica   Oltre al personale docente e ricercatore, agli assegnisti e ai borsisti di ricerca, il laboratorio ospita laureandi dei corsi di studio di Ateneo e dottorandi di ricerca dell’Ateneo e di Atenei partner per lo svolgimento delle loro attività di ricerca nell’ambito di tesi di dottorato, magistrali e triennali o attività post-laurea. Alcune attività prevedono la partecipazione da parte degli studenti a progetti di ricerca e sviluppo supportate da borse di studio, assegni di ricerca e contratti di collaborazione finanziati dall'Università e da aziende.   Il laboratorio ospita anche alcune lezioni del corso Batteries and energy storage, erogato dal DIEM sulla laurea magistrale in Electrical engineering for digital energy."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 10610.6,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 10196.1
+      },
+      "metrics": {
+        "ctx_precision": 0.0,
+        "ctx_recall": 0.13333333333333333,
+        "response_relevancy": 0.5986414876872087,
+        "faithfulness": 0.5,
+        "factual_correctness(mode=f1)": 0.0
+      }
+    },
+    {
+      "index": 13,
+      "question": "Quali sono gli strumenti disponibili nel laboratorio di Robotica?",
+      "ground_truth": "Il laboratorio di Robotica (LabROB) dispone della seguente strumentazione: 2 robot antropomorfi Comau Smart-Six montati su slitta attuata, 1 robot UR10 (Universal Robot), 1 robot Franka Emika a 7 gradi di liberta', 1 robot Clearpath Husky customizzato a trazione differenziale, 3 stereo camere intelligenti Zed, 1 endoscopio, 1 unita' di misura inerziale (IMU), 1 laser scanner 2D, 4 sensori di forza/coppia, 3 gripper pneumatici a due e tre dita, 1 gripper elettrico a due dita, 1 end-effector per l'ablazione dentale, 1 stampante 3D e 9 postazioni PC con Matlab e ROS2.",
+      "response": "Gli strumenti disponibili nel laboratorio di Robotica sono:\n\n- 2 robot antropomorfi Comau Smart‑Six montati su slitta attuata  \n- 1 robot UR10 (Universal Robot)  \n- 1 robot Franka Emika a 7 gradi  \n- 1 robot Clearpath Husky customizzato a trazione differenziale  \n- 3 stereo camere intelligenti Zed  \n- 1 endoscopio  \n- 1 unità di misurazioni inerziali (IMU)  \n- 1 laser scanner 2D  \n- 4 sensori di forza/coppia  \n- 3 gripper pneumatici a due e tre dita  \n- 1 gripper elettrico a due dita  \n- 1 end‑effector per l’ablazione dentale  \n- 1 stampante 3D  \n- 9 postazioni PC con Matlab e ROS2  \n\nFonte: strumentazione del laboratorio di Robotica (ID 2)【0†L1-L15】.",
+      "response_normalized": "gli strumenti disponibili nel laboratorio di robotica sono:\n2 robot antropomorfi comau smart‑six montati su slitta attuata \n1 robot ur10 (universal robot) \n1 robot franka emika a 7 gradi \n1 robot clearpath husky customizzato a trazione differenziale \n3 stereo camere intelligenti zed \n1 endoscopio \n1 unità di misurazioni inerziali (imu) \n1 laser scanner 2d \n4 sensori di forza/coppia \n3 gripper pneumatici a due e tre dita \n1 gripper elettrico a due dita \n1 end‑effector per l’ablazione dentale \n1 stampante 3d \n9 postazioni pc con matlab e ros2 \n\nfonte: strumentazione del laboratorio di robotica (id 2)【0†l1-l15】.",
+      "ground_truth_normalized": "il laboratorio di robotica (labrob) dispone della seguente strumentazione: 2 robot antropomorfi comau smart-six montati su slitta attuata, 1 robot ur10 (universal robot), 1 robot franka emika a 7 gradi di liberta', 1 robot clearpath husky customizzato a trazione differenziale, 3 stereo camere intelligenti zed, 1 endoscopio, 1 unita' di misura inerziale (imu), 1 laser scanner 2d, 4 sensori di forza/coppia, 3 gripper pneumatici a due e tre dita, 1 gripper elettrico a due dita, 1 end-effector per l'ablazione dentale, 1 stampante 3d e 9 postazioni pc con matlab e ros2.",
+      "retrieved_contexts": [
+        "Laboratorio: robotica | Sezione: laboratori\n\nStrumentazione     2 x robot antropomorfi Comau Smart-Six montati su slitta attuata   1 x robot UR10 (Universal Robot)   1 x robot Franka Emika a 7 gradi   1 x robot Clearpath Husky customizzato a trazione differenziale   3 x stereo camere intelligenti Zed   1 x endoscopio   1 x unità di misurazioni inerziali (IMU)   1 x laser scanner 2D   4 x sensori di forza/coppia   3 x gripper pneumatici a due e tre dita   1 x gripper elettrico a due dita   1 x end-effector per l’ablazione dentale   1 x stampante 3D   9 x postazioni PC con Matlab e ROS2",
+        "Laboratorio: intelligent bioengineering technologies | Sezione: laboratori\n\nStrumentazione \n Il laboratorio è attualmente dotato di: \n \n Otto postazioni PC \n Sistema di acquisizione EEG g.tec g.Nautilus Research \n Mano robotica IH2 Azzurra Prensilia \n Sistema di imaging a ultrasuoni Samsung HM70-EVO \n Piattaforme indossabili per il monitoraggio della salute Empatica Embrace Plus \n Sistemi di sensori muscolari Mindrove EMG armbands \n Kit di sensori di movimento 2M Engineering 9DOF IMU \n Server di laboratorio dotato di 2 GPU GeForce RTX 5090 \n Supercomputer desktop per IA ASUS Ascent GX10 \n Componenti di base per la prototipazione di sistemi embedded.",
+        "Laboratorio: robotica | Sezione: laboratori\n\nper compiti come lucidatura, sbavatura e trasporto, richiedendo un controllo accurato delle forze per garantire sicurezza e precisione. Nel laboratorio si utilizzano strategie standard (es. controllo di ammettenza e impedenza) combinate con tecniche basate su dati e intelligenza artificiale per migliorare le prestazioni. Le applicazioni includono la scrittura ad alta velocità, assemblaggi remoti e compiti di lucidatura.   Teleoperazioni aptiche  Le teleoperazioni aptiche ampliano le capacità umane in contesti come telechirurgia ed esplorazione spaziale, combinando precisione robotica con competenze umane. Nel laboratorio si sviluppano sistemi bilaterali con feedback cinestesico e visivo, controllo adattivo e algoritmi avanzati per garantire comfort e sicurezza durante operazioni",
+        "Laboratorio: robotica | Sezione: laboratori\n\nMissione     Le attività di laboratorio sono focalizzate nell’ambito della robotica industriale, aerospaziale, medica e di servizio al fine di fornire un supporto sperimentale alla derivazione di nuove metodologie di pianificazione e controllo di piattaforme robotiche, con l’obiettivo di permettere l’esecuzione di compiti complessi con maggiore precisione e flessibilità.   Il laboratorio offe un ambiente di apprendimento pratico e teorico per formare ingegneri e ricercatori altamente qualificati e permette di stabilire collaborazioni con aziende per sviluppare progetti di ricerca congiunti, trasferire le tecnologie sviluppate al settore industriale e favorire lo sviluppo economico.",
+        "Laboratorio: ingegneria dei sistemi di controllo | Sezione: laboratori\n\nStrumentazione   La strumentazione disponibile in laboratorio è la seguente:   magazzino automatico dotato di rulli trasportatori ed elevatori controllato da 1 PLC SIMATIC S7-300 e 3 moduli I/O remoto SIMATIC ET 200M collegati via PROFIBUS o PROFINET   3 x controllori NxtDCSmini per l’implementazione di sistemi di controllo distribuiti conformi allo standard IEC 61499   4 x postazioni PC con Matlab, TIA Portal e SIMIT   Foto e maggiori informazioni reperibili sul sito di riferimento del gruppo  www.automatica.unisa.it",
+        "Laboratorio: energy storage and energy sources | Sezione: laboratori\n\nStrumentazione   Il laboratorio è dotato di alcuni strumenti dedicati all’attività sperimentale sui sistemi di accumulo elettrochimico:     camera termica (incubatore refrigerato) Binder KB 240 con kit EUCAR 5   potenziostato/galvanostato/ZRA Gamry Reference 3000 AE con elettrometro ausiliario e booster   Keithley Sourcemeter unit 2420   Oscilloscopio Agilent MSO6034A   Alimentatore stabilizzato TTi EX354RT triple power supply 300W",
+        "Laboratorio: embedded intelligent systems | Sezione: laboratori\n\nImpiego principale: applicazioni di robotica cognitiva.     Stampante 3D Ultimaker 3 Extended , progettata e costruita per la modellazione a deposizione fusa con tecnopolimeri termoplastici. L’unione di precisione e velocità rende la stampante Ultimaker 3D la macchina perfetta per la realizzazione di modelli concettuali, prototipi funzionali e per la produzione di piccole serie.   Impiego principale: prototipazione e modellazione di componenti per progetti di ricerca in ambito embedded and robotics systems.     Lynxmotion Aluminum A4WD1 Rover Kit  è un robot mobile a 4 ruote motrici progettato per applicazioni educative e prototipazione avanzata. È costruito con un telaio in alluminio anodizzato, che gli conferisce una struttura solida e al contempo leggera. Questo lo rende adatto sia a"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 13929.3,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 13290.0
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.8186755033183908,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 14,
+      "question": "Chi sono i membri della commissione Paritetica?",
+      "ground_truth": "I membri della Commissione Paritetica del Consiglio Didattico di Ingegneria Informatica sono: Vincenzo Auletta (PO, Presidente), Emilia Del Pezzo (Studentessa, Vice-Presidente), Gabriele Di Lorenzo (Studente, Membro), Ettore Napoli (PO, Membro), Giovanni Petrone (PO, Segretario) e Alessia Terranova (Studentessa, Membro).",
+      "response": "I membri della Commissione Paritetica Docenti-Studenti del DIEM sono:\n\n1. **Vincenzo AULETTA** – Presidente (Professore Ordinario) – CD di Ingegneria Informatica – auletta@unisa.it  \n2. **Emilia DEL PEZZO** – Vice‑Presidente (Studente) – CD di Ingegneria Informatica – e.delpezzo@studenti.unisa.it  \n3. **Gabriele DI LORENZO** – Membro (Studente) – CD di Ingegneria Informatica – g.dilorenzo27@studenti.unisa.it  \n4. **Ettore NAPOLI** – Membro (Professore Ordinario) – CD di Ingegneria Informatica – enapoli@unisa.it  \n5. **Giovanni PETRONE** – Segretario (Professore Ordinario) – CD di Ingegneria Informatica – gpetrone@unisa.it  \n\nFonte: pagina ufficiale della Commissione Paritetica del DIEM.",
+      "response_normalized": "i membri della commissione paritetica docenti-studenti del diem sono:\nvincenzo auletta – presidente (professore ordinario) – cd di ingegneria informatica – auletta@unisa.it \nemilia del pezzo – vice‑presidente (studente) – cd di ingegneria informatica – e.delpezzo@studenti.unisa.it \ngabriele di lorenzo – membro (studente) – cd di ingegneria informatica – g.dilorenzo27@studenti.unisa.it \nettore napoli – membro (professore ordinario) – cd di ingegneria informatica – enapoli@unisa.it \ngiovanni petrone – segretario (professore ordinario) – cd di ingegneria informatica – gpetrone@unisa.it \n\nfonte: pagina ufficiale della commissione paritetica del diem.",
+      "ground_truth_normalized": "i membri della commissione paritetica del consiglio didattico di ingegneria informatica sono: vincenzo auletta (po, presidente), emilia del pezzo (studentessa, vice-presidente), gabriele di lorenzo (studente, membro), ettore napoli (po, membro), giovanni petrone (po, segretario) e alessia terranova (studentessa, membro).",
+      "retrieved_contexts": [
+        "Sezione: generale\n\nDipartimento |  Commissione Paritetica Docenti-Studenti \n \n \n \n \n   Calendario \n \n \n \n \n Commissione paritetica del Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n # \n Componente \n Ruolo  (*) \n \n Funzione \n Consiglio Didattico/CdS \n Email \n \n \n 1 \n AULETTA Vincenzo \n PO \n Presidente \n CD di Ingegneria Informatica \n auletta@unisa.it \n \n \n 2 \n DEL PEZZO Emilia \n S \n Vice-Presidente \n CD di Ingegneria Informatica \n e.delpezzo@studenti.unisa.it \n \n \n 3 \n DI LORENZO Gabriele. \n S \n Membro \n CD di Ingegneria Informatica \n g.dilorenzo27@studenti.unisa.it \n \n \n 4 \n NAPOLI Ettore \n PO \n Membro \n CD di Ingegneria Informatica \n enapoli@unisa.it \n \n \n 5 \n PETRONE Giovanni \n PO \n Segretario \n CD di Ingegneria Informatica \n gpetrone@unisa.it \n \n \n 6",
+        "Sezione: generale\n\nCommissione Paritetica Docenti-Studenti",
+        "Sezione: generale\n\nHome |  Contatti \n \n \n \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM Personale della Struttura    \n \n \n \n \n http://www.diem.unisa.it \n \n \n \n WEB \n \n \n \n Direttore di Dipartimento  Francesco TORTORELLA \n \n \n \n \n Direttore Vicario di Dipartimento  Vincenzo AULETTA \n \n \n \n \n Presidente di Commissione Paritetica Docenti Studenti  Vincenzo AULETTA",
+        "Sezione: generale\n\nHome |  Contatti \n \n \n \n \n \n \n \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM Personale della Struttura    \n \n \n \n \n http://www.diem.unisa.it \n \n \n \n WEB \n \n \n \n Direttore di Dipartimento  Francesco TORTORELLA \n \n \n \n \n Direttore Vicario di Dipartimento  Vincenzo AULETTA \n \n \n \n \n Presidente di Commissione Paritetica Docenti Studenti  Vincenzo AULETTA"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 9546.7,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 9137.8
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 0.8,
+        "response_relevancy": 0.521243972418422,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.5
+      }
+    },
+    {
+      "index": 15,
+      "question": "Chi è Antonio Greco e quali corsi insegna nel 2025?",
+      "ground_truth": "Antonio Greco e' Professore Associato presso il Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) dell'Universita' degli Studi di Salerno. Si e' laureato con lode in Ingegneria Informatica nel 2014 e ha conseguito il dottorato nel 2018 presso la stessa universita'. Dal novembre 2022 e' Ricercatore RTD/B e ricopre il ruolo di Delegato all'Orientamento in Ingresso; dal maggio 2024 e' membro del Collegio di Dottorato in Ingegneria dell'Informazione. E' membro del laboratorio MIVIA e le sue ricerche si concentrano su Computer Vision, Deep Learning e riconoscimento automatico di volti, emozioni, attivita' umane e oggetti, anche in contesti robotici e di veicoli autonomi. Nel 2025 i corsi di cui e' titolare includono: Advanced Machine Learning, Artificial Intelligence for Cybersecurity, Autonomous and Connected Vehicles, Medical Image Processing and Visualization e Natural Language Processing and Large Language Models.",
+      "response": "Antonio Greco è professore associato presso il Dipartimento di Ingegneria dell’Informazione ed Elettrica e Matematica Applicata (DIEM) dell’Università degli Studi di Salerno.  \nContatti:  \n- Email: agreco@unisa.it  \n- Telefono: 089 963003  \n- Ufficio: Campus di Fisciano, Edificio E, Piano Terzo, Stanza 005 (U.FSTEC‑05.P03.005)  \n- Laboratorio: Campus di Fisciano, Edificio E, Piano Primo, Stanza 036 (LAB Embedded Intelligent Systems)  \n\nNel 2025 (anno accademico 2025/2026) insegna i seguenti corsi:\n\n| Corso | Codice | Tipo di corso | Curriculum/Nota | Semestre |\n|-------|--------|---------------|-----------------|----------|\n| Advanced Machine Learning | 8860500002 | Corso di Dottorato (D.M.226/2021) | Ingegneria dell’Informazione – curricula Computer and Information Systems Engineering, Information Technologies for Digital Medicine | Secondo semestre |\n| Autonomous and Connected Vehicles | 0622700127 | Laurea Magistrale in Ingegneria Informatica | Curriculum Artificial Intelligence and Intelligent Robotics – 2° anno | Primo semestre |\n| Artificial Intelligence for Cybersecurity | 0622700094 | Laurea Magistrale in Ingegneria Informatica | Curricula: Artificial Intelligence and Intelligent Robotics, Automation and Control Systems, Cybersecurity, Enterprise Software Architectures, IoT and Embedded Systems, Multimedia Systems and Applications – 2° anno | Secondo semestre |\n| Medical Image Processing and Visualization | (codice non evidenziato nei risultati) | Laurea Magistrale (probabilmente Ingegneria Informatica) | – | Esami previsti luglio‑settembre 2026 (secondo semestre 2025/2026) |\n\nLe informazioni sono tratte dal profilo del docente e dalle schede didattiche relative all’anno 2025【0†L1-L4】【1†L1-L4】【2†L1-L4】【3†L1-L4】【4†L1-L4】.",
+      "response_normalized": "antonio greco è professore associato presso il dipartimento di ingegneria dell’informazione ed elettrica e matematica applicata (diem) dell’università degli studi di salerno. \ncontatti: \nemail: agreco@unisa.it \ntelefono: 089 963003 \nufficio: campus di fisciano, edificio e, piano terzo, stanza 005 (u.fstec‑05.p03.005) \nlaboratorio: campus di fisciano, edificio e, piano primo, stanza 036 (lab embedded intelligent systems) \n\nnel 2025 (anno accademico 2025/2026) insegna i seguenti corsi:\n\n| corso | codice | tipo di corso | curriculum/nota | semestre |\n|-------|--------|---------------|-----------------|----------|\n| advanced machine learning | 8860500002 | corso di dottorato (d.m.226/2021) | ingegneria dell’informazione – curricula computer and information systems engineering, information technologies for digital medicine | secondo semestre |\n| autonomous and connected vehicles | 0622700127 | laurea magistrale in ingegneria informatica | curriculum artificial intelligence and intelligent robotics – 2° anno | primo semestre |\n| artificial intelligence for cybersecurity | 0622700094 | laurea magistrale in ingegneria informatica | curricula: artificial intelligence and intelligent robotics, automation and control systems, cybersecurity, enterprise software architectures, iot and embedded systems, multimedia systems and applications – 2° anno | secondo semestre |\n| medical image processing and visualization | (codice non evidenziato nei risultati) | laurea magistrale (probabilmente ingegneria informatica) | – | esami previsti luglio‑settembre 2026 (secondo semestre 2025/2026) |\n\nle informazioni sono tratte dal profilo del docente e dalle schede didattiche relative all’anno 2025【0†l1-l4】【1†l1-l4】【2†l1-l4】【3†l1-l4】【4†l1-l4】.",
+      "ground_truth_normalized": "antonio greco e' professore associato presso il dipartimento di ingegneria dell'informazione ed elettrica e matematica applicata (diem) dell'universita' degli studi di salerno. si e' laureato con lode in ingegneria informatica nel 2014 e ha conseguito il dottorato nel 2018 presso la stessa universita'. dal novembre 2022 e' ricercatore rtd/b e ricopre il ruolo di delegato all'orientamento in ingresso; dal maggio 2024 e' membro del collegio di dottorato in ingegneria dell'informazione. e' membro del laboratorio mivia e le sue ricerche si concentrano su computer vision, deep learning e riconoscimento automatico di volti, emozioni, attivita' umane e oggetti, anche in contesti robotici e di veicoli autonomi. nel 2025 i corsi di cui e' titolare includono: advanced machine learning, artificial intelligence for cybersecurity, autonomous and connected vehicles, medical image processing and visualization e natural language processing and large language models.",
+      "retrieved_contexts": [
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: advanced machine learning | Anno: 2025\n\nANTONIO GRECO |  ADVANCED MACHINE LEARNING \n \n \n \n \n \n cod. 8860500002 ADVANCED MACHINE LEARNING \n \n \n \n \n 8860500002 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n Corso di Dottorato (D.M.226/2021) \n \n \n \n INGEGNERIA DELL'INFORMAZIONE \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   2 \n COMPUTER AND INFORMATION SYSTEMS ENGINEERING \n INFORMATION TECHNOLOGIES FOR DIGITAL MEDICINE \n \n \n \n CURRICULUM  INFORMATION TECHNOLOGIES FOR DIGITAL MEDICINE \n \n \n \n OBBLIGATORIO \n \n \n \n ANNO CORSO 1 \n \n \n \n ANNO ORDINAMENTO 2025 \n \n \n \n SECONDO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 18 \n LEZIONE \n \n \n \n \n \n DOCENTI \n \n \n \n \n ANTONIO GRECO   T  Curriculum",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: autonomous and connected vehicles | Anno: 2025\n\nANTONIO GRECO |  AUTONOMOUS AND CONNECTED VEHICLES \n \n \n \n \n \n cod. 0622700127 AUTONOMOUS AND CONNECTED VEHICLES \n \n \n \n \n 0622700127 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA MAGISTRALE \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n CURRICULUM  ARTIFICIAL INTELLIGENCE AND INTELLIGENT ROBOTICS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n PRIMO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 24 \n LEZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 1 \n 8 \n LABORATORIO \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nANTONIO GRECO |  ARTIFICIAL INTELLIGENCE FOR CYBERSECURITY \n \n \n \n \n \n cod. 0622700094 ARTIFICIAL INTELLIGENCE FOR CYBERSECURITY \n \n \n \n \n 0622700094 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA MAGISTRALE \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   6 \n ARTIFICIAL INTELLIGENCE AND INTELLIGENT ROBOTICS  Coorte 2024/2025 \n AUTOMATION AND CONTROL SYSTEMS  Coorte 2024/2025 \n CYBERSECURITY  Coorte 2024/2025 \n ENTERPRISE SOFTWARE ARCHITECTURES  Coorte 2024/2025 \n IOT AND EMBEDDED SYSTEMS  Coorte 2024/2025 \n MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n CURRICULUM  MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: medical image processing and visualization | Anno: 2025\n\nESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n MEDICAL IMAGE PROCESSING AND VISUALIZAT \n 31/07/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n MEDICAL IMAGE PROCESSING AND VISUALIZAT \n 01/09/2026 - 14:00 \n SESSIONE DI RECUPERO \n \n \n \n MEDICAL IMAGE PROCESSING AND VISUALIZAT \n 21/09/2026 - 09:00 \n SESSIONE DI RECUPERO \n \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: autonomous and connected vehicles | Anno: 2025\n\nESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n AUTONOMOUS AND CONNECTED VEHICLES \n 16/06/2026 - 14:00 \n SESSIONE ORDINARIA \n \n \n \n AUTONOMOUS AND CONNECTED VEHICLES \n 15/07/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n AUTONOMOUS AND CONNECTED VEHICLES \n 04/09/2026 - 14:00 \n SESSIONE DI RECUPERO \n \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nA VERIFICARE IL LIVELLO DELLE CONOSCENZE E DELLA COMPRENSIONE DEGLI ARGOMENTI AFFRONTATI NEL CORSO, NONCHÉ LA CAPACITÀ DI ESPOSIZIONE DELLO STUDENTE.",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nCURRICULUM  MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n SECONDO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 24 \n LEZIONE \n A SCELTA DELLO STUDENTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n A SCELTA DELLO STUDENTE \n \n \n \n ING-INF/05 \n 1 \n 8 \n LABORATORIO \n A SCELTA DELLO STUDENTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 16/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 23/07/2026 - 14:00 \n SESSIONE ORDINARIA \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 03/09/2026 - 09:00"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 26691.5,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 26053.7
+      },
+      "metrics": {
+        "ctx_precision": 0.9428571428382857,
+        "ctx_recall": 0.2,
+        "response_relevancy": 0.7925224519372799,
+        "faithfulness": 0.375,
+        "factual_correctness(mode=f1)": 0.13
+      }
+    },
+    {
+      "index": 16,
+      "question": "Chi è il direttore del DIEM e che cosa insegna?",
+      "ground_truth": "Il Direttore del DIEM e' il Professor Francesco Tortorella. I corsi di cui e' titolare includono: Calcolatori Elettronici, Fondamenti di Programmazione, Medical Imaging e Advanced AI for Digital Medicine.",
+      "response": "Il direttore del DIEM è il prof. **Francesco Tortorella**.  \nInsegna i seguenti corsi:\n- **Calcolatori Elettronici**\n- **Fondamenti di Programmazione**",
+      "response_normalized": "il direttore del diem è il prof. francesco tortorella. \ninsegna i seguenti corsi:\ncalcolatori elettronici\nfondamenti di programmazione",
+      "ground_truth_normalized": "il direttore del diem e' il professor francesco tortorella. i corsi di cui e' titolare includono: calcolatori elettronici, fondamenti di programmazione, medical imaging e advanced ai for digital medicine.",
+      "retrieved_contexts": [
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: calcolatori elettronici | Anno: 2023\n\nMetodi Didattici \n \n \n \n L'INSEGNAMENTO CONTEMPLA LEZIONI FRONTALI ED ESERCITAZIONI IN AULA.  NELLE ESERCITAZIONI IN AULA VENGONO PROPOSTI AGLI ALLIEVI DEI PROBLEMI DA RISOLVERE CON LA GUIDA DEL DOCENTE. ALCUNE ATTIVITA' PREVEDONO L'UTILIZZO DI UN AMBIENTE DI PROGRAMMAZIONE ASSEMBLY. \n \n \n \n \n \n Verifica dell'apprendimento",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: calcolatori elettronici | Anno: 2025\n\nMetodi Didattici \n \n \n \n L'INSEGNAMENTO CONTEMPLA LEZIONI FRONTALI ED ESERCITAZIONI IN AULA. NELLE ESERCITAZIONI IN AULA VENGO PROPOSTI AGLI ALLIEVI DEI PROBLEMI DA RISOLVERE CON LA GUIDA DEL DOCENTE. ALCUNE ATTIVITA' PREVEDONO L'UTILIZZO DI UN AMBIENTE DI PROGRAMMAZIONE ASSEMBLY. \n \n \n \n \n \n \n Verifica dell'apprendimento",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: calcolatori elettronici | Anno: 2020\n\nMetodi Didattici \n \n \n \n L'INSEGNAMENTO CONTEMPLA LEZIONI FRONTALI ED ESERCITAZIONI IN AULA.  NELLE ESERCITAZIONI IN AULA VENGO PROPOSTI AGLI ALLIEVI DEI PROBLEMI DA RISOLVERE CON LA GUIDA DEL DOCENTE. ALCUNE ATTIVITA' PREVEDONO L'UTILIZZO DI UN AMBIENTE DI PROGRAMMAZIONE ASSEMBLY.  \n \n \n \n \n \n Verifica dell'apprendimento",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: calcolatori elettronici | Anno: 2023\n\nINIZIALI COGNOME I-Z \n \n \n DOCENTI \n \n \n \n FRANCESCO TORTORELLA   T  Curriculum   \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: calcolatori elettronici | Anno: 2022\n\nINIZIALI COGNOME I-Z \n \n \n DOCENTI \n \n \n \n FRANCESCO TORTORELLA   T  Curriculum   \n \n \n \n SCHEDA \n \n \n \n \n Obiettivi",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: fondamenti di programmazione | Anno: 2021\n\nPrerequisiti \n \n \n \n NESSUNO \n \n \n \n \n \n Contenuti",
+        "Docente: francesco tortorella | Matricola: 041789 | Sezione: didattica | Insegnamento: fondamenti di programmazione | Anno: 2023\n\nPrerequisiti \n \n \n \n NESSUNO \n \n \n \n \n \n Contenuti"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 12311.4,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento",
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 5,
+        "total_duration_ms": 11878.5
+      },
+      "metrics": {
+        "ctx_precision": 0.0,
+        "ctx_recall": 0.0,
+        "response_relevancy": 0.7972881243265796,
+        "faithfulness": 0.5,
+        "factual_correctness(mode=f1)": 0.75
+      }
+    },
+    {
+      "index": 17,
+      "question": "Sono aperti bandi di dottorato per l'anno accademico corrente?",
+      "ground_truth": "Alla data attuale non risultano bandi di dottorato aperti per l'anno accademico 2025/26. Tutti i bandi relativi a tale anno accademico riportano scadenze gia' trascorse e risultano contrassegnati come scaduti. Tra questi figurano bandi con scadenza al 13 gennaio 2025, 3 febbraio 2025 e 19 novembre 2025, nonche' il bando relativo alla ESG Challenge 2026 scaduto il 23 gennaio 2026.",
+      "response": "Non risultano bandi di dottorato aperti per l'anno accademico corrente (2025/2026). Nella pagina dei bandi del DIEM per l'anno 2025, tutte le scadenze indicate sono già trascorse e segnate come “SCADUTO”, ad esempio:\n\n- Bando per 14 incarichi (scadenza 3 febbraio 2025)  \n- Elezione dei rappresentanti dei dottorandi (scadenze 13 gennaio 2025, 19 novembre 2025)  \n- Avviso di selezione per assegno di tutorato (scadenza 3 febbraio 2025)  \n- Premio Antonio Rosmini (scadenza 31 ottobre 2025)  \n- ESG Challenge (scadenza 23 gennaio 2026)  \n\nTutte queste date sono antecedenti alla data odierna (23 maggio 2026)【0†L1-L4】【0†L20-L23】【0†L30-L33】【0†L38-L41】.\n\nPer verificare l'eventuale apertura di nuovi bandi di dottorato, ti consiglio di contattare direttamente la segreteria del DIEM o di consultare regolarmente la sezione “Bandi” del sito ufficiale del dipartimento.",
+      "response_normalized": "non risultano bandi di dottorato aperti per l'anno accademico corrente (2025/2026). nella pagina dei bandi del diem per l'anno 2025, tutte le scadenze indicate sono già trascorse e segnate come “scaduto”, ad esempio:\nbando per 14 incarichi (scadenza 3 febbraio 2025) \nelezione dei rappresentanti dei dottorandi (scadenze 13 gennaio 2025, 19 novembre 2025) \navviso di selezione per assegno di tutorato (scadenza 3 febbraio 2025) \npremio antonio rosmini (scadenza 31 ottobre 2025) \nesg challenge (scadenza 23 gennaio 2026) \n\ntutte queste date sono antecedenti alla data odierna (23 maggio 2026)【0†l1-l4】【0†l20-l23】【0†l30-l33】【0†l38-l41】.\n\nper verificare l'eventuale apertura di nuovi bandi di dottorato, ti consiglio di contattare direttamente la segreteria del diem o di consultare regolarmente la sezione “bandi” del sito ufficiale del dipartimento.",
+      "ground_truth_normalized": "alla data attuale non risultano bandi di dottorato aperti per l'anno accademico 2025/26. tutti i bandi relativi a tale anno accademico riportano scadenze gia' trascorse e risultano contrassegnati come scaduti. tra questi figurano bandi con scadenza al 13 gennaio 2025, 3 febbraio 2025 e 19 novembre 2025, nonche' il bando relativo alla esg challenge 2026 scaduto il 23 gennaio 2026.",
+      "retrieved_contexts": [
+        "Tipo bando: bandi altri bandi | Sezione: bandi | Anno: 2025\n\nScadenza \n \n 3 Febbraio 2025 alle ore 10:00   SCADUTO \n \n \n \n \n Numero Posti \n 14 \n \n \n \n Decreto \n n. 6 del 9 Gennaio 2025 \n \n \n \n Protocollo \n n. 5051 del 9 Gennaio 2025 \n \n \n \n Repertorio \n n. 6 / 2025 \n \n \n \n \n \n \n Decreto n. 57 del 10.02.2025 - Approvazione atti e graduatoria di merito \n \n PDF \n \n \n \n \n Decreto n. 6 del 09.01.2025 Bando 14 incarichi - 2 semestre_24-25 \n \n PDF \n \n \n \n \n \n \n Copia Link \n \n \n \n Elezione dei rappresentanti dei dottorandi in seno ai rispettivi collegi dei docenti dei dottorati di ricerca attivati presso il DIEM per l’a.a. 2024/2025 - Ciclo XL \n \n \n \n Struttura \n Dipartimento di Ingegneria dell\\'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Scadenza \n \n 13 Gennaio 2025 alle ore 12:00   SCADUTO \n \n \n \n \n Numero Posti \n 2",
+        "Sezione: bandi | Anno: 2025\n\ndottorandi e i dottori di ricerca presso un’università italiana o della Città del Vaticano che abbiano \nprodotto brillanti tesi, già discusse nel periodo 30 novembre 2024 e il 23 gennaio 2026. \n \nSono esclusi coloro che nel periodo 30 novembre 2024 - 23 gennaio 2026 hanno un rapporto di lavoro \nin essere come dipendenti del Gruppo Iren; tirocinanti, dottorandi e stagisti sono invece ammessi. \n \nArt. 3 – Modalità di partecipazione \n \nLa domanda di partecipazione dovrà essere caricata sulla piattaforma \nhttps://innovationlab.gruppoiren.it/sharm/thesis-form entro le ore 24:00 del 23 gennaio 2026. \nNella domanda di partecipazione il candidato dovrà indicare, oltre ai propri dati personali:",
+        "Sezione: bandi | Anno: 2025\n\nSono previste due sezioni:\n1. articoli/contributi scientifici  pubblicati in miscellanee o riviste, sia cartacee\nche on-line, usciti fra il 1° gennaio 2023 e il 31 ottobre 2025. La sede di\npubblicazione dovrà in ogni caso essere corredata di ISBN o di ISSN. Farà\nfede la data di stampa dichiarata sul frontespizio;\n2. tesi di laurea magistrale e tesi di dottorato  discusse fra il 1° gennaio 2023 e\nil 31 ottobre 2025. \nTali composizioni possono essere in lingua italiana o inglese o francese o tedesca o\nspagnola.\nPer ciascuna delle due sezioni la Giuria sceglierà un lavoro che verrà valorizzato\ncome segue:\n l’articolo sarà segnalato con una menzione di merito;\n alla tesi di laurea magistrale o di dottorato vincitrice  verrà attribuito  un\npremio  in  denaro  di  1500,00  euro  (millecinquecento,00).  Inoltre  al\nvincitore/alla vincitrice sarà offerta l’opportunità di presentare il proprio lavoro\nin un incontro aperto organizzato dal Rotary Club Rovereto Vallagarina in data\nda definirsi.\nLa Giuria del Premio è così composta:\n1. prof.  Michele  Dossi  (Centro  di  Studi  e  Ricerche  ‘Antonio  Rosmini’\ndell’Università di Trento – Accademia Roveretana degli Agiati)\n2. prof.ssa Manuela Valle (Accademia Roveretana degli Agiati)\n3. prof.  Christian  Zendri  (Università  degli  Studi  di  Trento  –  Accademia\nRoveretana degli Agiati)\nQualora lo ritenesse, la Giuria, a suo insindacabile giudizio, potrà non assegnare il\npremio e/o la menzione.",
+        "Tipo bando: bandi altri bandi | Sezione: bandi | Anno: 2025\n\nMODELLO DI CANDIDATURA dottorandi in seno CdD \n \n PDF \n \n \n \n \n \n \n Copia Link \n \n \n \n Elezione dei rappresentanti dei dottorandi in seno ai rispettivi collegi di Dottorato di Ricerca Ciclo XLI attivati dal DIEM per il biennio 2025/2027 \n \n \n \n Struttura \n Dipartimento di Ingegneria dell\\'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Scadenza \n \n 19 Novembre 2025 alle ore 12:00   SCADUTO \n \n \n \n \n Numero Posti \n 2 \n \n \n \n Decreto \n n. 449 del 6 Novembre 2025 \n \n \n \n Protocollo \n n. 392087 del 6 Novembre 2025 \n \n \n \n Repertorio \n n. 449 / 2025 \n \n \n \n \n \n \n Decreto n. 449 del 06.11.2025 elezione dottorandi in seno ai collegi \n \n PDF \n \n \n \n \n Elettorato attivo \n \n PDF \n \n \n \n \n MODELLO DI CANDIDATURA \n \n PDF \n \n \n \n \n \n \n Copia Link",
+        "Tipo bando: bandi altri bandi | Sezione: bandi | Anno: 2025\n\nScadenza \n \n 13 Gennaio 2025 alle ore 12:00   SCADUTO \n \n \n \n \n Numero Posti \n 2 \n \n \n \n Decreto \n n. 328 del 19 Dicembre 2024 \n \n \n \n Protocollo \n n. 391159 del 19 Dicembre 2024 \n \n \n \n Repertorio \n n. 328 / 2024 \n \n \n \n \n \n \n \n Decreto n. 33 del 23.01.2025 Nomina Dottorandi \n \n \n PDF \n \n \n \n \n Manifesto delle candidature \n \n PDF \n \n \n \n \n D.U. n. 328 del 19.12.2024 Elezione dei rappresentanti dei dottorandi \n \n PDF \n \n \n \n \n Ettorato attivo e passivo \n \n PDF \n \n \n \n \n Modello di candidatura \n \n PDF",
+        "Sezione: bandi | Anno: 2025\n\nricerca internazionali o dei diversi corsi di Dottorato, per favorire la cooperazione\ncon prestigiosi enti di ricerca internazionali.\nTarget da\nconseguire\n0.25\nAZIONE 2\nR_A_1_Az2 - Promuovere politiche di open access per massimizzare la diffusione dei prodotti della\nricerca\n                            33 / 41",
+        "Tipo bando: bandi altri bandi | Sezione: bandi | Anno: 2025\n\nPDF \n \n \n \n \n \n \n Copia Link \n \n \n \n Avviso di selezione pubblica, per titoli e colloquio, per il conferimento di n. 1 assegno per attività di tutorato didattiche-integrative, propedeutiche e di recupero presso il DIEM da affidare agli studenti iscritti ai corsi di Dottorato di Ricerca - II semestre a.a. 2024/2025. Codice Concorso: DIEM_TUT2025_ADI02 \n \n \n \n Struttura \n Dipartimento di Ingegneria dell\\'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Scadenza \n \n 3 Febbraio 2025 alle ore 10:00   SCADUTO \n \n \n \n \n Numero Posti \n 1 \n \n \n \n Decreto \n n. 8 del 9 Gennaio 2025 \n \n \n \n Protocollo \n n. 5053 del 9 Gennaio 2025 \n \n \n \n Repertorio \n n. 8 / 2025 \n \n \n \n \n \n \n Decreto n. 62 del 11.02.2025 - Approvazione atti 1 assegno \n \n PDF"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 31934.3,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 31389.3
+      },
+      "metrics": {
+        "ctx_precision": 0.8041666666465626,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.0,
+        "faithfulness": 0.5,
+        "factual_correctness(mode=f1)": 0.62
+      }
+    },
+    {
+      "index": 18,
+      "question": "Chi è il responsabile del laboratorio MIVIA e quali sono i suoi orari di ricevimento?",
+      "ground_truth": "Il responsabile del Laboratorio MIVIA (Macchine Intelligenti per il Riconoscimento di Video, Immagini e Audio) e' il Prof. Mario Vento. Il ricevimento si svolge il lunedi' dalle 8:30 alle 10:30 e il giovedi' dalle 10:30 alle 12:30, presso il Laboratorio MIVIA (T18/1).",
+      "response": "Il responsabile del laboratorio MIVIA è il Prof. Mario Vento.\n\nI suoi orari di ricevimento presso il Laboratorio MIVIA (T18/1) sono:\n- **Lunedì**: 8:30 - 10:30\n- **Giovedì**: 10:30 - 12:30\n\nSi raccomanda di contattare il docente via email per concordare il ricevimento.",
+      "response_normalized": "il responsabile del laboratorio mivia è il prof. mario vento.\n\ni suoi orari di ricevimento presso il laboratorio mivia (t18/1) sono:\nlunedì: 8:30 - 10:30\ngiovedì: 10:30 - 12:30\n\nsi raccomanda di contattare il docente via email per concordare il ricevimento.",
+      "ground_truth_normalized": "il responsabile del laboratorio mivia (macchine intelligenti per il riconoscimento di video, immagini e audio) e' il prof. mario vento. il ricevimento si svolge il lunedi' dalle 8:30 alle 10:30 e il giovedi' dalle 10:30 alle 12:30, presso il laboratorio mivia (t18/1).",
+      "retrieved_contexts": [
+        "Laboratorio: macchine intelligenti per il riconoscimento di video, immagini e audio | Sezione: laboratori\n\nDidattica   Il laboratorio è principalmente utilizzato dai tesisti provenienti dai corsi di laurea di Ingegneria Informatica di I e II livello, impegnati nello sviluppo di modelli e applicazioni che rientrano nei differenti ambiti di ricerca svolti dal gruppo di ricerca MIVIA: il riconoscimento e l'interpretazione di immagini biomediche, l'analisi video in tempo reale in contesti di video sorveglianza e monitoraggio del traffico o ancora le tecniche di Pattern Recognition basate su rappresentazioni strutturali.",
+        "Laboratorio: macchine intelligenti per il riconoscimento di video, immagini e audio | Sezione: laboratori\n\nMission   Il gruppo di ricerca  MIVIA  coordinato dal prof. Mario Vento svolge attività di ricerca da oltre 20 anni nei settori della Pattern Recognition e della Computer Vision. La ricerca è volta a fornire contributi originali sia nel contesto della ricerca teorica che applicata. Nel primo caso sono da evidenziare i contributi forniti nella definizione di algoritmi per il matching di grafi, di tecniche di combinazione di sistemi di classificazione, etc. Dal punto di vista applicativo gli interessi del gruppo di ricerca sono rivolti alla analisi di flussi video ed audio in tempo reale per applicazioni di situation awareness con particolare riferimento ai contesti della video ed audio sorveglianza intelligente, al monitoraggio del traffico, alla human behavior analysis. Un altro importante",
+        "Laboratorio: macchine intelligenti per il riconoscimento di video, immagini e audio | Sezione: laboratori\n\nMembri \n \n \n \n \n VENTO Mario Responsabile \n \n \n \n \n \n RITROVATO Pierluigi Collaboratore \n \n \n \n \n GRECO Antonio Collaboratore \n \n \n \n \n \n GRECO LUCA Collaboratore \n \n \n \n \n \n FOGGIA PASQUALE Collaboratore \n \n \n \n \n \n PERCANNELLA Gennaro Collaboratore \n \n \n \n \n \n SAGGESE ALESSIA Collaboratore \n \n \n \n \n D'ACIERNO Antonio Collaboratore \n \n \n \n \n CARLETTI Vincenzo Collaboratore",
+        "Laboratorio: geofisica e analisi dei segnali | Sezione: laboratori\n\nMembri \n \n \n \n \n FALANGA Mariarosaria Responsabile \n \n \n \n \n DE LAURO Vincenza Collaboratore",
+        "Laboratorio: ingegneria dei sistemi di controllo | Sezione: laboratori\n\nMembri \n \n \n \n \n BASILE Francesco Responsabile Scientifico \n \n \n \n \n \n CHIACCHIO Pasquale Membro"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 21523.1,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone",
+          "search_persone",
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 7,
+        "total_duration_ms": 21155.6
+      },
+      "metrics": {
+        "ctx_precision": 0.3333333333,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.7486533379936233,
+        "faithfulness": 0.25,
+        "factual_correctness(mode=f1)": 0.86
+      }
+    },
+    {
+      "index": 19,
+      "question": "Fai un confronto tra i piani di studio del corso di laurea triennale in ing informatica e in ing informatica per la medicina digitale.",
+      "ground_truth": "Entrambi i corsi appartengono alla classe L-8 e prevedono 180 CFU in tre anni, con una base comune nel primo anno in matematica, fisica e programmazione. Ingegneria Informatica condivide nel primo anno i seguenti insegnamenti: Analisi Matematica 1 (9 CFU), Fisica 1 (9 CFU), Fondamenti di Programmazione (6 CFU), Geometria Algebra e Logica (9 CFU), Calcolatori Elettronici (6 CFU) e Inglese (3 CFU). Dal terzo anno lo studente sceglie tra tre curriculum di specializzazione: Software, Systems e Networks, ciascuno con insegnamenti caratterizzanti dedicati. L'area caratterizzante e' focalizzata su informatica tradizionale, teoria dei sistemi, reti e sviluppo software. Ingegneria dell'Informazione per la Medicina Digitale prevede nel primo anno: Analisi Matematica 1 (9 CFU), Fisica 1 (9 CFU), Fondamenti di Programmazione (6 CFU), Chimica (9 CFU), Disegno e Rappresentazione Grafica (6 CFU) e Inglese Tecnico (3 CFU). Il corso ha un percorso unico senza suddivisione in curriculum distinti, con un'area caratterizzante che integra ingegneria biomedica, ingegneria elettronica, ingegneria informatica e ingegneria delle telecomunicazioni, orientata alle applicazioni in ambito sanitario e alla medicina digitale. Le differenze principali riguardano tre aspetti: la struttura dei percorsi (tre curriculum vs percorso unico), la focalizzazione disciplinare (informatica generalista vs ambito biomedico) e la composizione del primo anno, in cui il corso per la Medicina Digitale include fin da subito Chimica e Disegno Grafico, assenti nel piano di Ingegneria Informatica.",
+      "response": "Ecco un confronto tra i piani di studio del corso di laurea triennale in Ingegneria Informatica e quello in Ingegneria Informatica per la Medicina Digitale, basato sui documenti più recenti disponibili nella knowledge base (senza riferimento temporale esplicito nella domanda, si utilizzano i piani più recenti reperiti).\n\n### Ingegneria Informatica (L-8)\n- **Piano di studi di riferimento**: valido dall’A.A. 2023/24 [fonte:",
+      "response_normalized": "ecco un confronto tra i piani di studio del corso di laurea triennale in ingegneria informatica e quello in ingegneria informatica per la medicina digitale, basato sui documenti più recenti disponibili nella knowledge base (senza riferimento temporale esplicito nella domanda, si utilizzano i piani più recenti reperiti).\n\ningegneria informatica (l-8)\npiano di studi di riferimento: valido dall’a.a. 2023/24 [fonte:",
+      "ground_truth_normalized": "entrambi i corsi appartengono alla classe l-8 e prevedono 180 cfu in tre anni, con una base comune nel primo anno in matematica, fisica e programmazione. ingegneria informatica condivide nel primo anno i seguenti insegnamenti: analisi matematica 1 (9 cfu), fisica 1 (9 cfu), fondamenti di programmazione (6 cfu), geometria algebra e logica (9 cfu), calcolatori elettronici (6 cfu) e inglese (3 cfu). dal terzo anno lo studente sceglie tra tre curriculum di specializzazione: software, systems e networks, ciascuno con insegnamenti caratterizzanti dedicati. l'area caratterizzante e' focalizzata su informatica tradizionale, teoria dei sistemi, reti e sviluppo software. ingegneria dell'informazione per la medicina digitale prevede nel primo anno: analisi matematica 1 (9 cfu), fisica 1 (9 cfu), fondamenti di programmazione (6 cfu), chimica (9 cfu), disegno e rappresentazione grafica (6 cfu) e inglese tecnico (3 cfu). il corso ha un percorso unico senza suddivisione in curriculum distinti, con un'area caratterizzante che integra ingegneria biomedica, ingegneria elettronica, ingegneria informatica e ingegneria delle telecomunicazioni, orientata alle applicazioni in ambito sanitario e alla medicina digitale. le differenze principali riguardano tre aspetti: la struttura dei percorsi (tre curriculum vs percorso unico), la focalizzazione disciplinare (informatica generalista vs ambito biomedico) e la composizione del primo anno, in cui il corso per la medicina digitale include fin da subito chimica e disegno grafico, assenti nel piano di ingegneria informatica.",
+      "retrieved_contexts": [
+        "8 \n \nALLEGATO 1: PIANO DI STUDI \nPiano di studi per LAUREA in INGEGNERIA INFORMATICA valido dall’A.A 2022/23 \n(1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti) \nPiano di studi dei curricula \n Software \n Systems \n Networks \n \nPARTE COMUNE A TUTTI I CURRICULA \n \n1° ANNO CF\nU TAF AMBITO \nDISCIPLINARE SSD Tipologia Propedeuticità \nAnalisi matematica 1 9 Base \nMatematica,",
+        "CORSO DI LAUREA in INGEGNERIA INFORMATICA (L-8) \nPiano di studi valido dall’A.A 2023/24 \n(1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti) \nPIANO DI STUDI PER I CURRICULA: \n• Software \n• Systems \n• Networks \n1° ANNO \nInsegnamento Modulo CFU TAF AMBITO DISCIPLINARE SSD Tipologia Modalità di esame e tipo \ndi valutazione \nPropedeuticità",
+        "9 \n \nALLEGATO 1: PIANO DI STUDI \nPiano di studi per LAUREA in INGEGNERIA INFORMATICA valido dall’A.A 2021/22 \n(1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti) \nPiano di studi dei curricula \n Software \n Systems \n Networks \n Digital Health \n \nPARTE COMUNE A TUTTI I CURRICULA \n \n1° ANNO CFU TAF AMBITO \nDISCIPLINARE SSD Tipologia Propedeuticità \nAnalisi matematica 1 9 Base",
+        "ALLEGATO 1: PIANO DI STUDI  Piano di studi per LAUREA MAGISTRALE in INGEGNERIA INFORMATICA valido dall’A.A 2021/22 (1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti)  PIANO DI STUDI PER I CURRICULA: • Modelli e Applicazioni Software • Artificial Intelligence and Intelligent Robotics • Cybersecurity • IOT and Embedded Systems • Automation and Control Systems • Fabbrica",
+        "B) INSEGNAMENTI DAL CDS IN INGEGNERIA INFORMATICA  \nLo studente può completare il proprio piano di studi, con riferimento ai 12 CFU a scelta, selezionando uno o più tra i seguen ti insegnamenti potenzialmente erogabili \nnell’ambito del corso di laurea in Ingegneria Informatica. Per tali insegnamenti è automaticamente soddisfatta la coerenza con gli obiettivi culturali del corso di studi, ma",
+        "8 \n \nALLEGATO 1: PIANO DI STUDI \n \nPiano di studi per LAUREA MAGISTRALE in INGEGNERIA INFORMATICA valido dall’A.A 2022/23 \n(1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti) \n \nPIANO DI STUDI PER I CURRICULA: \n Artificial Intelligence and Intelligent Robotics \n Automation and Control Systems \n Cybersecurity \n Enterprise Software Architectures \n IOT and Embedded Systems",
+        "9 \n \nALLEGATO 1: PIANO DI STUDI \n \nPiano di studi per LAUREA MAGISTRALE in INGEGNERIA INFORMATICA valido dall’A.A 2020/21 \n(1 cfu corrisponde a 8 ore di didattica frontale da parte dei docenti) \n \nPIANO DI STUDI PER I CURRICULA: \n Architetture e Sistemi \n Modelli e Applicazioni Software \n Fabbrica Intelligente \n Artificial Intelligence \n Embedded Systems \n Automation and Control Systems"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 38499.2,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 37967.8
+      },
+      "metrics": {
+        "ctx_precision": NaN,
+        "ctx_recall": 0.7142857142857143,
+        "response_relevancy": 0.7198203922242836,
+        "faithfulness": 0.3333333333333333,
+        "factual_correctness(mode=f1)": 0.29
+      }
+    },
+    {
+      "index": 20,
+      "question": "Quali sono i membri del laboratorio di Robotica e qual è la capienza dell'aula N?",
+      "ground_truth": "Il Laboratorio di Robotica (LabROB) annovera i seguenti membri: Pasquale Chiacchio' (Responsabile Scientifico), Francesco Basile (Collaboratore) ed Enrico Ferrentino (Collaboratore). L'aula N ha una capienza di 100 posti.",
+      "response": "I membri del laboratorio di Robotica sono:\n- Pasquale Chiacchio (Responsabile Scientifico)\n- Francesco Basile (Collaboratore)\n- Enrico Ferrentino (Collaboratore)  \n\nFonte: elenco membri del laboratorio di Robotica【0†L1-L4】.\n\nLa capienza dell’aula N è di **100 posti**.\n\nFonte: scheda dell’aula N nella sezione aule del corso di Ingegneria Informatica【1†L4-L5】.",
+      "response_normalized": "i membri del laboratorio di robotica sono:\npasquale chiacchio (responsabile scientifico)\nfrancesco basile (collaboratore)\nenrico ferrentino (collaboratore) \n\nfonte: elenco membri del laboratorio di robotica【0†l1-l4】.\n\nla capienza dell’aula n è di 100 posti.\n\nfonte: scheda dell’aula n nella sezione aule del corso di ingegneria informatica【1†l4-l5】.",
+      "ground_truth_normalized": "il laboratorio di robotica (labrob) annovera i seguenti membri: pasquale chiacchio' (responsabile scientifico), francesco basile (collaboratore) ed enrico ferrentino (collaboratore). l'aula n ha una capienza di 100 posti.",
+      "retrieved_contexts": [
+        "Sezione: aule\n\nAula N FINV-09CP01019 \n \n   \n \n \n Ubicazione \n Primo piano - Edificio E1 (Campus di Fisciano) \n \n \n Tipologia \n Aula Media \n \n \n Capienza \n 100 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula O FINV-09CPTE006 \n \n   \n \n \n Ubicazione \n Piano terra - Edificio E1 (Campus di Fisciano) \n \n \n Tipologia \n Aula Media \n \n \n Capienza \n 75 \n \n \n Attrezzature Fisse \n Videoproiettore, Lavagna a pennarello, Rete Wifi, Lavagna a gessi \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula delle Lauree - V. Cardone FINV-09CS01009 \n \n   \n \n \n Ubicazione \n -1 - Edificio E1 (Campus di Fisciano) \n \n \n Tipologia \n Aula delle Lauree \n \n \n Capienza \n 429 \n \n \n Attrezzature Fisse",
+        "Sezione: aule\n\nTipologia \n Aula Piccola \n \n \n Capienza \n 40 \n \n \n \n    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula A2 APALCOMPTE079 \n \n   \n \n \n Ubicazione \n Piano terra - Polo Avellino (Piazza del Popolo) \n \n \n Tipologia \n Aula Piccola \n \n \n Capienza \n 40 \n \n \n \n    Calendario Occupazione \n \n \n \n \n \n \n   \n Laboratorio A4 APALCOMPTE057 \n \n   \n \n \n Ubicazione \n Piano terra - Polo Avellino (Piazza del Popolo) \n \n \n Tipologia \n Laboratorio didattico \n \n \n Capienza \n 24 \n \n \n \n    Calendario Occupazione \n \n \n \n \n \n \n \n   Fonte Dati:  Vetrina Aule \n \n \n \n \n \n \n \n Aule Didattiche \n \n PDF \n \n \n \n \n Laboratori Didattici \n \n PDF \n \n \n \n \n Sale Studio \n \n PDF",
+        "Sezione: aule\n\nTipologia \n Laboratorio didattico \n \n \n Capienza \n 50 \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula 129 FSTEC-06P01009 \n \n   \n \n \n Ubicazione \n Primo piano - Edificio E (Campus di Fisciano) \n \n \n Tipologia \n Aula Media \n \n \n Capienza \n 99 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula A FINV-07EPTE005 \n \n   \n \n \n Ubicazione \n piano 0 - Edificio E2 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 144 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione",
+        "Sezione: aule\n\nTipologia \n Aula delle Lauree \n \n \n Capienza \n 429 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula PTE013 FINV-14DPTE013 \n \n   \n \n \n Ubicazione \n piano terra - Edificio F4 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 158 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n \n   Fonte Dati:  Vetrina Aule \n \n \n \n \n \n \n \n Aule Didattiche \n \n PDF \n \n \n \n \n Aule Studio \n \n PDF \n \n \n \n \n Aula didattica di base \n \n \n \n \n Laboratorio Didattico Informatica di Base \n \n \n \n \n Laboratorio Didattico Sistemi \n \n \n \n \n Aula Infografica",
+        "Sezione: aule\n\nElectrical Engineering for Digital Energy |  Strutture Didattiche \n \n \n \n Seleziona Tipologia     \n  Aula Piccola \n  Aule Media \n  Aula Grande \n  Aula Molto Grande \n  Aula Extra grande (>200) \n  Aula Studio \n  Laboratorio Didattico \n  Laboratorio Linguistico \n  Laboratorio Multimediale \n  Sala Riunioni \n  Spazio Attività Complementari \n \n  Tutte le Tipologie \n \n \n \n Nessuna struttura per la tipologia selezionata \n \n   \n Aula A5 APALCOMPTE035 \n \n   \n \n \n Ubicazione \n Piano terra - Polo Avellino (Piazza del Popolo) \n \n \n Tipologia \n Aula Piccola \n \n \n Capienza \n 40 \n \n \n \n    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula A1 APALCOMPTE073 \n \n   \n \n \n Ubicazione \n Piano terra - Polo Avellino (Piazza del Popolo) \n \n \n Tipologia \n Aula Piccola \n \n \n Capienza \n 40",
+        "Sezione: aule\n\nUbicazione \n piano 1 - Edificio E2 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 121 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula M FINV-07EP01022 \n \n   \n \n \n Ubicazione \n piano 1 - Edificio E2 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 121 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula D FINV-09CPTE015 \n \n   \n \n \n Ubicazione \n Piano terra - Edificio E1 (Campus di Fisciano) \n \n \n Tipologia \n Aula Media \n \n \n Capienza \n 99",
+        "Sezione: aule\n\nUbicazione \n Primo piano - Edificio E (Campus di Fisciano) \n \n \n Tipologia \n Aula Media \n \n \n Capienza \n 99 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula A FINV-07EPTE005 \n \n   \n \n \n Ubicazione \n piano 0 - Edificio E2 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 144 \n \n \n Attrezzature Fisse \n Videoproiettore, Microfono/presa, Rete Wifi, Lavagna a gessi, Prese elettriche/Video PC \n \n \n \n \n \n \n \n \n \n \n    Planimetria    Calendario Occupazione \n \n \n \n \n \n \n   \n Aula B FINV-07EPTE013 \n \n   \n \n \n Ubicazione \n piano 0 - Edificio E2 (Campus di Fisciano) \n \n \n Tipologia \n Aula Grande \n \n \n Capienza \n 144"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 10551.1,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 10114.3
+      },
+      "metrics": {
+        "ctx_precision": 0.0,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.8295121953061676,
+        "faithfulness": 0.5,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 21,
+      "question": "Quali sono i corsi di eccellenza offerti dal DIEM?",
+      "ground_truth": "Il DIEM offre percorsi di eccellenza nell'ambito del progetto Dipartimento di Eccellenza per i seguenti corsi: la Laurea Magistrale in Information Engineering for Digital Medicine (LM-32) e la Laurea Triennale in Ingegneria dell'Informazione per la Medicina Digitale (L-8). Tali percorsi prevedono attivita' di approfondimento sulla medicina digitale, sviluppo di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita'), coinvolgimento di esperti provenienti da aziende e istituzioni, e tirocini formativi presso enti di rilievo.",
+      "response": "Il DIEM offre percorsi di eccellenza rivolti agli studenti con migliori risultati nei propri corsi di studio e nei programmi di dottorato, tutti collegati al progetto IT4DiMe (Information Technologies for Digital Medicine).  \n\n**Per le lauree (triennale e magistrale)**  \n- Percorsi di eccellenza per gli studenti del **Corso di Laurea in Ingegneria dell’Informazione per la Medicina Digitale (L8)** e del **Corso di Laurea Magistrale in Information Engineering for Digital Medicine (LM32)**.  \n- Questi percorsi includono attività di approfondimento sulla medicina digitale, sviluppo di competenze trasversali (miglioramento dell’inglese, partecipazione a progetti di ricerca e innovazione tecnologica, iniziative imprenditoriali), tirocini formativi curriculari presso aziende e istituzioni di rilievo, coinvolgimento di esperti qualificati provenienti da enti e aziende nel programma didattico.  \n\n**Per il dottorato di ricerca**  \n- Rafforzamento dell’offerta formativa del **Dottorato di Ricerca in Ingegneria dell’Informazione** nel settore della medicina digitale, tramite:  \n  - Creazione di un curriculum specifico dedicato alla medicina digitale;  \n  - Coinvolgimento di visiting professor internazionali di alto profilo;  \n  - Introduzione di un periodo obbligatorio all’estero di almeno 6 mesi presso prestigiosi centri di ricerca internazionali, con possibilità di conseguire il titolo di *Doctor Europaeus*.  \n\n**Partecipazione a dottorati nazionali di eccellenza**  \n- Il DIEM è capofila e partecipa a dottorati di ricerca di interesse nazionale in forma associata su:  \n  - Photovoltaics (con 23 università italiane);  \n  - Autonomous Systems;  \n  - Intelligenza Artificiale – Salute e Scienze della Vita.  \n\nQueste iniziative sono finanziate dal progetto IT4DiMe, riconosciuto dal MUR come Dipartimento di Eccellenza per il quinquennio 2023‑2027, con l’obiettivo di creare un polo di riferimento nazionale e internazionale per ricerca, formazione e trasferimento tecnologico nelle Tecnologie dell’Informazione per la Medicina Digitale.  \n\n*Fonti:* sezione “Didattica” e “Presentazione” del sito dedicato al Dipartimento di Eccellenza (https://www.diem.unisa.it/dipartimento/eccellenza/didattica; https://www.diem.unisa.it/dipartimento/eccellenza/presentazione)【0†L1-L4】【1†L1-L4】【2†L1-L4】【3†L1-L4】【4†L1-L4】【5†L1-L4】【7†L1-L4】.",
+      "response_normalized": "il diem offre percorsi di eccellenza rivolti agli studenti con migliori risultati nei propri corsi di studio e nei programmi di dottorato, tutti collegati al progetto it4dime (information technologies for digital medicine). \n\nper le lauree (triennale e magistrale) \npercorsi di eccellenza per gli studenti del corso di laurea in ingegneria dell’informazione per la medicina digitale (l8) e del corso di laurea magistrale in information engineering for digital medicine (lm32). \nquesti percorsi includono attività di approfondimento sulla medicina digitale, sviluppo di competenze trasversali (miglioramento dell’inglese, partecipazione a progetti di ricerca e innovazione tecnologica, iniziative imprenditoriali), tirocini formativi curriculari presso aziende e istituzioni di rilievo, coinvolgimento di esperti qualificati provenienti da enti e aziende nel programma didattico. \n\nper il dottorato di ricerca \nrafforzamento dell’offerta formativa del dottorato di ricerca in ingegneria dell’informazione nel settore della medicina digitale, tramite: \ncreazione di un curriculum specifico dedicato alla medicina digitale; \ncoinvolgimento di visiting professor internazionali di alto profilo; \nintroduzione di un periodo obbligatorio all’estero di almeno 6 mesi presso prestigiosi centri di ricerca internazionali, con possibilità di conseguire il titolo di doctor europaeus. \n\npartecipazione a dottorati nazionali di eccellenza \nil diem è capofila e partecipa a dottorati di ricerca di interesse nazionale in forma associata su: \nphotovoltaics (con 23 università italiane); \nautonomous systems; \nintelligenza artificiale – salute e scienze della vita. \n\nqueste iniziative sono finanziate dal progetto it4dime, riconosciuto dal mur come dipartimento di eccellenza per il quinquennio 2023‑2027, con l’obiettivo di creare un polo di riferimento nazionale e internazionale per ricerca, formazione e trasferimento tecnologico nelle tecnologie dell’informazione per la medicina digitale. \n\nfonti: sezione “didattica” e “presentazione” del sito dedicato al dipartimento di eccellenza ( )【0†l1-l4】【1†l1-l4】【2†l1-l4】【3†l1-l4】【4†l1-l4】【5†l1-l4】【7†l1-l4】.",
+      "ground_truth_normalized": "il diem offre percorsi di eccellenza nell'ambito del progetto dipartimento di eccellenza per i seguenti corsi: la laurea magistrale in information engineering for digital medicine (lm-32) e la laurea triennale in ingegneria dell'informazione per la medicina digitale (l-8). tali percorsi prevedono attivita' di approfondimento sulla medicina digitale, sviluppo di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita'), coinvolgimento di esperti provenienti da aziende e istituzioni, e tirocini formativi presso enti di rilievo.",
+      "retrieved_contexts": [
+        "Sezione: eccellenza\n\nle direttive della European University Association.     2. Potenziamento dei percorsi di laurea magistrale offerti dal DIEM , in particolare il corso di laurea magistrale (LM-32) in Information Engineering for Digital Medicine, con le seguenti azioni     Introduzione di  percorsi di eccellenza  per gli studenti con migliori risultati, che includano attività di approfondimento sulla medicina digitale e lo sviluppo di competenze trasversali (miglioramento della conoscenza della lingua inglese, partecipazione a progetti di ricerca e innovazione tecnologica, sviluppo di iniziative imprenditoriali).   Coinvolgimento di  esperti qualificati  provenienti da enti e aziende nel programma didattico.   Realizzazione di  tirocini formativi curriculari  presso aziende e istituzioni di rilievo",
+        "Sezione: eccellenza\n\nIl DIEM gestisce il  Corso di Laurea in Ingegneria dell’Informazione per la Medicina Digitale  (classe L8), attivo dall’a.a. 2022/23, e il  Corso di Laurea Magistrale in Information Engineering for Digital Medicine  (classe LM32), in funzione dall’a.a. 2018/19. Questi corsi hanno l’obiettivo di formare laureati triennali e magistrali con una solida preparazione scientifica di base, una buona cultura di contesto e un’adeguata padronanza dei metodi e dei contenuti tecnico-scientifici dell’ingegneria dell’informazione, per la progettazione di sistemi e applicazioni nel campo della medicina digitale e delle scienze della vita.   L’offerta didattica del DIEM si completa con il Dottorato di Ricerca in Ingegneria dell’Informazione. Inoltre, il DIEM è capofila di un corso di Dottorato di Ricerca",
+        "Sezione: eccellenza\n\nin Ingegneria dell’Informazione. Inoltre, il DIEM è capofila di un corso di Dottorato di Ricerca di interesse nazionale in forma associata in Photovoltaics, collaborando con 23 università italiane. Il DIEM partecipa anche al Dottorato di Ricerca di interesse nazionale in forma associata in Autonomous Systems. Di particolare rilevanza è la partecipazione del DIEM al  Dottorato di Ricerca di interesse nazionale in forma associata in Intelligenza Artificiale - Salute e Scienze della Vita .   Il progetto mira a potenziare l’offerta didattica al fine di formare ricercatori e professionisti altamente specializzati, capaci di guidare e contribuire all’innovazione tecnologica e alla ricerca scientifica nel campo delle tecnologie dell’informazione per la medicina digitale. Le iniziative per",
+        "Sezione: eccellenza\n\nA seguito di una selezione nazionale basata sulla qualità della ricerca, la capacità di offrire formazione di alto livello e la propensione all’innovazione tecnologica, il DIEM è stato scelto dal MUR (Ministero dell’Università e della Ricerca) come Dipartimento di Eccellenza per il quinquennio 2023-2027. Il MUR ha quindi assegnato al DIEM un finanziamento di oltre 7 milioni di euro per la realizzazione del progetto  IT4DiMe: Information Technologies for Digital Medicine .   L’obiettivo del progetto è  creare un polo di riferimento per la ricerca, la formazione e il trasferimento tecnologico nel campo delle Tecnologie dell’Informazione per la Medicina Digitale , con rilevanza a livello nazionale e internazionale.   L’impiego delle tecnologie dell’informazione in ambito medico-sanitario",
+        "Sezione: eccellenza\n\nquesto contesto, il DIEM utilizzerà le risorse del progetto per potenziare la ricerca esistente e favorire nuove sinergie tra i vari gruppi, attraverso la creazione di laboratori interdisciplinari e l’integrazione di nuovo personale strutturato. Questo rafforzamento della ricerca sosterrà anche la formazione avanzata (Dottorato, Lauree Magistrali, corsi di specializzazione), promuovendo lo sviluppo di professionisti altamente specializzati in un settore ad alto valore aggiunto.",
+        "Sezione: eccellenza\n\nil DIEM, che verranno aggiornati e riallestiti con tecnologie avanzate. Le aule saranno dotate di postazioni elettrificate per il collegamento di PC e altri dispositivi a bassa tensione, per supportare efficacemente le attività formative.",
+        "Sezione: eccellenza\n\nnel campo delle tecnologie dell’informazione per la medicina digitale. Le iniziative per raggiungere questo obiettivo si articolano lungo tre principali direttrici:   1. Rafforzamento dell’offerta formativa del dottorato di ricerca in Ingegneria dell’Informazione del DIEM  nel settore della medicina digitale, attraverso le seguenti azioni:     Creazione di un curriculum specifico dedicato alla medicina digitale.   Coinvolgimento di  visiting professor internazionali  di alto profilo nella didattica.   Introduzione di un periodo obbligatorio all’estero di almeno 6 mesi presso prestigiosi centri di ricerca internazionali, con la possibilità di conseguire il titolo di  Doctor Europaeus , secondo le direttive della European University Association.     2. Potenziamento dei percorsi di laurea"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 23348.0,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 22722.6
+      },
+      "metrics": {
+        "ctx_precision": 0.99999999995,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.6690690223421581,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.67
+      }
+    },
+    {
+      "index": 22,
+      "question": "Quali sono i requisiti di propedeuticità per sostenere l'esame di Basi di Dati nella laurea triennale in Ingegneria Informatica?",
+      "ground_truth": "Secondo il piano degli studi della laurea triennale in Ingegneria Informatica per l'A.A. 2025/2026, per sostenere l'esame di Basi di Dati e' necessario aver preventivamente superato i seguenti tre esami: Algoritmi e Strutture Dati, Analisi dei Segnali e Elettrotecnica.",
+      "response": "I requisiti di propedeuticità per sostenere l'esame di Basi di Dati nella laurea triennale in Ingegneria Informatica sono: Algoritmi e Strutture Dati, Analisi dei Segnali ed Elettrotecnica.  \nFonte: Regolamento del corso di laurea triennale in Ingegneria Informatica (anno accademico 2025/2026), documento IE127.pdf, pagina 26. [https://corsi.unisa.it/uploads/rescue/__regolamenti-cds/2025/IE127.pdf]",
+      "response_normalized": "i requisiti di propedeuticità per sostenere l'esame di basi di dati nella laurea triennale in ingegneria informatica sono: algoritmi e strutture dati, analisi dei segnali ed elettrotecnica. \nfonte: regolamento del corso di laurea triennale in ingegneria informatica (anno accademico 2025/2026), documento ie127.pdf, pagina 26. []",
+      "ground_truth_normalized": "secondo il piano degli studi della laurea triennale in ingegneria informatica per l'a.a. 2025/2026, per sostenere l'esame di basi di dati e' necessario aver preventivamente superato i seguenti tre esami: algoritmi e strutture dati, analisi dei segnali e elettrotecnica.",
+      "retrieved_contexts": [
+        "- \nTOTALE CFU 2° ANNO  60       \n \n \n3° ANNO        \n \nInsegnamento Modulo CFU TAF AMBITO DISCIPLINARE SSD Tipologia Modalità di esame e tipo \ndi valutazione \nPropedeuticità \nBasi di dati \n unico 9 B Ingegneria informatica ING-INF/05 Obbligatorio Scritto e Orale con unico \nVoto finale \nAlgoritmi e Strutture Dati, \nAnalisi dei Segnali, \nElettrotecnica \nIngegneria del software",
+        "Basi di dati  SSD CFU Moduli (UD) Ore Tipologia di attività Propedeuticità IINF-05/A (ex ING-INF/05) 9 unico 72 B – caratterizzante Algoritmi e Strutture Dati Analisi dei Segnali Elettrotecnica  Obiettivo generale L’insegnamento presenta le principali architetture e modelli di basi di dati, le metodologie per la progettazione delle basi di dati, l’architettura e le caratteristiche dei sistemi",
+        "3° ANNO CF\nU TAF AMBITO \nDISCIPLINARE SSD Tipologia Propedeuticità \nBasi di dati (modulo \nBasi di dati) \nBasi di dati (modulo \nprogetto Basi di dati) \n6 Caratterizz\nante \nIngegneria \ninformatica ING-INF/05 \nObbligatorio \nAlgoritmi e \nStrutture Dati, \nAnalisi dei Segnali, \nElettrotecnica 3 Caratterizz\nante \nIngegneria \ninformatica ING-INF/05 \nIngegneria del software \n(modulo Ing. del",
+        "PROPEDEUTICITÀ Lo studente è tenuto a sostenere gli esami di profitto previsti dal piano degli studi rispettando le seguenti propedeuticità:  Lo studente non può sostenere Se prima non ha superato Algoritmi e Strutture Dati Fondamenti di Programmazione Analisi Matematica 2 e Algebra Lineare Analisi Matematica 1 Calcolatori Elettronici Fondamenti di Programmazione Circuiti biomedicali Analisi",
+        "livello B1 predisposto dal Centro Linguistico di Ateneo, con le modalità dallo stesso Centro stabilite ● Sezione di lingua inglese del test di accesso CISIA TOLC-I utilizzato per l’immatricolazione al corso di laurea triennale con il punteggio di almeno 24/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la possibilità di effettuare l’accertamento mediante una",
+        "17 \n \n \nPROPEDEUTICITÀ \nLo studente è tenuto a sostenere gli esami di profitto previsti dal piano de gli studi rispettando le seguenti propedeuticità: \n \nLo studente non può sostenere Se prima non ha superato \nAlgoritmi e Strutture Dati Fondamenti di Programmazione \nAnalisi Matematica 2 e Algebra Lineare Analisi Matematica 1 \nCalcolatori Elettronici Fondamenti di Programmazione",
+        "Qualora lo studente non sia in possesso del requisito precedente, ma abbia almeno: \nn. 36 CFU nei settori scientifico-disciplinari di base della classe L8-Ingegneria \ndell’Informazione;"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 67516.8,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 67009.2
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.7498810394550609,
+        "faithfulness": 0.3333333333333333,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 23,
+      "question": "In quali progetti è attualmente coinvolto il professore Pierluigi Ritrovato?",
+      "ground_truth": "Il professor Pierluigi Ritrovato e' attualmente coinvolto in due progetti attivi, entrambi finanziati dalla Commissione Europea nell'ambito del POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA: nel primo ricopre il ruolo di Coordinatore di Progetto, con un finanziamento di 317.915,18 EUR per il periodo ottobre 2022 - dicembre 2027; nel secondo (variante DI) ricopre il ruolo di Responsabile Finanziario, con un finanziamento di 116.000,00 EUR per lo stesso periodo.",
+      "response": "Il professore Pierluigi Ritrovato è attualmente coinvolto nei seguenti progetti di ricerca attivi:\n\n1. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA**  \n   - Periodo: 1 ottobre 2022 - 31 dicembre 2027  \n   - Finanziatore: Commissione Europea  \n   - Importo: 317.915,18 euro  \n   - Ruolo: Coordinatore Progetto  \n   - Fonte: [Progetto Polo Regionale Innovazione Digitale Evoluta](https://docenti.unisa.it/003741/ricerca/progetti?ruolo=tutti)\n\n2. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA - DI**  \n   - Periodo: 1 ottobre 2022 - 31 dicembre 2027  \n   - Finanziatore: Commissione Europea  \n   - Importo: 116.000,00 euro  \n   - Ruolo: Responsabile finanziario (coordinato da Michele Nappi)  \n   - Fonte: [Progetto Polo Regionale Innovazione Digitale Evoluta - DI](https://docenti.unisa.it/003741/ricerca/progetti?ruolo=tutti)\n\nAltri progetti nei quali è stato coinvolto ma che sono ora conclusi includono:\n- TBIZ: RESEARCH AND IDEAS FOR BUSINESS (concluso 31 dicembre 2024)\n- ESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT (concluso 25 settembre 2019)\n- INTERNAZIONALIZZAZIONE DELL'ECONOMIA ITALIANA E RUOLO DEGLI ISTITUTI DI CREDITO... (concluso febbraio 2021)\n- SEMANTIC VIDEO ANALYSIS AND BIG DATA (concluso febbraio 2021)\n\nPer ulteriori dettagli sui progetti attivi e conclusi, è possibile consultare la pagina dedicata alla ricerca del professore Ritrovato.",
+      "response_normalized": "il professore pierluigi ritrovato è attualmente coinvolto nei seguenti progetti di ricerca attivi:\npolo regionale per l'innovazione digitale evoluta \nperiodo: 1 ottobre 2022 - 31 dicembre 2027 \nfinanziatore: commissione europea \nimporto: 317.915,18 euro \nruolo: coordinatore progetto \nfonte: progetto polo regionale innovazione digitale evoluta\npolo regionale per l'innovazione digitale evoluta - di \nperiodo: 1 ottobre 2022 - 31 dicembre 2027 \nfinanziatore: commissione europea \nimporto: 116.000,00 euro \nruolo: responsabile finanziario (coordinato da michele nappi) \nfonte: progetto polo regionale innovazione digitale evoluta - di\n\naltri progetti nei quali è stato coinvolto ma che sono ora conclusi includono:\ntbiz: research and ideas for business (concluso 31 dicembre 2024)\nesperto in turismo esperenziale 3.0 e destination management (concluso 25 settembre 2019)\ninternazionalizzazione dell'economia italiana e ruolo degli istituti di credito... (concluso febbraio 2021)\nsemantic video analysis and big data (concluso febbraio 2021)\n\nper ulteriori dettagli sui progetti attivi e conclusi, è possibile consultare la pagina dedicata alla ricerca del professore ritrovato.",
+      "ground_truth_normalized": "il professor pierluigi ritrovato e' attualmente coinvolto in due progetti attivi, entrambi finanziati dalla commissione europea nell'ambito del polo regionale per l'innovazione digitale evoluta: nel primo ricopre il ruolo di coordinatore di progetto, con un finanziamento di 317.915,18 eur per il periodo ottobre 2022 - dicembre 2027; nel secondo (variante di) ricopre il ruolo di responsabile finanziario, con un finanziamento di 116.000,00 eur per lo stesso periodo.",
+      "retrieved_contexts": [
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nTBIZ: RESEARCH AND IDEAS FOR BUSINESS \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi regionali, comunali ed enti locali \n \n \n \n Finanziatori \n REGIONE CAMPANIA  \n \n \n \n \n Importo \n 76.300,00 euro \n \n \n \n Periodo \n 30 Settembre 2022 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi regionali, comunali ed enti locali \n \n \n \n Importo \n 214.000,00 euro \n \n \n \n Periodo \n 25 Settembre 2018 - 25 Settembre 2019 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPOLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA \n Attivo \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi europei e internazionali/esteri \n \n \n \n Finanziatori \n COMMISSIONE EUROPEA \n \n \n \n \n Importo \n 317.915,18 euro \n \n \n \n Periodo \n 1 Ottobre 2022 - 31 Dicembre 2027 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPierluigi RITROVATO |  Progetti \n \n \n \n \n Tipologia: Tutte  \n Tutte \n Attività Conto Terzi - Ricerca \n Finanziamenti da bandi europei e internazionali/esteri \n Finanziamenti da bandi nazionali Ministeriali ed altri EEPP \n Finanziamenti da bandi regionali, comunali ed enti locali \n Fondi dell'ateneo \n \n \n \n Ruolo: Responsabile  \n Responsabile \n Componente \n Tutti \n \n \n \n Stato: Tutti  \n Progetti Attivi \n Concluso \n Tutti \n \n \n \n \n 12  Progetti di ricerca \n   Filtro",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nTipo di finanziamento \n Fondi dell'ateneo \n \n \n \n Finanziatori \n Università  degli Studi di SALERNO \n \n \n \n \n Importo \n 2.745,75 euro \n \n \n \n Periodo \n 20 Novembre 2017 - 20 Novembre 2020 \n \n \n \n Proroga \n 20 febbraio 2021 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPOLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA - DI \n Attivo \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n NAPPI Michele   (Coordinatore Progetto) RITROVATO Pierluigi   (Responsabile finanziario) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi europei e internazionali/esteri \n \n \n \n Finanziatori \n COMMISSIONE EUROPEA \n \n \n \n \n Importo \n 116.000,00 euro \n \n \n \n Periodo \n 1 Ottobre 2022 - 31 Dicembre 2027 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nUniversità  degli Studi di SALERNO \n \n \n \n \n Importo \n 6.852,68 euro \n \n \n \n Periodo \n 20 Novembre 2017 - 20 Novembre 2020 \n \n \n \n Proroga \n 20 febbraio 2021 \n \n \n \n \n  Dettaglio"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 13613.1,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 12889.8
+      },
+      "metrics": {
+        "ctx_precision": 0.4444444444296296,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.796924551593178,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.75
+      }
+    },
+    {
+      "index": 24,
+      "question": "Parlami dei percorsi di eccellenza del dipartimento e delle iniziative per le scuole.",
+      "ground_truth": "I percorsi di eccellenza si articolano in tre azioni principali. La prima riguarda i percorsi dedicati agli studenti piu' meritevoli, che includono attivita' di approfondimento sulla medicina digitale, potenziamento di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita') e tirocini curriculari presso aziende e istituzioni di rilievo. La seconda azione riguarda il rafforzamento dell'offerta formativa del dottorato, con l'introduzione di un curriculum specifico in medicina digitale, visiting professor internazionali e un periodo obbligatorio all'estero di almeno 6 mesi, con possibilita' di conseguire il titolo Doctor Europaeus. La terza azione riguarda il potenziamento dei corsi di laurea, in particolare del Corso di Laurea in Ingegneria dell'Informazione per la Medicina Digitale (L-8) e del Corso di Laurea Magistrale in Information Engineering for Digital Medicine (LM-32), con l'obiettivo di formare professionisti capaci di progettare sistemi e applicazioni per la medicina digitale. Per quanto riguarda le iniziative per le scuole, il DIEM promuove progetti di PCTO (alternanza scuola-lavoro) rivolti agli studenti delle scuole superiori, tutti inseriti nell'ambito del programma nazionale Programma il Futuro (MIUR) per la diffusione del pensiero computazionale. I progetti basati su Code.org comprendono unita' didattiche come Algoritmi e Programmazione e Realizzazione di App, in cui gli studenti seguono lezioni online su AppLab e realizzano un elaborato finale con incontri preparatori presso il DIEM. Il progetto RobotCup@School e' invece una competizione di programmazione di robot umanoidi aperta agli studenti del quinto anno, che include seminari introduttivi, formazione sulla programmazione del robot e la gara vera e propria; il referente e' il prof. Gennaro Percannella, coordinatore della RobotCup@School 2020 e delegato del DIEM per l'orientamento in ingresso. Tutte le attivita' sono gratuite per le scuole, che sostengono unicamente le spese di viaggio e trasferimento verso i laboratori e le aule dell'Universita' di Salerno.",
+      "response": "**Percorsi di eccellenza del DIEM**  \nIl Dipartimento di Ingegneria dell’Informazione ed Elettrica e Matematica Applicata (DIEM) è stato riconosciuto **Dipartimento di Eccellenza** per il quinquennio 2023‑2027 dal MUR, con un finanziamento di oltre 7 milioni di euro per il progetto **IT4DiMe – Information Technologies for Digital Medicine** .  \nI “percorsi di eccellenza” sono riservati agli studenti con migliori risultati e prevedono:  \n- attività di approfondimento sulla medicina digitale;  \n- sviluppo di competenze trasversali (miglioramento dell’inglese, partecipazione a progetti di ricerca e innovazione tecnologica, iniziative imprenditoriali);  \n- coinvolgimento di esperti qualificati provenienti da enti e aziende nel programma didattico;  \n- realizzazione di tirocini formativi curriculari presso aziende e istituzioni di rilievo .  \n\n**Iniziative per le scuole (PCTO/Alternanza Scuola‑Lavoro)**  \nIl DIEM propone numerosi progetti di Percorsi per le Competenze Trasversali e l’Orientamento (PCTO) rivolti alle scuole superiori, principalmente nell’ambito dell’informatica e del pensiero computazionale. Alcuni esempi presenti nella banca dati:  \n\n- **“Programma il Futuro” (Code.org)** – unità su “Algoritmi e Programmazione” e “La realizzazione di App”, con attività di studio e‑learning (AppLab), incontri con tutor interni e realizzazione di un elaborato finale .  \n- **RobotCup@School** – competizione di robotica educativa che prevede formazione sulla programmazione del robot (tutorial anche in inglese), esercitazioni autonome a scuola e incontri presso l’Università; il progetto è aperto a scuole senza costi di iscrizione, mentre le scuole sostengono solo le spese di raggiungimento dei laboratori .  \n- Altri progetti PCTO coinvolrono gruppi di circa 20 studenti per 30‑50 ore, con fasi di preparazione con tutor DIEM, studio individuale tramite piattaforme online e realizzazione di elaborati finali .  \n\nPer ulteriori dettagli sui singoli progetti ( calendario, contatti dei coordinatori come il prof. Gennaro Percannella per RobotCup@School , FAQ, regolamenti ) è possibile consultare le schede progetto disponibili nella sezione “Alternanza scuola‑lavoro” del sito del DIEM .  \n\n**Fonti**  \n- Percorsi di eccellenza: documenti 1 e 2 della ricerca `eccellenza` .  \n- Iniziative per le scuole: documenti 1, 2, 3, 4, 5 e 6 della ricerca `alternanza` .",
+      "response_normalized": "percorsi di eccellenza del diem \nil dipartimento di ingegneria dell’informazione ed elettrica e matematica applicata (diem) è stato riconosciuto dipartimento di eccellenza per il quinquennio 2023‑2027 dal mur, con un finanziamento di oltre 7 milioni di euro per il progetto it4dime – information technologies for digital medicine . \ni “percorsi di eccellenza” sono riservati agli studenti con migliori risultati e prevedono: \nattività di approfondimento sulla medicina digitale; \nsviluppo di competenze trasversali (miglioramento dell’inglese, partecipazione a progetti di ricerca e innovazione tecnologica, iniziative imprenditoriali); \ncoinvolgimento di esperti qualificati provenienti da enti e aziende nel programma didattico; \nrealizzazione di tirocini formativi curriculari presso aziende e istituzioni di rilievo . \n\niniziative per le scuole (pcto/alternanza scuola‑lavoro) \nil diem propone numerosi progetti di percorsi per le competenze trasversali e l’orientamento (pcto) rivolti alle scuole superiori, principalmente nell’ambito dell’informatica e del pensiero computazionale. alcuni esempi presenti nella banca dati: \n“programma il futuro” (code.org) – unità su “algoritmi e programmazione” e “la realizzazione di app”, con attività di studio e‑learning (applab), incontri con tutor interni e realizzazione di un elaborato finale . \nrobotcup@school – competizione di robotica educativa che prevede formazione sulla programmazione del robot (tutorial anche in inglese), esercitazioni autonome a scuola e incontri presso l’università; il progetto è aperto a scuole senza costi di iscrizione, mentre le scuole sostengono solo le spese di raggiungimento dei laboratori . \naltri progetti pcto coinvolrono gruppi di circa 20 studenti per 30‑50 ore, con fasi di preparazione con tutor diem, studio individuale tramite piattaforme online e realizzazione di elaborati finali . \n\nper ulteriori dettagli sui singoli progetti ( calendario, contatti dei coordinatori come il prof. gennaro percannella per robotcup@school , faq, regolamenti ) è possibile consultare le schede progetto disponibili nella sezione “alternanza scuola‑lavoro” del sito del diem . \n\nfonti \npercorsi di eccellenza: documenti 1 e 2 della ricerca eccellenza . \niniziative per le scuole: documenti 1, 2, 3, 4, 5 e 6 della ricerca alternanza .",
+      "ground_truth_normalized": "i percorsi di eccellenza si articolano in tre azioni principali. la prima riguarda i percorsi dedicati agli studenti piu' meritevoli, che includono attivita' di approfondimento sulla medicina digitale, potenziamento di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita') e tirocini curriculari presso aziende e istituzioni di rilievo. la seconda azione riguarda il rafforzamento dell'offerta formativa del dottorato, con l'introduzione di un curriculum specifico in medicina digitale, visiting professor internazionali e un periodo obbligatorio all'estero di almeno 6 mesi, con possibilita' di conseguire il titolo doctor europaeus. la terza azione riguarda il potenziamento dei corsi di laurea, in particolare del corso di laurea in ingegneria dell'informazione per la medicina digitale (l-8) e del corso di laurea magistrale in information engineering for digital medicine (lm-32), con l'obiettivo di formare professionisti capaci di progettare sistemi e applicazioni per la medicina digitale. per quanto riguarda le iniziative per le scuole, il diem promuove progetti di pcto (alternanza scuola-lavoro) rivolti agli studenti delle scuole superiori, tutti inseriti nell'ambito del programma nazionale programma il futuro (miur) per la diffusione del pensiero computazionale. i progetti basati su code.org comprendono unita' didattiche come algoritmi e programmazione e realizzazione di app, in cui gli studenti seguono lezioni online su applab e realizzano un elaborato finale con incontri preparatori presso il diem. il progetto robotcup@school e' invece una competizione di programmazione di robot umanoidi aperta agli studenti del quinto anno, che include seminari introduttivi, formazione sulla programmazione del robot e la gara vera e propria; il referente e' il prof. gennaro percannella, coordinatore della robotcup@school 2020 e delegato del diem per l'orientamento in ingresso. tutte le attivita' sono gratuite per le scuole, che sostengono unicamente le spese di viaggio e trasferimento verso i laboratori e le aule dell'universita' di salerno.",
+      "retrieved_contexts": [
+        "Sezione: alternanza\n\nN. Studenti \n 20 \n \n \n N. Ore \n 30 \n \n \n Descrizione \n \n il progetto è basato sull'iniziativa del MIUR denominata  \"Programma il Futuro\"  finalizzata alla diffusione dei concetti di base dell'informatica ed alla formazione del Pensiero Computazionale in tutti gli ordini e gradi della formazione scolastica. Per gli studenti delle scuole superiori, l'iniziativa  \"Programma il Futuro\"  propone il corso Princìpi dell'Informatica di  Code.org , strutturato in sei unità di studio. Il presente progetto di alternanza scuola lavoro proposto dal DIEM è basato sull' unità 3 \"Algoritmi e Programmazione\"  del corso Princìpi dell'Informatica.   La realizzazione del presente progetto di alternanza scuola lavoro è strutturata nelle seguenti fasi:",
+        "Sezione: alternanza\n\nN. Studenti \n 20 \n \n \n N. Ore \n 50 \n \n \n Descrizione \n \n il progetto è basato sull'iniziativa del MIUR denominata  \"Programma il Futuro\"  finalizzata alla diffusione dei concetti di base dell'informatica ed alla formazione del Pensiero Computazionale in tutti gli ordini e gradi della formazione scolastica. Per gli studenti delle scuole superiori, l'iniziativa  \"Programma il Futuro\" propone il corso Princìpi dell'Informatica di  Code.org , strutturato in sei unità di studio. Il presente progetto di PCTO proposto dal DIEM è basato sull' unità 3 \"Algoritmi e Programmazione\"  del corso Princìpi dell'Informatica.   La realizzazione del presente progetto di PCTO è strutturata nelle seguenti fasi:",
+        "Sezione: alternanza\n\nN. Studenti \n 20 \n \n \n N. Ore \n 50 \n \n \n Descrizione \n \n Il progetto è basato sull'iniziativa del MIUR denominata  \"Programma il Futuro\"  finalizzata alla diffusione dei concetti di base dell'informatica ed alla formazione del Pensiero Computazionale in tutti gli ordini e gradi della formazione scolastica. Per gli studenti delle scuole superiori, l'iniziativa  \"Programma il Futuro\" propone il corso Princìpi dell'Informatica di  Code.org , strutturato in sei unità di studio. Il presente progetto di PCTO proposto dal DIEM è basato sull' unità 5 \"La realizzazione di App\"  del corso Princìpi dell'Informatica.   La realizzazione del presente progetto di PCTO è strutturata nelle seguenti fasi:",
+        "Sezione: alternanza\n\nda parte della scuola (scadenza 19/07/2019) - Conferma definitiva di adesione all'iniziativa da parte della scuola (scadenza 30/09/2019)  - Evento di avvio dell'iniziativa presso l'Università di Salerno; durante l'incontro è previsto un seminario di introduzione alla programmazione del robot che sarà utilizzato nell'ambito della competizione (9 ottobre 2019) - Formazione sulla programmazione del robot che include tutorial (anche in inglese) ed esercitazioni svolte autonomamente dagli studenti a scuola ed un incontro presso l'università (da 11 ottobre a 15 novembre 2019) - Pubblicazione regolamento di gara della RobotCup@School 2020 (16 novembre 2019) - Realizzazione del progetto per la competizione che prevede progettazione ed implementazione a scuola mediante il simulatore del robot e",
+        "Sezione: alternanza\n\ncosti di iscrizione o partecipazione per le scuole, mentre restano a carico delle scuole i costi da sostenere per raggiungere i laboratori e le aule dell'Università di Salerno.    Si riportano di seguito alcuni link utili:     risposte alle domande più frequenti (FAQ) in merito alla partecipazione alla RobotCup@School 2020   intervista in cui il direttore del DIEM, prof. Mario Vento, racconta brevemente l'esperienza della RobotCup@School 2019    regolamento della scorsa edizione della competizione, RobotCup@School 2019       Per maggiori dettagli, è possibile consultare il  sito web  dell'iniziativa o contattare il prof.  Gennaro Percannella , coordinatore della RobotCup@School 2020, nonché delegato del DIEM all'orientamento in ingresso, via  mail .",
+        "Sezione: alternanza\n\nPreparazione attività con i tutor interni : nelle date del 17/01/2018, 31/01/2018, 21/02/2018 e 07/03/2018 presso i locali del DIEM si tengono incontri con i docenti delle scuole superiori interessate ad attivare/realizzare il progetto per l'a.a. corrente al fine di definire e preparare il piano delle attività che dovranno essere effettuate dagli studenti.   \n Attività di studio : l'attività è svolta da ogni singolo allievo presso la propria scuola e prevede lezioni in modalità e-learning mediante l'impiego dell'ambiente online AppLab sul sito Code.org.   \n Realizzazione di un elaborato finale : l'attività è svolta dagli allievi singolarmente o in gruppo presso la propria scuola e prevede la realizzazione di un elaborato finale mediante l'ambiente AppLab.",
+        "Sezione: alternanza\n\nPreparazione attività con i tutor interni : nelle date del 17/01/2018, 23/01/2018, 06/02/2018 e 27/02/2018 presso i locali del DIEM si tengono incontri con i docenti delle scuole superiori interessate ad attivare/realizzare il progetto per l'a.a. corrente al fine di definire e preparare il piano delle attività che dovranno essere effettuate dagli studenti.   \n Attività di studio : l'attività è svolta da ogni singolo allievo presso la propria scuola e prevede lezioni in modalità e-learning mediante l'impiego dell'ambiente online AppLab sul sito Code.org.   \n Realizzazione di un elaborato finale : l'attività è svolta dagli allievi singolarmente o in gruppo presso la propria scuola e prevede la realizzazione di un elaborato finale mediante l'ambiente AppLab."
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 19849.6,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 19208.5
+      },
+      "metrics": {
+        "ctx_precision": 0.19999999998,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.5383522198753276,
+        "faithfulness": 0.6666666666666666,
+        "factual_correctness(mode=f1)": NaN
+      }
+    }
+  ]
+}

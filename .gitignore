@@ -9,14 +9,12 @@ t6_4_report.json
 src/pdf_chunk.py
 src/script_chunk.py
 logs/*
-/results/**/*
 ingestion_log/*
 data/raw/pdfs
 data/log/
 logs/prompts/
 data/*
 /ingestion_log_qwen
-/da_non_pushare
 *.zip
 __pycache__
 .env

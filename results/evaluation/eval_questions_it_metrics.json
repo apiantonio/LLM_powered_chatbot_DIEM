@@ -1,0 +1,277 @@
+{
+  "metadata": {
+    "run": {
+      "started_at": "2026-05-24T00:19:21.803111",
+      "completed_at": null,
+      "duration_seconds": 0,
+      "status": "running"
+    },
+    "dataset": {
+      "dataset_name": "DIEM_Test_IT",
+      "description": "Baseline di 5 domande in Italiano",
+      "source_file": "data\\evaluation\\questions_it.json",
+      "num_samples": 5,
+      "loaded_at": "2026-05-24T00:19:21.827412"
+    },
+    "judge": {
+      "provider": "ollama",
+      "model": "qwen2.5",
+      "temperature": 0.0,
+      "stats": {
+        "total_calls": 83,
+        "total_retries": 0,
+        "total_repairs": 3,
+        "total_rate_limits": 0,
+        "repair_rate": "3.6%"
+      }
+    },
+    "metrics_enabled": [
+      "ContextPrecision",
+      "ContextRecall",
+      "ResponseRelevancy",
+      "Faithfulness",
+      "FactualCorrectness"
+    ],
+    "total_samples": 5,
+    "valid_samples": 5,
+    "blocked_samples": 0,
+    "error_samples": 0
+  },
+  "aggregated_metrics": {
+    "ctx_precision": {
+      "mean": 0.7508,
+      "median": 0.9762,
+      "std": 0.3328,
+      "min": 0.3333,
+      "max": 1.0,
+      "count": 5
+    },
+    "ctx_recall": {
+      "mean": 0.615,
+      "median": 0.5,
+      "std": 0.3673,
+      "min": 0.2,
+      "max": 1.0,
+      "count": 5
+    },
+    "response_relevancy": {
+      "mean": 0.7048,
+      "median": 0.7131,
+      "std": 0.1209,
+      "min": 0.5268,
+      "max": 0.8543,
+      "count": 5
+    },
+    "faithfulness": {
+      "mean": 0.7063,
+      "median": 0.6429,
+      "std": 0.2908,
+      "min": 0.3333,
+      "max": 1.0,
+      "count": 5
+    },
+    "factual_correctness(mode=f1)": {
+      "mean": 0.675,
+      "median": 0.695,
+      "std": 0.3244,
+      "min": 0.31,
+      "max": 1.0,
+      "count": 4
+    }
+  },
+  "per_sample_results": [
+    {
+      "index": 1,
+      "question": "Chi è Antonio Greco e quali corsi insegna nel 2025?",
+      "ground_truth": "Antonio Greco e' Professore Associato presso il Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) dell'Universita' degli Studi di Salerno. Si e' laureato con lode in Ingegneria Informatica nel 2014 e ha conseguito il dottorato nel 2018 presso la stessa universita'. Dal novembre 2022 e' Ricercatore RTD/B e ricopre il ruolo di Delegato all'Orientamento in Ingresso; dal maggio 2024 e' membro del Collegio di Dottorato in Ingegneria dell'Informazione. E' membro del laboratorio MIVIA e le sue ricerche si concentrano su Computer Vision, Deep Learning e riconoscimento automatico di volti, emozioni, attivita' umane e oggetti, anche in contesti robotici e di veicoli autonomi. Nel 2025 i corsi di cui e' titolare includono: Advanced Machine Learning, Artificial Intelligence for Cybersecurity, Autonomous and Connected Vehicles, Medical Image Processing and Visualization e Natural Language Processing and Large Language Models.",
+      "response": "Antonio Greco (matricola 026557) è un professore del DIEM. Nel 2025 insegna i seguenti corsi:\n\n- **Advanced Machine Learning** (corso di dottorato, cod. 8860500002, SSD ING‑INF/05, 3 CFU, 18 h lezione, secondo semestre)【1†L1-L13】  \n- **Artificial Intelligence for Cybersecurity** (corso di laurea magistrale in Ingegneria Informatica, cod. 0622700094, SSD ING‑INF/05, 3 CFU, 24 h lezione + 16 h esercitazione + 8 h laboratorio, secondo semestre, a scelta dello studente)【2†L1-L12】【3†L1-L12】  \n- **Autonomous and Connected Vehicles** (corso di laurea magistrale in Ingegneria Informatica, cod. 0622700127, SSD ING‑INF/05, 3 CFU lezione 24 h, 1 h laboratorio 8 h, 2 h esercitazione 16 h, primo semestre, curriculum Artificial Intelligence and Intelligent Robotics)【4†L1-L13】【5†L1-L4】【7†L1-L4】  \n\nLe informazioni sono tratte dalle schede didattiche dei corsi per l’anno accademico 2025/2026.",
+      "response_normalized": "antonio greco (matricola 026557) è un professore del diem. nel 2025 insegna i seguenti corsi:\nadvanced machine learning (corso di dottorato, cod. 8860500002, ssd ing‑inf/05, 3 cfu, 18 h lezione, secondo semestre)【1†l1-l13】 \nartificial intelligence for cybersecurity (corso di laurea magistrale in ingegneria informatica, cod. 0622700094, ssd ing‑inf/05, 3 cfu, 24 h lezione + 16 h esercitazione + 8 h laboratorio, secondo semestre, a scelta dello studente)【2†l1-l12】【3†l1-l12】 \nautonomous and connected vehicles (corso di laurea magistrale in ingegneria informatica, cod. 0622700127, ssd ing‑inf/05, 3 cfu lezione 24 h, 1 h laboratorio 8 h, 2 h esercitazione 16 h, primo semestre, curriculum artificial intelligence and intelligent robotics)【4†l1-l13】【5†l1-l4】【7†l1-l4】 \n\nle informazioni sono tratte dalle schede didattiche dei corsi per l’anno accademico 2025/2026.",
+      "ground_truth_normalized": "antonio greco e' professore associato presso il dipartimento di ingegneria dell'informazione ed elettrica e matematica applicata (diem) dell'universita' degli studi di salerno. si e' laureato con lode in ingegneria informatica nel 2014 e ha conseguito il dottorato nel 2018 presso la stessa universita'. dal novembre 2022 e' ricercatore rtd/b e ricopre il ruolo di delegato all'orientamento in ingresso; dal maggio 2024 e' membro del collegio di dottorato in ingegneria dell'informazione. e' membro del laboratorio mivia e le sue ricerche si concentrano su computer vision, deep learning e riconoscimento automatico di volti, emozioni, attivita' umane e oggetti, anche in contesti robotici e di veicoli autonomi. nel 2025 i corsi di cui e' titolare includono: advanced machine learning, artificial intelligence for cybersecurity, autonomous and connected vehicles, medical image processing and visualization e natural language processing and large language models.",
+      "retrieved_contexts": [
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: advanced machine learning | Anno: 2025\n\nANTONIO GRECO |  ADVANCED MACHINE LEARNING \n \n \n \n \n \n cod. 8860500002 ADVANCED MACHINE LEARNING \n \n \n \n \n 8860500002 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n Corso di Dottorato (D.M.226/2021) \n \n \n \n INGEGNERIA DELL'INFORMAZIONE \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   2 \n COMPUTER AND INFORMATION SYSTEMS ENGINEERING \n INFORMATION TECHNOLOGIES FOR DIGITAL MEDICINE \n \n \n \n CURRICULUM  INFORMATION TECHNOLOGIES FOR DIGITAL MEDICINE \n \n \n \n OBBLIGATORIO \n \n \n \n ANNO CORSO 1 \n \n \n \n ANNO ORDINAMENTO 2025 \n \n \n \n SECONDO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 18 \n LEZIONE \n \n \n \n \n \n DOCENTI \n \n \n \n \n ANTONIO GRECO   T  Curriculum",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nA VERIFICARE IL LIVELLO DELLE CONOSCENZE E DELLA COMPRENSIONE DEGLI ARGOMENTI AFFRONTATI NEL CORSO, NONCHÉ LA CAPACITÀ DI ESPOSIZIONE DELLO STUDENTE.",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nANTONIO GRECO |  ARTIFICIAL INTELLIGENCE FOR CYBERSECURITY \n \n \n \n \n \n cod. 0622700094 ARTIFICIAL INTELLIGENCE FOR CYBERSECURITY \n \n \n \n \n 0622700094 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA MAGISTRALE \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n INSEGNAMENTO SU PIÙ CURRICULA   6 \n ARTIFICIAL INTELLIGENCE AND INTELLIGENT ROBOTICS  Coorte 2024/2025 \n AUTOMATION AND CONTROL SYSTEMS  Coorte 2024/2025 \n CYBERSECURITY  Coorte 2024/2025 \n ENTERPRISE SOFTWARE ARCHITECTURES  Coorte 2024/2025 \n IOT AND EMBEDDED SYSTEMS  Coorte 2024/2025 \n MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n CURRICULUM  MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: autonomous and connected vehicles | Anno: 2025\n\nANTONIO GRECO |  AUTONOMOUS AND CONNECTED VEHICLES \n \n \n \n \n \n cod. 0622700127 AUTONOMOUS AND CONNECTED VEHICLES \n \n \n \n \n 0622700127 \n \n \n \n DIPARTIMENTO DI INGEGNERIA DELL'INFORMAZIONE ED ELETTRICA E MATEMATICA APPLICATA \n \n \n \n CORSO DI LAUREA MAGISTRALE \n \n \n \n INGEGNERIA INFORMATICA \n \n \n \n 2025/2026 \n \n \n \n \n CURRICULUM  ARTIFICIAL INTELLIGENCE AND INTELLIGENT ROBOTICS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n PRIMO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 24 \n LEZIONE \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 1 \n 8 \n LABORATORIO \n CARATTERIZZANTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n CARATTERIZZANTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: autonomous and connected vehicles | Anno: 2025\n\nVerifica dell'apprendimento",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: artificial intelligence for cybersecurity | Anno: 2025\n\nCURRICULUM  MULTIMEDIA SYSTEMS AND APPLICATIONS  Coorte 2024/2025 \n \n \n \n ANNO CORSO 2 \n \n \n \n ANNO ORDINAMENTO 2022 \n \n \n \n SECONDO SEMESTRE \n \n \n \n \n MODULI \n \n \n \n SSD \n CFU \n ORE \n ATTIVITÀ \n TIPO DI ATTIVITÁ FORMATIVA \n \n \n \n ING-INF/05 \n 3 \n 24 \n LEZIONE \n A SCELTA DELLO STUDENTE \n \n \n \n ING-INF/05 \n 2 \n 16 \n ESERCITAZIONE \n A SCELTA DELLO STUDENTE \n \n \n \n ING-INF/05 \n 1 \n 8 \n LABORATORIO \n A SCELTA DELLO STUDENTE \n \n \n \n \n DOCENTI \n \n \n \n ANTONIO GRECO   T  Curriculum   \n \n \n \n APPELLI \n \n \n \n Appello \n Data \n Sessione \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 16/06/2026 - 09:00 \n SESSIONE ORDINARIA \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 23/07/2026 - 14:00 \n SESSIONE ORDINARIA \n \n \n \n ARTIFICIAL INTELLIGENCE FOR CYBERSECURI \n 03/09/2026 - 09:00",
+        "Docente: antonio greco | Matricola: 026557 | Sezione: didattica | Insegnamento: autonomous and connected vehicles | Anno: 2025\n\nMetodi Didattici"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 9331.3,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 8946.2
+      },
+      "metrics": {
+        "ctx_precision": 0.9761904761742063,
+        "ctx_recall": 0.2,
+        "response_relevancy": 0.8542932813675508,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 0.31
+      }
+    },
+    {
+      "index": 2,
+      "question": "Quali sono i requisiti di propedeuticità per sostenere l'esame di Basi di Dati nella laurea triennale in Ingegneria Informatica?",
+      "ground_truth": "Secondo il piano degli studi della laurea triennale in Ingegneria Informatica per l'A.A. 2025/2026, per sostenere l'esame di Basi di Dati e' necessario aver preventivamente superato i seguenti tre esami: Algoritmi e Strutture Dati, Analisi dei Segnali e Elettrotecnica.",
+      "response": "Per sostenere l’esame di **Basi di dati** nella laurea triennale in Ingegneria Informatica è necessario aver superato i seguenti esami propedeutici:\n\n- Algoritmi e Strutture Dati  \n- Analisi dei Segnali  \n- Elettrotecnica  \n\nQuesta indicazione è riportata nel regolamento del corso di laurea per l’anno accademico 2025/2026【2†L26-L30】.",
+      "response_normalized": "per sostenere l’esame di basi di dati nella laurea triennale in ingegneria informatica è necessario aver superato i seguenti esami propedeutici:\nalgoritmi e strutture dati \nanalisi dei segnali \nelettrotecnica \n\nquesta indicazione è riportata nel regolamento del corso di laurea per l’anno accademico 2025/2026【2†l26-l30】.",
+      "ground_truth_normalized": "secondo il piano degli studi della laurea triennale in ingegneria informatica per l'a.a. 2025/2026, per sostenere l'esame di basi di dati e' necessario aver preventivamente superato i seguenti tre esami: algoritmi e strutture dati, analisi dei segnali e elettrotecnica.",
+      "retrieved_contexts": [
+        "- \nTOTALE CFU 2° ANNO  60       \n \n \n3° ANNO        \n \nInsegnamento Modulo CFU TAF AMBITO DISCIPLINARE SSD Tipologia Modalità di esame e tipo \ndi valutazione \nPropedeuticità \nBasi di dati \n unico 9 B Ingegneria informatica ING-INF/05 Obbligatorio Scritto e Orale con unico \nVoto finale \nAlgoritmi e Strutture Dati, \nAnalisi dei Segnali, \nElettrotecnica \nIngegneria del software",
+        "Basi di dati  SSD CFU Moduli (UD) Ore Tipologia di attività Propedeuticità IINF-05/A (ex ING-INF/05) 9 unico 72 B – caratterizzante Algoritmi e Strutture Dati Analisi dei Segnali Elettrotecnica  Obiettivo generale L’insegnamento presenta le principali architetture e modelli di basi di dati, le metodologie per la progettazione delle basi di dati, l’architettura e le caratteristiche dei sistemi",
+        "3° ANNO CF\nU TAF AMBITO \nDISCIPLINARE SSD Tipologia Propedeuticità \nBasi di dati (modulo \nBasi di dati) \nBasi di dati (modulo \nprogetto Basi di dati) \n6 Caratterizz\nante \nIngegneria \ninformatica ING-INF/05 \nObbligatorio \nAlgoritmi e \nStrutture Dati, \nAnalisi dei Segnali, \nElettrotecnica 3 Caratterizz\nante \nIngegneria \ninformatica ING-INF/05 \nIngegneria del software \n(modulo Ing. del",
+        "PROPEDEUTICITÀ Lo studente è tenuto a sostenere gli esami di profitto previsti dal piano degli studi rispettando le seguenti propedeuticità:  Lo studente non può sostenere Se prima non ha superato Algoritmi e Strutture Dati Fondamenti di Programmazione Analisi Matematica 2 e Algebra Lineare Analisi Matematica 1 Calcolatori Elettronici Fondamenti di Programmazione Circuiti biomedicali Analisi",
+        "livello B1 predisposto dal Centro Linguistico di Ateneo, con le modalità dallo stesso Centro stabilite ● Sezione di lingua inglese del test di accesso CISIA TOLC-I utilizzato per l’immatricolazione al corso di laurea triennale con il punteggio di almeno 24/30. Eccezionalmente, il Consiglio Didattico di Ingegneria Informatica si riserva la possibilità di effettuare l’accertamento mediante una",
+        "17 \n \n \nPROPEDEUTICITÀ \nLo studente è tenuto a sostenere gli esami di profitto previsti dal piano de gli studi rispettando le seguenti propedeuticità: \n \nLo studente non può sostenere Se prima non ha superato \nAlgoritmi e Strutture Dati Fondamenti di Programmazione \nAnalisi Matematica 2 e Algebra Lineare Analisi Matematica 1 \nCalcolatori Elettronici Fondamenti di Programmazione",
+        "Qualora lo studente non sia in possesso del requisito precedente, ma abbia almeno: \nn. 36 CFU nei settori scientifico-disciplinari di base della classe L8-Ingegneria \ndell’Informazione;"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 9221.0,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_offerta_formativa"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 8749.4
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 0.5,
+        "response_relevancy": 0.7130667218415468,
+        "faithfulness": 0.3333333333333333,
+        "factual_correctness(mode=f1)": 0.5
+      }
+    },
+    {
+      "index": 3,
+      "question": "In quali progetti è attualmente coinvolto il professore Pierluigi Ritrovato?",
+      "ground_truth": "Il professor Pierluigi Ritrovato e' attualmente coinvolto in due progetti attivi, entrambi finanziati dalla Commissione Europea nell'ambito del POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA: nel primo ricopre il ruolo di Coordinatore di Progetto, con un finanziamento di 317.915,18 EUR per il periodo ottobre 2022 - dicembre 2027; nel secondo (variante DI) ricopre il ruolo di Responsabile Finanziario, con un finanziamento di 116.000,00 EUR per lo stesso periodo.",
+      "response": "Il professore Pierluigi Ritrovato è attualmente coinvolto nei seguenti progetti di ricerca:\n\n1. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA**  \n   - Ruolo: Coordinatore del progetto  \n   - Finanziamento: Commissione Europea (fondi europei e internazionali)  \n   - Importo: 317.915,18 €  \n   - Periodo: 1 ottobre 2022 – 31 dicembre 2027  \n   - Fonte: documento 3  \n\n2. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA – DI**  \n   - Ruolo: Responsabile finanziario  \n   - Finanziamento: Commissione Europea (fondi europei e internazionali)  \n   - Importo: 116.000,00 €  \n   - Periodo: 1 ottobre 2022 – 31 dicembre 2027  \n   - Fonte: documento 6  \n\nGli altri progetti presenti nella bacheca del professore risultano conclusi (ad esempio, TBIZ: RESEARCH AND IDEAS FOR BUSINESS, ESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT, INTERNAZIONALIZZAZIONE DELL’ECONOMIA ITALIANA, SEMANTIC VIDEO ANALYSIS AND BIG DATA).  \n\nPer ulteriori dettagli, è possibile consultare la pagina dedicata ai progetti del professore Ritrovato sul sito del DIEM.",
+      "response_normalized": "il professore pierluigi ritrovato è attualmente coinvolto nei seguenti progetti di ricerca:\npolo regionale per l'innovazione digitale evoluta \nruolo: coordinatore del progetto \nfinanziamento: commissione europea (fondi europei e internazionali) \nimporto: 317.915,18 € \nperiodo: 1 ottobre 2022 – 31 dicembre 2027 \nfonte: documento 3 \npolo regionale per l'innovazione digitale evoluta – di \nruolo: responsabile finanziario \nfinanziamento: commissione europea (fondi europei e internazionali) \nimporto: 116.000,00 € \nperiodo: 1 ottobre 2022 – 31 dicembre 2027 \nfonte: documento 6 \n\ngli altri progetti presenti nella bacheca del professore risultano conclusi (ad esempio, tbiz: research and ideas for business, esperto in turismo esperenziale 3.0 e destination management, internazionalizzazione dell’economia italiana, semantic video analysis and big data). \n\nper ulteriori dettagli, è possibile consultare la pagina dedicata ai progetti del professore ritrovato sul sito del diem.",
+      "ground_truth_normalized": "il professor pierluigi ritrovato e' attualmente coinvolto in due progetti attivi, entrambi finanziati dalla commissione europea nell'ambito del polo regionale per l'innovazione digitale evoluta: nel primo ricopre il ruolo di coordinatore di progetto, con un finanziamento di 317.915,18 eur per il periodo ottobre 2022 - dicembre 2027; nel secondo (variante di) ricopre il ruolo di responsabile finanziario, con un finanziamento di 116.000,00 eur per lo stesso periodo.",
+      "retrieved_contexts": [
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nTBIZ: RESEARCH AND IDEAS FOR BUSINESS \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi regionali, comunali ed enti locali \n \n \n \n Finanziatori \n REGIONE CAMPANIA  \n \n \n \n \n Importo \n 76.300,00 euro \n \n \n \n Periodo \n 30 Settembre 2022 - 31 Dicembre 2024 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT \n Concluso \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi regionali, comunali ed enti locali \n \n \n \n Importo \n 214.000,00 euro \n \n \n \n Periodo \n 25 Settembre 2018 - 25 Settembre 2019 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPOLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA \n Attivo \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n RITROVATO Pierluigi   (Coordinatore Progetto) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi europei e internazionali/esteri \n \n \n \n Finanziatori \n COMMISSIONE EUROPEA \n \n \n \n \n Importo \n 317.915,18 euro \n \n \n \n Periodo \n 1 Ottobre 2022 - 31 Dicembre 2027 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPierluigi RITROVATO |  Progetti \n \n \n \n \n Tipologia: Tutte  \n Tutte \n Attività Conto Terzi - Ricerca \n Finanziamenti da bandi europei e internazionali/esteri \n Finanziamenti da bandi nazionali Ministeriali ed altri EEPP \n Finanziamenti da bandi regionali, comunali ed enti locali \n Fondi dell'ateneo \n \n \n \n Ruolo: Responsabile  \n Responsabile \n Componente \n Tutti \n \n \n \n Stato: Tutti  \n Progetti Attivi \n Concluso \n Tutti \n \n \n \n \n 12  Progetti di ricerca \n   Filtro",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nTipo di finanziamento \n Fondi dell'ateneo \n \n \n \n Finanziatori \n Università  degli Studi di SALERNO \n \n \n \n \n Importo \n 2.745,75 euro \n \n \n \n Periodo \n 20 Novembre 2017 - 20 Novembre 2020 \n \n \n \n Proroga \n 20 febbraio 2021 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nPOLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA - DI \n Attivo \n \n \n \n \n \n Struttura \n Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica applicata/DIEM \n \n \n \n Responsabile \n \n NAPPI Michele   (Coordinatore Progetto) RITROVATO Pierluigi   (Responsabile finanziario) \n \n \n \n \n Tipo di finanziamento \n Finanziamenti da bandi europei e internazionali/esteri \n \n \n \n Finanziatori \n COMMISSIONE EUROPEA \n \n \n \n \n Importo \n 116.000,00 euro \n \n \n \n Periodo \n 1 Ottobre 2022 - 31 Dicembre 2027 \n \n \n \n \n  Dettaglio",
+        "Docente: pierluigi ritrovato | Matricola: 003741 | Sezione: ricerca | Progetto: progetti\n\nUniversità  degli Studi di SALERNO \n \n \n \n \n Importo \n 6.852,68 euro \n \n \n \n Periodo \n 20 Novembre 2017 - 20 Novembre 2020 \n \n \n \n Proroga \n 20 febbraio 2021 \n \n \n \n \n  Dettaglio"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 11982.9,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_persone"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 11616.0
+      },
+      "metrics": {
+        "ctx_precision": 0.4444444444296296,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.7607330019892311,
+        "faithfulness": 0.6428571428571429,
+        "factual_correctness(mode=f1)": 0.89
+      }
+    },
+    {
+      "index": 4,
+      "question": "Quali sono gli strumenti disponibili nel laboratorio di Robotica?",
+      "ground_truth": "Il laboratorio di Robotica (LabROB) dispone della seguente strumentazione: 2 robot antropomorfi Comau Smart-Six montati su slitta attuata, 1 robot UR10 (Universal Robot), 1 robot Franka Emika a 7 gradi di liberta', 1 robot Clearpath Husky customizzato a trazione differenziale, 3 stereo camere intelligenti Zed, 1 endoscopio, 1 unita' di misura inerziale (IMU), 1 laser scanner 2D, 4 sensori di forza/coppia, 3 gripper pneumatici a due e tre dita, 1 gripper elettrico a due dita, 1 end-effector per l'ablazione dentale, 1 stampante 3D e 9 postazioni PC con Matlab e ROS2.",
+      "response": "Nel laboratorio di Robotica del DIEM sono disponibili i seguenti strumenti:\n\n- 2 robot antropomorfi Comau Smart-Six montati su slitta attuata  \n- 1 robot UR10 (Universal Robot)  \n- 1 robot Franka Emika a 7 gradi di libertà  \n- 1 robot Clearpath Husky customizzato a trazione differenziale  \n- 3 stereo camere intelligenti ZED  \n- 1 endoscopio  \n- 1 unità di misurazioni inerziali (IMU)  \n- 1 laser scanner 2D  \n- 4 sensori di forza/coppia  \n- 3 gripper pneumatici a due e tre dita  \n- 1 gripper elettrico a due dita  \n- 1 end-effector per l’ablazione dentale  \n- 1 stampante 3D  \n- 9 postazioni PC con Matlab e ROS2  \n\nFonte: elenco di strumentazione del laboratorio di Robotica (ID 2) disponibile sul sito del DIEM【0†L1-L15】.",
+      "response_normalized": "nel laboratorio di robotica del diem sono disponibili i seguenti strumenti:\n2 robot antropomorfi comau smart-six montati su slitta attuata \n1 robot ur10 (universal robot) \n1 robot franka emika a 7 gradi di libertà \n1 robot clearpath husky customizzato a trazione differenziale \n3 stereo camere intelligenti zed \n1 endoscopio \n1 unità di misurazioni inerziali (imu) \n1 laser scanner 2d \n4 sensori di forza/coppia \n3 gripper pneumatici a due e tre dita \n1 gripper elettrico a due dita \n1 end-effector per l’ablazione dentale \n1 stampante 3d \n9 postazioni pc con matlab e ros2 \n\nfonte: elenco di strumentazione del laboratorio di robotica (id 2) disponibile sul sito del diem【0†l1-l15】.",
+      "ground_truth_normalized": "il laboratorio di robotica (labrob) dispone della seguente strumentazione: 2 robot antropomorfi comau smart-six montati su slitta attuata, 1 robot ur10 (universal robot), 1 robot franka emika a 7 gradi di liberta', 1 robot clearpath husky customizzato a trazione differenziale, 3 stereo camere intelligenti zed, 1 endoscopio, 1 unita' di misura inerziale (imu), 1 laser scanner 2d, 4 sensori di forza/coppia, 3 gripper pneumatici a due e tre dita, 1 gripper elettrico a due dita, 1 end-effector per l'ablazione dentale, 1 stampante 3d e 9 postazioni pc con matlab e ros2.",
+      "retrieved_contexts": [
+        "Laboratorio: robotica | Sezione: laboratori\n\nStrumentazione     2 x robot antropomorfi Comau Smart-Six montati su slitta attuata   1 x robot UR10 (Universal Robot)   1 x robot Franka Emika a 7 gradi   1 x robot Clearpath Husky customizzato a trazione differenziale   3 x stereo camere intelligenti Zed   1 x endoscopio   1 x unità di misurazioni inerziali (IMU)   1 x laser scanner 2D   4 x sensori di forza/coppia   3 x gripper pneumatici a due e tre dita   1 x gripper elettrico a due dita   1 x end-effector per l’ablazione dentale   1 x stampante 3D   9 x postazioni PC con Matlab e ROS2",
+        "Laboratorio: intelligent bioengineering technologies | Sezione: laboratori\n\nStrumentazione \n Il laboratorio è attualmente dotato di: \n \n Otto postazioni PC \n Sistema di acquisizione EEG g.tec g.Nautilus Research \n Mano robotica IH2 Azzurra Prensilia \n Sistema di imaging a ultrasuoni Samsung HM70-EVO \n Piattaforme indossabili per il monitoraggio della salute Empatica Embrace Plus \n Sistemi di sensori muscolari Mindrove EMG armbands \n Kit di sensori di movimento 2M Engineering 9DOF IMU \n Server di laboratorio dotato di 2 GPU GeForce RTX 5090 \n Supercomputer desktop per IA ASUS Ascent GX10 \n Componenti di base per la prototipazione di sistemi embedded.",
+        "Laboratorio: robotica | Sezione: laboratori\n\nper compiti come lucidatura, sbavatura e trasporto, richiedendo un controllo accurato delle forze per garantire sicurezza e precisione. Nel laboratorio si utilizzano strategie standard (es. controllo di ammettenza e impedenza) combinate con tecniche basate su dati e intelligenza artificiale per migliorare le prestazioni. Le applicazioni includono la scrittura ad alta velocità, assemblaggi remoti e compiti di lucidatura.   Teleoperazioni aptiche  Le teleoperazioni aptiche ampliano le capacità umane in contesti come telechirurgia ed esplorazione spaziale, combinando precisione robotica con competenze umane. Nel laboratorio si sviluppano sistemi bilaterali con feedback cinestesico e visivo, controllo adattivo e algoritmi avanzati per garantire comfort e sicurezza durante operazioni",
+        "Laboratorio: robotica | Sezione: laboratori\n\nMissione     Le attività di laboratorio sono focalizzate nell’ambito della robotica industriale, aerospaziale, medica e di servizio al fine di fornire un supporto sperimentale alla derivazione di nuove metodologie di pianificazione e controllo di piattaforme robotiche, con l’obiettivo di permettere l’esecuzione di compiti complessi con maggiore precisione e flessibilità.   Il laboratorio offe un ambiente di apprendimento pratico e teorico per formare ingegneri e ricercatori altamente qualificati e permette di stabilire collaborazioni con aziende per sviluppare progetti di ricerca congiunti, trasferire le tecnologie sviluppate al settore industriale e favorire lo sviluppo economico.",
+        "Laboratorio: ingegneria dei sistemi di controllo | Sezione: laboratori\n\nStrumentazione   La strumentazione disponibile in laboratorio è la seguente:   magazzino automatico dotato di rulli trasportatori ed elevatori controllato da 1 PLC SIMATIC S7-300 e 3 moduli I/O remoto SIMATIC ET 200M collegati via PROFIBUS o PROFINET   3 x controllori NxtDCSmini per l’implementazione di sistemi di controllo distribuiti conformi allo standard IEC 61499   4 x postazioni PC con Matlab, TIA Portal e SIMIT   Foto e maggiori informazioni reperibili sul sito di riferimento del gruppo  www.automatica.unisa.it",
+        "Laboratorio: energy storage and energy sources | Sezione: laboratori\n\nStrumentazione   Il laboratorio è dotato di alcuni strumenti dedicati all’attività sperimentale sui sistemi di accumulo elettrochimico:     camera termica (incubatore refrigerato) Binder KB 240 con kit EUCAR 5   potenziostato/galvanostato/ZRA Gamry Reference 3000 AE con elettrometro ausiliario e booster   Keithley Sourcemeter unit 2420   Oscilloscopio Agilent MSO6034A   Alimentatore stabilizzato TTi EX354RT triple power supply 300W",
+        "Laboratorio: embedded intelligent systems | Sezione: laboratori\n\nImpiego principale: applicazioni di robotica cognitiva.     Stampante 3D Ultimaker 3 Extended , progettata e costruita per la modellazione a deposizione fusa con tecnopolimeri termoplastici. L’unione di precisione e velocità rende la stampante Ultimaker 3D la macchina perfetta per la realizzazione di modelli concettuali, prototipi funzionali e per la produzione di piccole serie.   Impiego principale: prototipazione e modellazione di componenti per progetti di ricerca in ambito embedded and robotics systems.     Lynxmotion Aluminum A4WD1 Rover Kit  è un robot mobile a 4 ruote motrici progettato per applicazioni educative e prototipazione avanzata. È costruito con un telaio in alluminio anodizzato, che gli conferisce una struttura solida e al contempo leggera. Questo lo rende adatto sia a"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 7619.7,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 3,
+        "total_duration_ms": 7031.3
+      },
+      "metrics": {
+        "ctx_precision": 0.9999999999,
+        "ctx_recall": 1.0,
+        "response_relevancy": 0.6693576901320256,
+        "faithfulness": 1.0,
+        "factual_correctness(mode=f1)": 1.0
+      }
+    },
+    {
+      "index": 5,
+      "question": "Parlami dei percorsi di eccellenza del dipartimento e delle iniziative per le scuole.",
+      "ground_truth": "I percorsi di eccellenza si articolano in tre azioni principali. La prima riguarda i percorsi dedicati agli studenti piu' meritevoli, che includono attivita' di approfondimento sulla medicina digitale, potenziamento di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita') e tirocini curriculari presso aziende e istituzioni di rilievo. La seconda azione riguarda il rafforzamento dell'offerta formativa del dottorato, con l'introduzione di un curriculum specifico in medicina digitale, visiting professor internazionali e un periodo obbligatorio all'estero di almeno 6 mesi, con possibilita' di conseguire il titolo Doctor Europaeus. La terza azione riguarda il potenziamento dei corsi di laurea, in particolare del Corso di Laurea in Ingegneria dell'Informazione per la Medicina Digitale (L-8) e del Corso di Laurea Magistrale in Information Engineering for Digital Medicine (LM-32), con l'obiettivo di formare professionisti capaci di progettare sistemi e applicazioni per la medicina digitale. Per quanto riguarda le iniziative per le scuole, il DIEM promuove progetti di PCTO (alternanza scuola-lavoro) rivolti agli studenti delle scuole superiori, tutti inseriti nell'ambito del programma nazionale Programma il Futuro (MIUR) per la diffusione del pensiero computazionale. I progetti basati su Code.org comprendono unita' didattiche come Algoritmi e Programmazione e Realizzazione di App, in cui gli studenti seguono lezioni online su AppLab e realizzano un elaborato finale con incontri preparatori presso il DIEM. Il progetto RobotCup@School e' invece una competizione di programmazione di robot umanoidi aperta agli studenti del quinto anno, che include seminari introduttivi, formazione sulla programmazione del robot e la gara vera e propria; il referente e' il prof. Gennaro Percannella, coordinatore della RobotCup@School 2020 e delegato del DIEM per l'orientamento in ingresso. Tutte le attivita' sono gratuite per le scuole, che sostengono unicamente le spese di viaggio e trasferimento verso i laboratori e le aule dell'Universita' di Salerno.",
+      "response": "**Percorsi di eccellenza del DIEM**  \n- Il DIEM è stato riconosciuto **Dipartimento di Eccellenza** per il quinquennio 2023‑2027 dal MUR, con un finanziamento di oltre 7 milioni di euro per il progetto **IT4DiMe – Information Technologies for Digital Medicine**【2†L1-L4】.  \n- Le attività di eccellenza si articolano in due principali direttrici:  \n  1. **Rafforzamento del dottorato di ricerca in Ingegneria dell’Informazione** (curriculum specifico sulla medicina digitale, visiting professor internazionali, periodo obbligatorio all’estero ≥ 6 mesi, possibilità di conseguire il titolo *Doctor Europaeus*)【3†L1-L6】.  \n  2. **Potenziamento dei percorsi di laurea magistrale (LM‑32) in Information Engineering for Digital Medicine** e del corso di laurea triennale (L‑8) in Ingegneria dell’Informazione per la Medicina Digitale, con:  \n     - introduzione di **percorsi di eccellenza** per gli studenti con migliori risultati (approfondimento sulla medicina digitale, sviluppo di competenze trasversali – lingua inglese, progetti di ricerca, innovazione tecnologica, iniziative imprenditoriali);  \n     - coinvolgimento di **esperti qualificati** di enti e aziende nel programma didattico;  \n     - realizzazione di **tirocin formativi curriculari** presso aziende e istituzioni di rilievo【1†L1-L6】.  \n\n**Iniziative per le scuole (PCTO / orientamento)**  \n- **Programma il Futuro** (MIUR): diffusione dei concetti di base dell’informatica e del pensiero computazionale. Il DIEM propone due unità del corso *Princìpi dell’Informatica* di Code.org:  \n  - unità 3 “Algoritmi e Programmazione”;  \n  - unità 5 “La realizzazione di App”.  \n  Ogni progetto prevede 20 studenti, 50 ore di attività e segue le fasi di adesione, formazione a scuola e incontro in università【4†L1-L8】【5†L1-L8】.  \n- **RobotCup@School**: competizione di programmazione di robot umanoidi per interazione e manipolazione di oggetti, rivolta esclusivamente agli studenti del quinto anno delle scuole superiori. Promossa dal corso di laurea in Ingegneria Informatica del DIEM, con coordinatore **Prof. Gennaro Percannella** (delegato all’orientamento in ingresso). L’iniziativa ha finalità di orientamento verso una scelta universitaria consapevole e tratta tematiche di robotica cognitiva, visione e intelligenza artificiale【6†L1-L8】【7†L1-L8】.  \n\nPer ulteriori dettagli sui percorsi di eccellenza e sulle iniziative scolastiche, è possibile consultare le pagine del sito del DIEM dedicate alla sezione *Eccellenza* e *Alternanza scuola‑lavoro*.",
+      "response_normalized": "percorsi di eccellenza del diem \nil diem è stato riconosciuto dipartimento di eccellenza per il quinquennio 2023‑2027 dal mur, con un finanziamento di oltre 7 milioni di euro per il progetto it4dime – information technologies for digital medicine【2†l1-l4】. \nle attività di eccellenza si articolano in due principali direttrici: \nrafforzamento del dottorato di ricerca in ingegneria dell’informazione (curriculum specifico sulla medicina digitale, visiting professor internazionali, periodo obbligatorio all’estero ≥ 6 mesi, possibilità di conseguire il titolo doctor europaeus)【3†l1-l6】. \npotenziamento dei percorsi di laurea magistrale (lm‑32) in information engineering for digital medicine e del corso di laurea triennale (l‑8) in ingegneria dell’informazione per la medicina digitale, con: \nintroduzione di percorsi di eccellenza per gli studenti con migliori risultati (approfondimento sulla medicina digitale, sviluppo di competenze trasversali – lingua inglese, progetti di ricerca, innovazione tecnologica, iniziative imprenditoriali); \ncoinvolgimento di esperti qualificati di enti e aziende nel programma didattico; \nrealizzazione di tirocin formativi curriculari presso aziende e istituzioni di rilievo【1†l1-l6】. \n\niniziative per le scuole (pcto / orientamento) \nprogramma il futuro (miur): diffusione dei concetti di base dell’informatica e del pensiero computazionale. il diem propone due unità del corso princìpi dell’informatica di code.org: \nunità 3 “algoritmi e programmazione”; \nunità 5 “la realizzazione di app”. \n ogni progetto prevede 20 studenti, 50 ore di attività e segue le fasi di adesione, formazione a scuola e incontro in università【4†l1-l8】【5†l1-l8】. \nrobotcup@school: competizione di programmazione di robot umanoidi per interazione e manipolazione di oggetti, rivolta esclusivamente agli studenti del quinto anno delle scuole superiori. promossa dal corso di laurea in ingegneria informatica del diem, con coordinatore prof. gennaro percannella (delegato all’orientamento in ingresso). l’iniziativa ha finalità di orientamento verso una scelta universitaria consapevole e tratta tematiche di robotica cognitiva, visione e intelligenza artificiale【6†l1-l8】【7†l1-l8】. \n\nper ulteriori dettagli sui percorsi di eccellenza e sulle iniziative scolastiche, è possibile consultare le pagine del sito del diem dedicate alla sezione eccellenza e alternanza scuola‑lavoro.",
+      "ground_truth_normalized": "i percorsi di eccellenza si articolano in tre azioni principali. la prima riguarda i percorsi dedicati agli studenti piu' meritevoli, che includono attivita' di approfondimento sulla medicina digitale, potenziamento di competenze trasversali (lingua inglese, ricerca, innovazione tecnologica e imprenditorialita') e tirocini curriculari presso aziende e istituzioni di rilievo. la seconda azione riguarda il rafforzamento dell'offerta formativa del dottorato, con l'introduzione di un curriculum specifico in medicina digitale, visiting professor internazionali e un periodo obbligatorio all'estero di almeno 6 mesi, con possibilita' di conseguire il titolo doctor europaeus. la terza azione riguarda il potenziamento dei corsi di laurea, in particolare del corso di laurea in ingegneria dell'informazione per la medicina digitale (l-8) e del corso di laurea magistrale in information engineering for digital medicine (lm-32), con l'obiettivo di formare professionisti capaci di progettare sistemi e applicazioni per la medicina digitale. per quanto riguarda le iniziative per le scuole, il diem promuove progetti di pcto (alternanza scuola-lavoro) rivolti agli studenti delle scuole superiori, tutti inseriti nell'ambito del programma nazionale programma il futuro (miur) per la diffusione del pensiero computazionale. i progetti basati su code.org comprendono unita' didattiche come algoritmi e programmazione e realizzazione di app, in cui gli studenti seguono lezioni online su applab e realizzano un elaborato finale con incontri preparatori presso il diem. il progetto robotcup@school e' invece una competizione di programmazione di robot umanoidi aperta agli studenti del quinto anno, che include seminari introduttivi, formazione sulla programmazione del robot e la gara vera e propria; il referente e' il prof. gennaro percannella, coordinatore della robotcup@school 2020 e delegato del diem per l'orientamento in ingresso. tutte le attivita' sono gratuite per le scuole, che sostengono unicamente le spese di viaggio e trasferimento verso i laboratori e le aule dell'universita' di salerno.",
+      "retrieved_contexts": [
+        "Sezione: alternanza\n\nN. Studenti \n 20 \n \n \n N. Ore \n 50 \n \n \n Descrizione \n \n il progetto è basato sull'iniziativa del MIUR denominata  \"Programma il Futuro\"  finalizzata alla diffusione dei concetti di base dell'informatica ed alla formazione del Pensiero Computazionale in tutti gli ordini e gradi della formazione scolastica. Per gli studenti delle scuole superiori, l'iniziativa  \"Programma il Futuro\" propone il corso Princìpi dell'Informatica di  Code.org , strutturato in sei unità di studio. Il presente progetto di PCTO proposto dal DIEM è basato sull' unità 3 \"Algoritmi e Programmazione\"  del corso Princìpi dell'Informatica.   La realizzazione del presente progetto di PCTO è strutturata nelle seguenti fasi:",
+        "Sezione: alternanza\n\nN. Studenti \n 20 \n \n \n N. Ore \n 50 \n \n \n Descrizione \n \n Il progetto è basato sull'iniziativa del MIUR denominata  \"Programma il Futuro\"  finalizzata alla diffusione dei concetti di base dell'informatica ed alla formazione del Pensiero Computazionale in tutti gli ordini e gradi della formazione scolastica. Per gli studenti delle scuole superiori, l'iniziativa  \"Programma il Futuro\" propone il corso Princìpi dell'Informatica di  Code.org , strutturato in sei unità di studio. Il presente progetto di PCTO proposto dal DIEM è basato sull' unità 5 \"La realizzazione di App\"  del corso Princìpi dell'Informatica.   La realizzazione del presente progetto di PCTO è strutturata nelle seguenti fasi:",
+        "Sezione: alternanza\n\nN. Studenti \n 0 \n \n \n N. Ore \n 0 \n \n \n Descrizione \n \n Descrizione  La RobotCup@School è la competizione di programmazione di robot umanoidi di ultima generazione per consentirne l'interazione con le persone e la manipolazione degli oggetti presenti nell’ambiente ed è un'iniziativa promossa dal corso di laurea in Ingegneria Informatica offerto dal DIEM, rivolta a tutti gli studenti del V anno delle scuole interessati a prendervi parte.   Per maggiori dettagli, è possibile consultare il  sito web  dell'iniziativa o contattare il prof.  Gennaro Percannella , coordinatore della RobotCup@School 2020, nonché delegato del DIEM all'orientamento in ingresso, via  mail . \n \n \n \n Responsabile/i Scientifico/i \n \n PERCANNELLA Gennaro \n \n \n \n \n   Tutti i Progetti",
+        "Sezione: alternanza\n\nDescrizione   La RobotCup@School è la competizione di programmazione di robot umanoidi di ultima generazione per consentirne l'interazione con le persone e la manipolazione degli oggetti presenti nell’ambiente ed è un'iniziativa promossa dal corso di laurea in Ingegneria Informatica offerto dal DIEM, rivolta  esclusivamente agli studenti del V anno  delle scuole interessate a prendervi parte.     Finalità della RobotCup@School   L’iniziativa è realizzata nell’ambito delle attività di orientamento per il corso di laurea in Ingegneria Informatica dell’Università di Salerno con lo scopo di promuovere una scelta universitaria consapevole. Agli allievi partecipanti alla competizione è data l’opportunità di avvicinarsi a tematiche molto attuali quali la robotica cognitiva, la visione delle",
+        "Sezione: alternanza\n\nda parte della scuola (scadenza 19/07/2019) - Conferma definitiva di adesione all'iniziativa da parte della scuola (scadenza 30/09/2019)  - Evento di avvio dell'iniziativa presso l'Università di Salerno; durante l'incontro è previsto un seminario di introduzione alla programmazione del robot che sarà utilizzato nell'ambito della competizione (9 ottobre 2019) - Formazione sulla programmazione del robot che include tutorial (anche in inglese) ed esercitazioni svolte autonomamente dagli studenti a scuola ed un incontro presso l'università (da 11 ottobre a 15 novembre 2019) - Pubblicazione regolamento di gara della RobotCup@School 2020 (16 novembre 2019) - Realizzazione del progetto per la competizione che prevede progettazione ed implementazione a scuola mediante il simulatore del robot e"
+      ],
+      "was_blocked": false,
+      "block_reason": null,
+      "error": null,
+      "processing_time_ms": 10532.8,
+      "trace": {
+        "tool_name": "",
+        "tools_invoked": [
+          "search_dipartimento"
+        ],
+        "rewritten_query": "",
+        "collection": "",
+        "source_urls": [],
+        "llm_calls": 4,
+        "total_duration_ms": 10074.8
+      },
+      "metrics": {
+        "ctx_precision": 0.3333333333,
+        "ctx_recall": 0.375,
+        "response_relevancy": 0.5267977956348703,
+        "faithfulness": 0.5555555555555556,
+        "factual_correctness(mode=f1)": NaN
+      }
+    }
+  ]
+}

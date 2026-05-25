@@ -1,0 +1,65 @@
+﻿index,question,ground_truth,response,was_blocked,error,processing_time_ms,ctx_precision,ctx_recall,response_relevancy,faithfulness,factual_correctness(mode=f1)
+1,Who is Antonio Greco and what courses does he teach in 2025?,"Antonio Greco is an Associate Professor at the Dipartimento di Ingegneria dell'Informazione ed Elettrica e Matematica Applicata (DIEM) of the Universita' degli Studi di Salerno. He graduated with honors in Ingegneria Informatica in 2014 and obtained his PhD in 2018 at the same university. Since November 2022, he has been an RTD/B Researcher and holds the role of Delegate for Incoming Orientation; since May 2024 he has been a member of the PhD Board in Ingegneria dell'Informazione. He is a member of the MIVIA laboratory and his research focuses on Computer Vision, Deep Learning, and the automatic recognition of faces, emotions, human activities, and objects, including in robotic and autonomous vehicle contexts. In 2025, the courses he teaches include: Advanced Machine Learning, Artificial Intelligence for Cybersecurity, Autonomous and Connected Vehicles, Medical Image Processing and Visualization, and Natural Language Processing and Large Language Models.","Antonio Greco is an Associate Professor (Professore Associato) in the Department of Information Engineering, Electrical and Applied Mathematics (DIEM) at the University of Salerno. His contact details are: phone 089 963003, email agreco@unisa.it, office Campus di Fisciano, Edificio E, Piano Terzo, Stanza 005 (U.FSTEC-05.P03.005). He is also affiliated with the MIVIA Lab and serves as the Delegato all’Orientamento in Ingresso and a member of the Collegio di Dottorato in Ingegneria dell’Informazione【Documento 1--html--profilo--https://docenti.unisa.it/026557/home】.
+
+In the academic year 2025 (2025/2026) he teaches the following courses:
+
+| Course (code) | SSD | CFU | Type of activity | Semester / Year | Curriculum / Notes | Source |
+|---------------|-----|-----|------------------|-----------------|--------------------|--------|
+| Advanced Machine Learning (8860500002) | ING-INF/05 | 3 | Lecture (18 h) | 2nd semester, PhD course (D.M.226/2021) | Part of Computer & Information Systems Engineering and Information Technologies for Digital Medicine curricula | 【Documento 1--html--didattica--https://docenti.unisa.it/026557/didattica?anno=2025&id=516568&cId=10001-2025】 |
+| Autonomous and Connected Vehicles (0622700127) | ING-INF/05 | 3 (lecture 24 h) + 1 (lab 8 h) + 2 (exercise 16 h) | Lecture, Lab, Exercise | 1st semester, 2nd year (Coorte 2024/2025) | Master’s in Computer Engineering, curriculum Artificial Intelligence and Intelligent Robotics | 【Documento 2--html--didattica--https://docenti.unisa.it/026557/didattica?anno=2025&id=518962】 |
+| Medical Image Processing and Visualization (IE23200007) | ING-INF/05 | 4 (lecture 32 h) + 1 (lab 8 h) + 1 (exercise 8 h) | Lecture, Lab, Exercise | 2nd semester, 1st year | Master’s in Information Engineering for Digital Medicine (percorso comune, obbligatorio) | 【Documento 3--html--didattica--https://docenti.unisa.it/026557/didattica?anno=2025&id=521926】 |
+| Artificial Intelligence for Cybersecurity (0622700094) | ING-INF/05 | (details not fully extracted) | Lecture/Lab/Exercise (caratterizzante) | 2025/2026, 2nd year (Coorte 2024/2025) | Master’s in Computer Engineering, offered for multiple curricula (e.g., Multimedia Systems and Applications) | 【Documento 4--html--didattica--https://docenti.unisa.it/026557/didattica?anno=2025&id=515134&cId=10005-2022】 |
+
+Thus, Antonio Greco is an associate professor at DIEM, and in 2025 he teaches the four courses listed above.",False,,22078.8,0.0,0.2,0.8324358720142108,,0.53
+2,What are the prerequisite requirements to take the Basi di Dati exam in the Ingegneria Informatica bachelor's degree?,"According to the study plan for the bachelor's degree in Ingegneria Informatica for the A.Y. 2025/2026, to take the Basi di Dati exam it is necessary to have previously passed the following three exams: Algoritmi e Strutture Dati, Analisi dei Segnali, and Elettrotecnica.","The prerequisite requirements to take the **Basi di Dati** exam in the Ingegneria Informatica bachelor’s degree are:
+
+- **Algoritmi e Strutture Dati**  
+- **Analisi dei Segnali**  
+- **Elettrotecnica**
+
+These are listed as the propedeuticità (prerequisites) for the Basi di dati course in the current academic regulations (2025/2026)【0†L1-L4】. Some older regulations also mention *Ingegneria del software* as a prerequisite for specific modules or projects, but the core exam requires the three subjects above.",False,,10413.1,0.5833333333041666,0.5,0.9408289239417935,0.6666666666666666,0.8
+3,What projects is Professor Pierluigi Ritrovato currently involved in?,"Professor Pierluigi Ritrovato is currently involved in two active projects, both funded by the European Commission within the POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA: in the first, he holds the role of Project Coordinator, with funding of 317,915.18 EUR for the period October 2022 - December 2027; in the second (DI variant), he holds the role of Financial Manager, with funding of 116,000.00 EUR for the same period.","Professor Pierluigi Ritrovato is currently involved in the following active research projects:
+
+1. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA** – He serves as **Coordinatore Progetto**. The project runs from 1 October 2022 to 31 December 2027, is funded by the European Commission, and has a total amount of €317,915.18【4†L1-L13】.
+
+2. **POLO REGIONALE PER L'INNOVAZIONE DIGITALE EVOLUTA - DI** – He serves as **Responsabile finanziario**. This project also runs from 1 October 2022 to 31 December 2027, is funded by the European Commission, and has a total amount of €116,000.00【5†L1-L13】.
+
+All other listed projects (e.g., “ESPERTO IN TURISMO ESPERENZIALE 3.0 E DESTINATION MANAGEMENT,” “TBIZ: RESEARCH AND IDEAS FOR BUSINESS,” etc.) are marked as concluded and are not currently active.",False,,12800.8,0.19999999998,1.0,0.9480033492554186,0.75,0.94
+4,What instruments are available in the Robotics laboratory?,"The Robotics laboratory (LabROB) has the following equipment: 2 Comau Smart-Six anthropomorphic robots mounted on an actuated slide, 1 UR10 robot (Universal Robot), 1 Franka Emika robot with 7 degrees of freedom, 1 customized Clearpath Husky robot with differential drive, 3 Zed smart stereo cameras, 1 endoscope, 1 inertial measurement unit (IMU), 1 2D laser scanner, 4 force/torque sensors, 3 two- and three-finger pneumatic grippers, 1 two-finger electric gripper, 1 end-effector for dental ablation, 1 3D printer, and 9 PC workstations with Matlab and ROS2.","The Robotics laboratory at DIEM has the following instruments:
+
+- 2 x Comau Smart‑Six anthropomorphic robots mounted on actuated slides  
+- 1 x UR10 robot (Universal Robot)  
+- 1 x Franka Emika robot with 7 degrees of freedom  
+- 1 x Clearpath Husky robot customized for differential traction  
+- 3 x Zed intelligent stereo cameras  
+- 1 x endoscope  
+- 1 x inertial measurement unit (IMU)  
+- 1 x 2D laser scanner  
+- 4 x force/torque sensors  
+- 3 x pneumatic grippers (two‑ and three‑finger)  
+- 1 x electric two‑finger gripper  
+- 1 x end‑effector for dental ablation  
+- 1 x 3D printer  
+- 9 x PC workstations with Matlab and ROS2  
+
+Source: https://www.diem.unisa.it/dipartimento/strutture?id=2",False,,9235.2,0.9999999999,1.0,0.8582757565863256,1.0,0.93
+5,Tell me about the department's excellence pathways and initiatives for schools.,"The excellence pathways are divided into three main actions. The first concerns pathways dedicated to the most deserving students, which include in-depth activities on digital medicine, enhancement of transversal skills (English language, research, technological innovation, and entrepreneurship), and curricular internships at important companies and institutions. The second action concerns the strengthening of the PhD educational offer, with the introduction of a specific curriculum in digital medicine, international visiting professors, and a mandatory period abroad of at least 6 months, with the possibility of obtaining the Doctor Europaeus title. The third action concerns the enhancement of degree courses, in particular the Bachelor's Degree in Ingegneria dell'Informazione per la Medicina Digitale (L-8) and the Master's Degree in Information Engineering for Digital Medicine (LM-32), with the aim of training professionals capable of designing systems and applications for digital medicine. Regarding initiatives for schools, the DIEM promotes PCTO projects (school-work alternation) aimed at high school students, all included within the national program Programma il Futuro (MIUR) for the dissemination of computational thinking. The projects based on Code.org include teaching units such as Algorithms and Programming and App Creation, in which students follow online lessons on AppLab and create a final project with preparatory meetings at the DIEM. The RobotCup@School project, on the other hand, is a humanoid robot programming competition open to fifth-year students, which includes introductory seminars, training on robot programming, and the actual competition; the contact person is Prof. Gennaro Percannella, coordinator of RobotCup@School 2020 and DIEM delegate for incoming orientation. All activities are free for schools, which only bear the travel and transfer costs to the laboratories and classrooms of the University of Salerno.","**Eccellenza – Percorsi di eccellenza del DIEM**  
+- Il DIEM è stato riconosciuto **Dipartimento di Eccellenza** (MUR, finanziamento > 7 milioni di euro) per il progetto **IT4DiMe: Information Technologies for Digital Medicine** (2023‑2027)【2†L1-L4】.  
+- **Percorsi di eccellenza per studenti magistrali** (LM‑32 *Information Engineering for Digital Medicine*):  
+  - Attività di approfondimento sulla medicina digitale e sviluppo di competenze trasversali (lingua inglese, progetti di ricerca e innovazione tecnologica, iniziative imprenditoriali)【1†L1-L4】.  
+  - Coinvolgimento di esperti qualificati proveniente da enti e aziende nel programma didattico【1†L4-L6】.  
+  - Realizzazione di tirocini formativi curriculari presso aziende e istituzioni di rilievo【1†L6-L8】.  
+- **Percorsi di eccellenza per il dottorato di ricerca**:  
+  - Creazione di un curriculum specifico dedicato alla medicina digitale【3†L1-L3】.  
+  - Coinvolgimento di visiting professor internazionali di alto profilo【3†L3-L5】.  
+  - Periodo obbligatorio all’estero di almeno 6 mesi presso prestigiosi centri di ricerca, con possibilità di conseguire il titolo *Doctor Europaeus*【3†L5-L8】.  
+
+**Iniziative per le scuole**  
+- Il DIEM è tra i fondatori del **Polo di Salerno della rete nazionale dell’Accademia dei Lincei** con il progetto *“I Lincei per una nuova didattica nella scuola”*, impegnandosi a migliorare la didattica nelle scuole e a diffondere conoscenza e cultura sul territorio【4†L1-L4】【5†L1-L4】.  
+- La **Commissione di Orientamento** organizza:  
+  - Incontri di orientamento presso le sedi degli istituti scolastici interessati;  
+  - Visite guidate alle strutture e ai laboratori del dipartimento;  
+  - Competizioni tra scuole quali **RobotCup@School**【4†L8-L11】【4†L13-L16】.  
+- Per informazioni e comunicazioni: **orientamento@diem.unisa.it**【4†L11-L12】【4†L16-L17】.  
+
+Queste azioni rientrano nella più ampia “Terza Missione” del DIEM, che combina ricerca avanzata, formazione di eccellenza e impatto sociale sulle scuole e sul territorio【5†L1-L4】.",False,,35647.0,0.0,0.0,0.4977411408682986,0.42857142857142855,0.55
