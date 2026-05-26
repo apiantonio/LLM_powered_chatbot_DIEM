@@ -1,7 +1,9 @@
 # <img src="assets/bot.ico" width="64"/> DIEM Chatbot  -  LLM-Powered Virtual Assistant
 
 <p align="center">
-  <img src="https://www.diem.unisa.it/rescue/img/headerbg/logo-diem.png" alt="DIEM Logo" width="300"/>
+  <a href="https://www.diem.unisa.it/">
+    <img src="https://www.diem.unisa.it/rescue/img/headerbg/logo-diem.png" alt="DIEM Logo" width="300"/>
+  </a>
 </p>
 
 <p align="center">
@@ -248,9 +250,9 @@ The system implements a three-stage safety pipeline powered by Llama 3.3 70B via
 
 The chatbot answers questions grounded exclusively in content from:
 
-- **`https://www.diem.unisa.it/`** — Department homepage, labs, calls, research, organization
-- **`https://docenti.unisa.it/`** — DIEM faculty profiles, courses, research, office hours
-- **`https://corsi.unisa.it/`** — Degree program pages, study plans, regulations
+- [**`https://www.diem.unisa.it`**](https://www.diem.unisa.it) — Department homepage, labs, calls, research, organization
+- [**`https://docenti.unisa.it/`**](https://docenti.unisa.it/) — DIEM faculty profiles, courses, research, office hours
+- [**`https://corsi.unisa.it/`**](https://corsi.unisa.it/) — Degree program pages, study plans, regulations
 
 External links and out-of-scope questions (e.g., general knowledge, other universities) are explicitly detected and declined.
 
