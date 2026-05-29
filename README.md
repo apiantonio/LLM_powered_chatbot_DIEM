@@ -28,6 +28,12 @@ The system is built around an **agentic LLM pipeline** with four specialized sea
 
 ---
 
+## 🖥️ Interface Preview
+
+<div align="center">
+  <img src="assets/demo_ui.jpeg" alt="DIEM Chatbot Streamlit UI" width="1000"/>
+</div>
+
 ## ✨ Key Features
 
 - **Agentic RAG with Parallel Tool Calling** — The LLM autonomously decides which knowledge collections to query and fires multiple tool calls in a single turn when needed
